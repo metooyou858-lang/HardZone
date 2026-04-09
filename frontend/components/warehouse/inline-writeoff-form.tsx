@@ -40,8 +40,8 @@ export function InlineWriteoffForm({
   }
 
   return (
-    <div className="space-y-4 border-t border-red-100 bg-red-50 px-5 py-4">
-      <p className="text-xs font-medium uppercase tracking-wider text-red-500">
+    <div className="space-y-4 border-t border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-5 py-4">
+      <p className="text-xs font-medium uppercase tracking-wider text-[var(--danger)]">
         Списание · {product.name}
       </p>
       <div>
@@ -53,8 +53,8 @@ export function InlineWriteoffForm({
               onClick={() => setReasonType(reason.value)}
               className={`rounded-xl px-3 py-1.5 text-sm font-medium transition-colors ${
                 reasonType === reason.value
-                  ? "bg-red-500 text-white"
-                  : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  ? "bg-[rgba(248,81,73,0.16)] text-[var(--danger)]"
+                  : "border border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--text-muted)] hover:bg-white/5"
               }`}
             >
               {reason.label}
@@ -86,20 +86,20 @@ export function InlineWriteoffForm({
           />
         </div>
       </div>
-      {writeoff.error && <p className="text-sm text-red-500">{writeoff.error}</p>}
+      {writeoff.error && <p className="text-sm text-[var(--danger)]">{writeoff.error}</p>}
       <div className="flex gap-2">
         <button
           onClick={() => {
             void handleSubmit();
           }}
           disabled={writeoff.submitting}
-          className="rounded-xl bg-red-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-50"
+          className="rounded-xl bg-[var(--danger)] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:brightness-110 disabled:opacity-50"
         >
           {writeoff.submitting ? "Сохраняем..." : `Списать ${quantity} шт.`}
         </button>
         <button
           onClick={onClose}
-          className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm text-slate-500 hover:bg-slate-50"
+          className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-5 py-2.5 text-sm text-[var(--text-muted)] transition-colors hover:bg-white/5 hover:text-[var(--text-main)]"
         >
           Отмена
         </button>

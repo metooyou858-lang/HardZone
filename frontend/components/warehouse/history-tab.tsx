@@ -7,24 +7,24 @@ import { formatDate } from "./shared";
 const config = {
   receipt: {
     label: "Приёмка",
-    bg: "bg-emerald-100",
-    text: "text-emerald-700",
+    bg: "bg-[rgba(63,185,80,0.12)]",
+    text: "text-[var(--success)]",
     sign: "+",
-    signColor: "text-emerald-600",
+    signColor: "text-[var(--success)]",
   },
   writeoff: {
     label: "Списание",
-    bg: "bg-red-100",
-    text: "text-red-700",
+    bg: "bg-[rgba(248,81,73,0.12)]",
+    text: "text-[var(--danger)]",
     sign: "−",
-    signColor: "text-red-500",
+    signColor: "text-[var(--danger)]",
   },
   sale: {
     label: "Продажа",
-    bg: "bg-blue-100",
-    text: "text-blue-700",
+    bg: "bg-[rgba(0,191,165,0.12)]",
+    text: "text-[var(--accent)]",
     sign: "−",
-    signColor: "text-blue-500",
+    signColor: "text-[var(--accent)]",
   },
 } as const;
 
@@ -37,18 +37,19 @@ export function HistoryTab() {
 
   return (
     <div className="space-y-5">
-      <section className="overflow-hidden rounded-[30px] border border-black/5 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
-        <div className="border-b border-black/5 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(241,245,249,0.72))] p-5 sm:p-6">
+      <section className="overflow-hidden rounded-[30px] border border-[var(--line-soft)] bg-[var(--bg-card)]">
+        <div className="border-b border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-5 sm:p-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl">
-              <p className="font-[family:var(--font-mono)] text-[11px] uppercase tracking-[0.28em] text-slate-400">
+              <p className="font-[family:var(--font-mono)] text-[11px] uppercase tracking-[0.28em] text-[var(--text-muted)]">
                 operations feed
               </p>
-              <h2 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">
+              <h2 className="mt-3 text-2xl font-semibold tracking-tight text-[var(--text-main)]">
                 История движения склада
               </h2>
-              <p className="mt-3 text-sm leading-7 text-slate-600">
-                Единая лента складских событий: поступления, списания и продажи в хронологическом порядке.
+              <p className="mt-3 text-sm leading-7 text-[var(--text-muted)]">
+                Единая лента складских событий: поступления, списания и продажи в
+                хронологическом порядке.
               </p>
             </div>
 
@@ -56,29 +57,33 @@ export function HistoryTab() {
               onClick={() => {
                 void reload();
               }}
-              className="inline-flex items-center justify-center rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+              className="inline-flex items-center justify-center rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-4 py-3 text-sm font-medium text-[var(--text-muted)] transition-colors hover:bg-white/5 hover:text-[var(--text-main)]"
             >
               Обновить
             </button>
           </div>
 
           <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            <article className="rounded-[22px] border border-black/5 bg-white/80 p-4 shadow-sm">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Всего</p>
-              <p className="mt-3 text-2xl font-semibold text-slate-950">{operations.length}</p>
-              <p className="mt-1 text-xs text-slate-500">операций в ленте</p>
+            <article className="rounded-[22px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-4">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-[var(--text-muted)]">Всего</p>
+              <p className="mt-3 text-2xl font-semibold text-[var(--text-main)]">{operations.length}</p>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">операций в ленте</p>
             </article>
 
-            <article className="rounded-[22px] border border-emerald-100 bg-[linear-gradient(180deg,rgba(236,253,245,0.98),rgba(209,250,229,0.92))] p-4 shadow-sm">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Приёмка</p>
-              <p className="mt-3 text-2xl font-semibold text-slate-950">{receiptsCount}</p>
-              <p className="mt-1 text-xs text-slate-500">поступлений товара</p>
+            <article className="rounded-[22px] border border-[rgba(63,185,80,0.25)] bg-[rgba(63,185,80,0.08)] p-4">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-[var(--text-muted)]">Приёмка</p>
+              <p className="mt-3 text-2xl font-semibold text-[var(--text-main)]">{receiptsCount}</p>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">поступлений товара</p>
             </article>
 
-            <article className="rounded-[22px] border border-blue-100 bg-[linear-gradient(180deg,rgba(239,246,255,0.98),rgba(219,234,254,0.92))] p-4 shadow-sm">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Продажи / списания</p>
-              <p className="mt-3 text-2xl font-semibold text-slate-950">{salesCount + writeoffsCount}</p>
-              <p className="mt-1 text-xs text-slate-500">
+            <article className="rounded-[22px] border border-[rgba(0,191,165,0.28)] bg-[rgba(0,191,165,0.08)] p-4">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-[var(--text-muted)]">
+                Продажи / списания
+              </p>
+              <p className="mt-3 text-2xl font-semibold text-[var(--text-main)]">
+                {salesCount + writeoffsCount}
+              </p>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
                 {salesCount} продаж и {writeoffsCount} списаний
               </p>
             </article>
@@ -87,31 +92,37 @@ export function HistoryTab() {
       </section>
 
       {error && (
-        <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600 shadow-sm">
+        <div className="rounded-2xl border border-[rgba(248,81,73,0.35)] bg-[rgba(248,81,73,0.1)] px-4 py-3 text-sm text-[var(--danger)]">
           {error}
         </div>
       )}
 
       {loading ? (
-        <div className="rounded-[28px] border border-black/5 bg-white px-6 py-16 text-center text-sm text-slate-400 shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
+        <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-6 py-16 text-center text-sm text-[var(--text-muted)]">
           Загрузка истории...
         </div>
       ) : (
-        <section className="overflow-hidden rounded-[30px] border border-black/5 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
-          <div className="border-b border-black/5 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] px-5 py-4 sm:px-6">
+        <section className="overflow-hidden rounded-[30px] border border-[var(--line-soft)] bg-[var(--bg-card)]">
+          <div className="border-b border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-5 py-4 sm:px-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="font-[family:var(--font-mono)] text-[11px] uppercase tracking-[0.24em] text-slate-400">
+                <p className="font-[family:var(--font-mono)] text-[11px] uppercase tracking-[0.24em] text-[var(--text-muted)]">
                   timeline
                 </p>
-                <h3 className="mt-2 text-lg font-semibold text-slate-950">Последние операции</h3>
+                <h3 className="mt-2 text-lg font-semibold text-[var(--text-main)]">
+                  Последние операции
+                </h3>
               </div>
-              <p className="text-sm text-slate-500">Свежие события сверху, старые уходят вниз</p>
+              <p className="text-sm text-[var(--text-muted)]">
+                Свежие события сверху, старые уходят вниз
+              </p>
             </div>
           </div>
 
           {operations.length === 0 && (
-            <div className="px-6 py-16 text-center text-sm text-slate-400">Операций пока нет</div>
+            <div className="px-6 py-16 text-center text-sm text-[var(--text-muted)]">
+              Операций пока нет
+            </div>
           )}
 
           {operations.map((operation, index) => {
@@ -120,8 +131,8 @@ export function HistoryTab() {
             return (
               <div
                 key={operation.id}
-                className={`flex items-center gap-4 px-5 py-5 transition-colors hover:bg-slate-50/70 sm:px-6 ${
-                  index < operations.length - 1 ? "border-b border-slate-50" : ""
+                className={`flex items-center gap-4 px-5 py-5 transition-colors hover:bg-white/3 sm:px-6 ${
+                  index < operations.length - 1 ? "border-b border-[var(--line-soft)]" : ""
                 }`}
               >
                 <span
@@ -131,10 +142,10 @@ export function HistoryTab() {
                 </span>
 
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[15px] font-semibold text-slate-950">
+                  <p className="truncate text-[15px] font-semibold text-[var(--text-main)]">
                     {operation.product_name}
                   </p>
-                  <p className="mt-1 font-mono text-xs text-slate-400">
+                  <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">
                     {operation.product_sku} · {operation.detail}
                   </p>
                 </div>
@@ -145,12 +156,12 @@ export function HistoryTab() {
                     {operation.quantity} шт.
                   </p>
                   {operation.amount && (
-                    <p className="mt-1 text-xs text-slate-500">{operation.amount}</p>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">{operation.amount}</p>
                   )}
                 </div>
 
                 <div className="shrink-0 text-right">
-                  <p className="text-xs text-slate-400">{formatDate(operation.created_at)}</p>
+                  <p className="text-xs text-[var(--text-muted)]">{formatDate(operation.created_at)}</p>
                 </div>
               </div>
             );

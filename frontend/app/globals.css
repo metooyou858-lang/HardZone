@@ -1,18 +1,20 @@
 @import "tailwindcss";
 
 :root {
-  --bg-app: #f3efe8;
-  --bg-panel: rgba(12, 18, 27, 0.92);
-  --bg-panel-soft: rgba(23, 33, 47, 0.86);
-  --bg-card: #ffffff;
-  --bg-card-soft: #f6f3ee;
-  --text-main: #0f172a;
-  --text-muted: #5b6678;
-  --text-inverse: #f8fafc;
-  --line-soft: rgba(15, 23, 42, 0.08);
-  --accent: #f97316;
-  --accent-soft: rgba(249, 115, 22, 0.14);
-  --success: #0f766e;
+  --bg-app: #0d1117;
+  --bg-panel: #161b22;
+  --bg-panel-soft: #161b22;
+  --bg-card: #1c2333;
+  --bg-card-soft: #222b3d;
+  --text-main: #f0f6ff;
+  --text-muted: #a2afbd;
+  --text-inverse: #f0f6ff;
+  --line-soft: #30363d;
+  --accent: #00bfa5;
+  --accent-soft: rgba(0, 191, 165, 0.16);
+  --success: #3fb950;
+  --danger: #f85149;
+  --warning: #d29922;
   --font-heading: "Space Grotesk", sans-serif;
   --font-mono: "IBM Plex Mono", monospace;
 }
@@ -36,10 +38,9 @@ body {
   min-height: 100vh;
   margin: 0;
   background:
-    radial-gradient(circle at top left, rgba(249, 115, 22, 0.16), transparent 24%),
-    radial-gradient(circle at 80% 14%, rgba(255, 255, 255, 0.78), transparent 18%),
-    radial-gradient(circle at bottom right, rgba(15, 118, 110, 0.12), transparent 22%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(243, 239, 232, 0.68)),
+    radial-gradient(circle at top left, rgba(0, 191, 165, 0.16), transparent 22%),
+    radial-gradient(circle at bottom right, rgba(63, 185, 80, 0.07), transparent 20%),
+    linear-gradient(180deg, rgba(13, 17, 23, 0.98), rgba(13, 17, 23, 1)),
     var(--bg-app);
   color: var(--text-main);
   font-family: var(--font-heading), sans-serif;
@@ -60,12 +61,12 @@ select {
 .app-grid {
   display: grid;
   min-height: 100vh;
-  grid-template-columns: 308px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 264px) minmax(0, 1fr);
 }
 
 .sidebar-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
+  scrollbar-color: rgba(139, 148, 158, 0.35) transparent;
 }
 
 @media (max-width: 960px) {

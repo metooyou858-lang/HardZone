@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 
-import { ImportItem } from "@/lib/api/imports";
 import { useImport } from "@/hooks/useImport";
+import { ImportItem } from "@/lib/api/imports";
 
 import { inputCls, labelCls } from "./shared";
 
@@ -18,15 +18,15 @@ function StatCard({
 }) {
   const toneClass =
     tone === "green"
-      ? "border-emerald-100 bg-emerald-50 text-emerald-700"
+      ? "border-[rgba(63,185,80,0.25)] bg-[rgba(63,185,80,0.08)] text-[var(--success)]"
       : tone === "blue"
-        ? "border-blue-100 bg-blue-50 text-blue-700"
-        : "border-slate-100 bg-white text-slate-900";
+        ? "border-[rgba(0,191,165,0.28)] bg-[rgba(0,191,165,0.08)] text-[var(--accent)]"
+        : "border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--text-main)]";
 
   return (
     <div className={`rounded-2xl border p-4 text-center ${toneClass}`}>
       <p className="text-2xl font-semibold">{value}</p>
-      <p className="mt-1 text-xs uppercase tracking-wider text-slate-400">{label}</p>
+      <p className="mt-1 text-xs uppercase tracking-wider text-[var(--text-muted)]">{label}</p>
     </div>
   );
 }
@@ -46,22 +46,23 @@ function ImportRow({
         type="checkbox"
         checked={!item.skip}
         onChange={(event) => onChange({ skip: !event.target.checked })}
-        className="mt-1 h-4 w-4 rounded border-slate-300 text-orange-500"
+        className="mt-1 h-4 w-4 rounded border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--accent)]"
       />
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-center gap-2">
-          <p className="truncate font-medium text-slate-900">{item.name}</p>
+          <p className="truncate font-medium text-[var(--text-main)]">{item.name}</p>
           {item.matched ? (
-            <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
+            <span className="shrink-0 rounded-full bg-[rgba(63,185,80,0.12)] px-2 py-0.5 text-xs text-[var(--success)]">
               в базе
             </span>
           ) : (
-            <span className="shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700">
+            <span className="shrink-0 rounded-full bg-[rgba(0,191,165,0.12)] px-2 py-0.5 text-xs text-[var(--accent)]">
               новый
             </span>
           )}
         </div>
-        <div className="flex flex-wrap gap-3 text-xs text-slate-400">
+        <div className="flex flex-wrap gap-3 text-xs text-[var(--text-muted)]">
+          {item.category && <span>Категория: {item.category}</span>}
           {item.barcode && <span>Штрихкод: {item.barcode}</span>}
           {item.sku && <span>SKU: {item.sku}</span>}
           {item.matched && item.existing_product && (
@@ -72,7 +73,7 @@ function ImportRow({
       <div className="shrink-0 flex gap-3">
         {mode === "receipt" && (
           <div>
-            <p className="mb-1 text-xs text-slate-400">Кол-во</p>
+            <p className="mb-1 text-xs text-[var(--text-muted)]">Кол-во</p>
             <input
               type="number"
               min="1"
@@ -80,12 +81,12 @@ function ImportRow({
               onChange={(event) =>
                 onChange({ quantity: Number.parseInt(event.target.value, 10) || null })
               }
-              className="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-center text-sm outline-none focus:border-orange-400"
+              className="w-20 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] px-2 py-1.5 text-center text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
             />
           </div>
         )}
         <div>
-          <p className="mb-1 text-xs text-slate-400">Цена продажи</p>
+          <p className="mb-1 text-xs text-[var(--text-muted)]">Цена продажи</p>
           <input
             type="number"
             min="0"
@@ -93,7 +94,7 @@ function ImportRow({
             onChange={(event) =>
               onChange({ sale_price: Number.parseFloat(event.target.value) || null })
             }
-            className="w-24 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-center text-sm outline-none focus:border-orange-400"
+            className="w-24 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] px-2 py-1.5 text-center text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
           />
         </div>
       </div>
@@ -127,9 +128,9 @@ export function ImportPanel({
 
   if (importState.imported !== null) {
     return (
-      <div className="max-w-xl rounded-2xl border border-emerald-100 bg-emerald-50 p-6">
-        <p className="text-lg font-semibold text-emerald-700">Импорт завершён</p>
-        <p className="mt-1 text-sm text-emerald-600">
+      <div className="max-w-xl rounded-2xl border border-[rgba(63,185,80,0.28)] bg-[rgba(63,185,80,0.08)] p-6">
+        <p className="text-lg font-semibold text-[var(--success)]">Импорт завершён</p>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">
           Загружено позиций: {importState.imported}
         </p>
         <button
@@ -137,7 +138,7 @@ export function ImportPanel({
             importState.reset();
             onClose();
           }}
-          className="mt-4 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+          className="mt-4 rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[#062b26] transition-colors hover:brightness-110"
         >
           Готово
         </button>
@@ -146,39 +147,39 @@ export function ImportPanel({
   }
 
   return (
-    <div className="max-w-5xl space-y-5 rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
-      <div className="flex items-center justify-between">
+    <div className="max-w-5xl space-y-5 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-6">
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="font-medium text-slate-900">Импорт из Excel</p>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="font-medium text-[var(--text-main)]">Импорт из Excel</p>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             Подходит для выгрузок aQsi и ручных Excel-таблиц.
           </p>
         </div>
         <button
           onClick={onClose}
-          className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-500 hover:bg-slate-50"
+          className="rounded-full border border-[var(--line-soft)] px-3 py-1 text-sm text-[var(--text-muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text-main)]"
         >
           Закрыть
         </button>
       </div>
 
-      <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
-        <p className="font-medium text-blue-800">Требования к файлу</p>
-        <p className="mt-2 text-sm leading-6 text-blue-700">
+      <div className="rounded-2xl border border-[rgba(0,191,165,0.28)] bg-[rgba(0,191,165,0.08)] p-5">
+        <p className="font-medium text-[var(--text-main)]">Требования к файлу</p>
+        <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
           Формат: <strong>Excel (.xlsx, .xls)</strong>. Обязательно наличие колонки
           <strong> Наименование</strong>. Остальные поля подхватываются автоматически.
         </p>
       </div>
 
       {!importState.parseResult && (
-        <div className="space-y-5 rounded-2xl border border-slate-100 bg-slate-50 p-5">
+        <div className="space-y-5 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-5">
           <div>
             <label className={labelCls}>Файл</label>
             <input
               type="file"
               accept=".xlsx,.xls"
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              className="mt-2 block w-full text-sm text-slate-500 file:mr-4 file:rounded-xl file:border-0 file:bg-orange-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-orange-600 hover:file:bg-orange-100"
+              className="mt-2 block w-full text-sm text-[var(--text-muted)] file:mr-4 file:rounded-xl file:border file:border-[var(--line-soft)] file:bg-[var(--bg-card)] file:px-4 file:py-2 file:text-sm file:font-medium file:text-[var(--accent)] hover:file:border-[var(--accent)]"
             />
           </div>
 
@@ -189,8 +190,8 @@ export function ImportPanel({
                 onClick={() => setMode("receipt")}
                 className={`rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
                   mode === "receipt"
-                    ? "bg-orange-500 text-white"
-                    : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    ? "bg-[var(--accent)] text-[#062b26]"
+                    : "border border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--text-muted)] hover:bg-white/5"
                 }`}
               >
                 Приёмка — добавить остатки
@@ -199,8 +200,8 @@ export function ImportPanel({
                 onClick={() => setMode("stock")}
                 className={`rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
                   mode === "stock"
-                    ? "bg-orange-500 text-white"
-                    : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    ? "bg-[var(--accent)] text-[#062b26]"
+                    : "border border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--text-muted)] hover:bg-white/5"
                 }`}
               >
                 Только каталог
@@ -209,7 +210,7 @@ export function ImportPanel({
           </div>
 
           {importState.error && (
-            <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+            <div className="rounded-xl border border-[rgba(248,81,73,0.35)] bg-[rgba(248,81,73,0.1)] px-4 py-3 text-sm text-[var(--danger)]">
               {importState.error}
             </div>
           )}
@@ -219,7 +220,7 @@ export function ImportPanel({
               void handleParse();
             }}
             disabled={!file || importState.parsing}
-            className="w-full rounded-xl bg-orange-500 py-3 font-medium text-white hover:bg-orange-600 disabled:opacity-50"
+            className="w-full rounded-xl bg-[var(--accent)] py-3 font-medium text-[#062b26] transition-colors hover:brightness-110 disabled:opacity-50"
           >
             {importState.parsing ? "Разбираем файл..." : "Загрузить и проверить"}
           </button>
@@ -230,26 +231,20 @@ export function ImportPanel({
         <div className="space-y-4">
           <div className="grid gap-4 md:grid-cols-3">
             <StatCard label="Всего позиций" value={importState.parseResult.total} />
-            <StatCard
-              label="Найдено в базе"
-              value={importState.parseResult.matched}
-              tone="green"
-            />
-            <StatCard
-              label="Новых товаров"
-              value={importState.parseResult.new}
-              tone="blue"
-            />
+            <StatCard label="Найдено в базе" value={importState.parseResult.matched} tone="green" />
+            <StatCard label="Новых товаров" value={importState.parseResult.new} tone="blue" />
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-3">
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+          <div className="overflow-hidden rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card-soft)]">
+            <div className="flex items-center justify-between border-b border-[var(--line-soft)] bg-[var(--bg-card)] px-5 py-3">
+              <p className="text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">
                 Позиции для импорта
               </p>
-              <p className="text-xs text-slate-400">Сними галочку, чтобы пропустить позицию</p>
+              <p className="text-xs text-[var(--text-muted)]">
+                Сними галочку, чтобы пропустить позицию
+              </p>
             </div>
-            <div className="divide-y divide-slate-50">
+            <div className="divide-y divide-[var(--line-soft)]">
               {importState.items.map((item, index) => (
                 <ImportRow
                   key={`${item.row}-${item.name}`}
@@ -262,7 +257,7 @@ export function ImportPanel({
           </div>
 
           {importState.error && (
-            <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+            <div className="rounded-xl border border-[rgba(248,81,73,0.35)] bg-[rgba(248,81,73,0.1)] px-4 py-3 text-sm text-[var(--danger)]">
               {importState.error}
             </div>
           )}
@@ -270,7 +265,7 @@ export function ImportPanel({
           <div className="flex gap-3">
             <button
               onClick={importState.reset}
-              className="rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-6 py-3 text-sm font-medium text-[var(--text-muted)] transition-colors hover:bg-white/5 hover:text-[var(--text-main)]"
             >
               Назад
             </button>
@@ -279,7 +274,7 @@ export function ImportPanel({
                 void handleConfirm();
               }}
               disabled={importState.confirming || importState.activeCount === 0}
-              className="flex-1 rounded-xl bg-orange-500 py-3 font-medium text-white hover:bg-orange-600 disabled:opacity-50"
+              className="flex-1 rounded-xl bg-[var(--accent)] py-3 font-medium text-[#062b26] transition-colors hover:brightness-110 disabled:opacity-50"
             >
               {importState.confirming
                 ? "Импортируем..."

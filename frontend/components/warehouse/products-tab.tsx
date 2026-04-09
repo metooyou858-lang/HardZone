@@ -1,7 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
-import Link from "next/link";
+import { Fragment, ReactNode, useState } from "react";
 
 import { useCategories } from "@/hooks/useCategories";
 import { useProducts } from "@/hooks/useProducts";
@@ -14,10 +13,11 @@ import { InlineEditForm } from "./inline-edit-form";
 import { InlineReceiptForm } from "./inline-receipt-form";
 import { InlineWriteoffForm } from "./inline-writeoff-form";
 import { NewSupplyPanel } from "./new-supply-panel";
+import { ProductTypesManager } from "./product-types-manager";
 import { formatMoney } from "./shared";
 
 type InlineAction = { productId: string; type: "receipt" | "writeoff" | "edit" } | null;
-type ToolbarPanel = "categories" | "import" | "supply" | null;
+type ToolbarPanel = "categories" | "import" | "supply" | "types" | null;
 
 function EditIcon() {
   return (
@@ -56,12 +56,7 @@ function ReceiptIcon() {
 function WriteoffIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
-      <path
-        d="M4.167 10h11.666"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
+      <path d="M4.167 10h11.666" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }
@@ -75,24 +70,6 @@ function SearchIcon() {
         strokeWidth="1.7"
         strokeLinecap="round"
         strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function InventoryIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
-      <path
-        d="M5.833 3.333h8.334A1.667 1.667 0 0 1 15.833 5v10a1.667 1.667 0 0 1-1.666 1.667H5.833A1.667 1.667 0 0 1 4.167 15V5a1.667 1.667 0 0 1 1.666-1.667Z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-      <path
-        d="M7.5 7.5h5M7.5 10h5M7.5 12.5h3.333"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
       />
     </svg>
   );
@@ -131,63 +108,217 @@ function SupplyIcon() {
   );
 }
 
+function TypesIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
+      <path
+        d="M4.167 5.833h11.666M4.167 10h11.666M4.167 14.167h7.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function ListingMetricIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
+      <path
+        d="M3.75 6.667 10 3.75l6.25 2.917v7.5L10 17.083l-6.25-2.916v-7.5Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path d="M10 8.125v8.542M3.75 6.667 10 9.792l6.25-3.125" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function StockMetricIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
+      <path
+        d="M5 5.833 10 3.75l5 2.083-5 2.084L5 5.833Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M5 10 10 7.917 15 10M5 14.167 10 12.083l5 2.084"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function WarningMetricIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
+      <path
+        d="M10 4.167 16.25 15H3.75L10 4.167Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path d="M10 7.917v3.75" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="10" cy="13.75" r="0.9" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ValueMetricIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
+      <path
+        d="M5.833 6.667h8.334M5.833 10h8.334M5.833 13.333h5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      <path
+        d="M4.167 4.167h11.666a1.667 1.667 0 0 1 1.667 1.666v8.334a1.667 1.667 0 0 1-1.667 1.666H4.167A1.667 1.667 0 0 1 2.5 14.167V5.833a1.667 1.667 0 0 1 1.667-1.666Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
 function stockColor(product: Product) {
+  if (!product.has_stock) {
+    return "text-[var(--text-muted)]";
+  }
   if (product.stock === 0) {
-    return "text-red-500";
+    return "text-[var(--danger)]";
   }
-
-  if (product.min_stock > 0 && product.stock <= product.min_stock) {
-    return "text-amber-500";
+  if (product.has_min_stock && product.min_stock > 0 && product.stock <= product.min_stock) {
+    return "text-[var(--warning)]";
   }
-
-  if (product.stock <= 5) {
-    return "text-amber-500";
-  }
-
-  return "text-emerald-600";
+  return "text-[var(--success)]";
 }
 
 function isLowStock(product: Product) {
+  if (!product.has_stock || !product.has_min_stock) {
+    return false;
+  }
   if (product.stock <= 0) {
     return false;
   }
-
-  if (product.min_stock > 0) {
-    return product.stock <= product.min_stock;
-  }
-
-  return product.stock <= 5;
+  return product.min_stock > 0 && product.stock <= product.min_stock;
 }
 
-function metricCardClasses(tone: "default" | "warm" | "dark" | "alert") {
-  if (tone === "warm") {
-    return "border-orange-100 bg-[linear-gradient(180deg,rgba(255,247,237,0.98),rgba(255,237,213,0.94))]";
+function getTypeBadge(product: Product) {
+  if (!product.product_type_name || product.product_type_name === "Товар") {
+    return null;
   }
 
-  if (tone === "dark") {
-    return "border-slate-800 bg-[linear-gradient(180deg,rgba(15,23,42,0.98),rgba(30,41,59,0.94))] text-white";
+  if (product.product_type_name === "Услуга") {
+    return {
+      label: product.product_type_name,
+      className: "bg-[rgba(0,191,165,0.12)] text-[var(--accent)]",
+    };
   }
 
-  if (tone === "alert") {
-    return "border-amber-100 bg-[linear-gradient(180deg,rgba(255,251,235,0.98),rgba(254,243,199,0.92))]";
+  if (product.product_type_name === "Расходник") {
+    return {
+      label: product.product_type_name,
+      className: "bg-[rgba(240,246,255,0.06)] text-[var(--text-muted)]",
+    };
   }
 
-  return "border-black/5 bg-white/80";
+  return {
+    label: product.product_type_name,
+    className: "bg-[rgba(0,191,165,0.1)] text-[var(--accent)]",
+  };
+}
+
+function MetricCard({
+  label,
+  value,
+  icon,
+  tone = "default",
+}: {
+  label: string;
+  value: string | number;
+  icon: ReactNode;
+  tone?: "default" | "warm" | "dark" | "alert";
+}) {
+  const toneClass =
+    tone === "warm"
+      ? "border-[rgba(0,191,165,0.24)] bg-[linear-gradient(135deg,#0D2137,#13283C)]"
+      : tone === "dark"
+        ? "border-[rgba(0,191,165,0.32)] bg-[linear-gradient(135deg,#0C2632,#0F3343_45%,#135466)] text-[var(--text-main)]"
+        : tone === "alert"
+          ? "border-[rgba(210,153,34,0.24)] bg-[linear-gradient(135deg,#2D1B00,#3A2710)]"
+          : "border-[var(--line-soft)] bg-[linear-gradient(135deg,#1C2333,#243048)]";
+
+  const iconClass =
+    tone === "warm"
+      ? "bg-[rgba(0,191,165,0.16)] text-[var(--accent)]"
+      : tone === "dark"
+        ? "bg-[rgba(240,246,255,0.1)] text-[var(--text-main)]"
+        : tone === "alert"
+          ? "bg-[rgba(210,153,34,0.16)] text-[#F0A500]"
+          : "bg-[rgba(240,246,255,0.06)] text-[var(--text-main)]";
+
+  const valueClass =
+    tone === "warm"
+      ? "text-[var(--accent)]"
+      : tone === "alert"
+        ? "text-[#F0A500]"
+        : "text-[var(--text-main)]";
+
+  const valueSizeClass = tone === "dark" ? "text-3xl" : "text-xl";
+  const labelClass =
+    tone === "dark"
+      ? "text-[10px] text-[var(--text-muted)]"
+      : "text-[11px] text-[var(--text-muted)]";
+
+  return (
+    <article className={`relative overflow-hidden rounded-[22px] border px-4 py-3 ${toneClass}`}>
+      <div
+        className={`pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full blur-2xl ${
+          tone === "warm"
+            ? "bg-[rgba(0,191,165,0.18)]"
+            : tone === "dark"
+              ? "bg-[rgba(0,191,165,0.22)]"
+              : tone === "alert"
+                ? "bg-[rgba(240,165,0,0.18)]"
+                : "bg-white/6"
+        }`}
+      />
+      <div className="relative flex items-start justify-between gap-3">
+        <div>
+          <p className={`uppercase tracking-[0.24em] ${labelClass}`}>{label}</p>
+          <p className={`mt-2 font-semibold ${valueClass} ${valueSizeClass}`}>{value}</p>
+        </div>
+        <span className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl ${iconClass}`}>
+          {icon}
+        </span>
+      </div>
+    </article>
+  );
 }
 
 export function ProductsTab() {
   const {
     products,
     totalProducts,
-    hiddenZeroCount,
     loading,
     error,
     query,
     setQuery,
     showAll,
     setShowAll,
+    showArchived,
+    setShowArchived,
     reload,
-  } = useProducts();
+  } = useProducts({ excludeServices: true });
+
   const {
     categories,
     loading: categoriesLoading,
@@ -204,10 +335,8 @@ export function ProductsTab() {
   const filteredProducts = categoryFilter
     ? products.filter((product) => product.category_id === categoryFilter)
     : products;
-  const selectedCategory =
-    categories.find((category) => category.id === categoryFilter)?.name ?? "Все категории";
-  const inStockCount = filteredProducts.filter((product) => product.stock > 0).length;
-  const outOfStockCount = filteredProducts.filter((product) => product.stock === 0).length;
+
+  const inStockCount = filteredProducts.filter((product) => !product.has_stock || product.stock > 0).length;
   const lowStockCount = filteredProducts.filter(isLowStock).length;
   const totalStockValue = filteredProducts.reduce(
     (sum, product) => sum + Number.parseFloat(product.position_value ?? "0"),
@@ -221,9 +350,7 @@ export function ProductsTab() {
   function toggleInlineAction(productId: string, type: "receipt" | "writeoff" | "edit") {
     setPanel(null);
     setInlineAction((previous) =>
-      previous?.productId === productId && previous.type === type
-        ? null
-        : { productId, type }
+      previous?.productId === productId && previous.type === type ? null : { productId, type }
     );
   }
 
@@ -233,171 +360,139 @@ export function ProductsTab() {
   }
 
   return (
-    <div className="space-y-5">
-      <section className="overflow-hidden rounded-[30px] border border-black/5 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
-        <div className="border-b border-black/5 bg-[linear-gradient(180deg,rgba(248,250,252,0.9),rgba(241,245,249,0.68))] p-5 sm:p-6">
-          <div className="flex flex-col gap-5">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-              <div className="max-w-xl">
-                <p className="font-[family:var(--font-mono)] text-[11px] uppercase tracking-[0.28em] text-slate-400">
-                  live catalog
-                </p>
-                <h2 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">
-                  Ежедневная работа со складом
-                </h2>
-                <p className="mt-3 text-sm leading-7 text-slate-600">
-                  Поиск, фильтрация, редактирование и складские действия собраны в одном рабочем
-                  контуре, чтобы администратор не терял фокус на операциях.
-                </p>
-              </div>
+    <div className="space-y-4">
+      <section className="rounded-[24px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-4 sm:p-5">
+        <div className="space-y-3.5">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+            <label className="flex min-w-0 flex-1 items-center gap-3 rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-2.5">
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
+                <SearchIcon />
+              </span>
+              <input
+                type="text"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Поиск по названию, SKU или штрихкоду"
+                className="w-full border-0 bg-transparent p-0 text-sm text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
+              />
+            </label>
 
-              <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[560px]">
-                <button
-                  onClick={() => openPanel("import")}
-                  className="inline-flex items-center justify-center gap-2 rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
-                >
-                  <ImportIcon />
-                  Импорт
-                </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => openPanel("types")}
+                className="inline-flex items-center justify-center gap-2 rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-2.5 text-sm font-medium text-[var(--text-muted)] transition-colors hover:bg-white/5 hover:text-[var(--text-main)]"
+              >
+                <TypesIcon />
+                Типы
+              </button>
 
-                <Link
-                  href="/warehouse/inventory"
-                  className="inline-flex items-center justify-center gap-2 rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
-                >
-                  <InventoryIcon />
-                  Инвентаризация
-                </Link>
+              <button
+                onClick={() => openPanel("import")}
+                className="inline-flex items-center justify-center gap-2 rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-2.5 text-sm font-medium text-[var(--text-muted)] transition-colors hover:bg-white/5 hover:text-[var(--text-main)]"
+              >
+                <ImportIcon />
+                Импорт
+              </button>
 
-                <button
-                  onClick={() => openPanel("supply")}
-                  className="inline-flex items-center justify-center gap-2 rounded-[20px] bg-[linear-gradient(135deg,#f97316,#fb923c)] px-4 py-3 text-sm font-medium text-white shadow-[0_14px_34px_rgba(249,115,22,0.28)] transition-transform hover:-translate-y-0.5"
-                >
-                  <SupplyIcon />
-                  Новая поставка
-                </button>
-              </div>
+              <button
+                onClick={() => openPanel("supply")}
+                className="inline-flex items-center justify-center gap-2 rounded-[16px] bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-[#062b26] transition-colors hover:brightness-110"
+              >
+                <SupplyIcon />
+                Новая поставка
+              </button>
             </div>
+          </div>
 
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,0.8fr))]">
-              <label className="flex items-center gap-3 rounded-[22px] border border-white/70 bg-white/85 px-4 py-3 shadow-sm">
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900 text-white">
-                  <SearchIcon />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">
-                    Поиск товара
-                  </p>
-                  <input
-                    type="text"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Название, SKU или штрихкод"
-                    className="mt-1 w-full border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400"
-                  />
-                </div>
-              </label>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <MetricCard label="В каталоге" value={filteredProducts.length} icon={<ListingMetricIcon />} />
+            <MetricCard label="В наличии" value={inStockCount} tone="warm" icon={<StockMetricIcon />} />
+            <MetricCard label="Низкий остаток" value={lowStockCount} tone="alert" icon={<WarningMetricIcon />} />
+            <MetricCard
+              label="Стоимость склада"
+              value={formatMoney(totalStockValue)}
+              tone="dark"
+              icon={<ValueMetricIcon />}
+            />
+          </div>
 
-              <article className={`rounded-[22px] border p-4 shadow-sm ${metricCardClasses("default")}`}>
-                <p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">В выдаче</p>
-                <p className="mt-3 text-2xl font-semibold text-slate-950">{filteredProducts.length}</p>
-                <p className="mt-1 text-xs text-slate-500">{selectedCategory}</p>
-              </article>
+          <div className="flex flex-col gap-3 border-t border-[var(--line-soft)] pt-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              {categories.length > 0 && (
+                <>
+                  <button
+                    onClick={() => setCategoryFilter("")}
+                    className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                      categoryFilter === ""
+                        ? "bg-[var(--accent-soft)] text-[var(--text-main)]"
+                        : "border border-[var(--line-soft)] bg-[var(--bg-card-soft)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text-main)]"
+                    }`}
+                  >
+                    Все
+                  </button>
 
-              <article className={`rounded-[22px] border p-4 shadow-sm ${metricCardClasses("warm")}`}>
-                <p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">В наличии</p>
-                <p className="mt-3 text-2xl font-semibold text-slate-950">{inStockCount}</p>
-                <p className="mt-1 text-xs text-slate-500">Готово к продаже и приёмке</p>
-              </article>
-
-              <article className={`rounded-[22px] border p-4 shadow-sm ${metricCardClasses("alert")}`}>
-                <p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Низкий остаток</p>
-                <p className="mt-3 text-2xl font-semibold text-slate-950">{lowStockCount}</p>
-                <p className="mt-1 text-xs text-slate-500">Требуют внимания</p>
-              </article>
-
-              <article className={`rounded-[22px] border p-4 shadow-sm ${metricCardClasses("dark")}`}>
-                <p className="text-[11px] uppercase tracking-[0.24em] text-white/45">Стоимость склада</p>
-                <p className="mt-3 text-2xl font-semibold">{formatMoney(totalStockValue)}</p>
-                <p className="mt-1 text-xs text-white/55">Без учёта услуг и списаний</p>
-              </article>
-            </div>
-
-            <div className="flex flex-col gap-3 border-t border-black/5 pt-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] uppercase tracking-[0.24em] text-slate-400">
-                  Категории
-                </span>
-
-                {categories.length > 0 && (
-                  <>
+                  {categories.map((category) => (
                     <button
-                      onClick={() => setCategoryFilter("")}
+                      key={category.id}
+                      onClick={() => setCategoryFilter((previous) => (previous === category.id ? "" : category.id))}
                       className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
-                        categoryFilter === ""
-                          ? "bg-slate-900 text-white shadow-sm"
-                          : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                        categoryFilter === category.id
+                          ? "bg-[var(--accent-soft)] text-[var(--text-main)]"
+                          : "border border-[var(--line-soft)] bg-[var(--bg-card-soft)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text-main)]"
                       }`}
                     >
-                      Все
+                      {category.name}
                     </button>
+                  ))}
+                </>
+              )}
 
-                    {categories.map((category) => (
-                      <button
-                        key={category.id}
-                        onClick={() =>
-                          setCategoryFilter((previous) =>
-                            previous === category.id ? "" : category.id
-                          )
-                        }
-                        className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
-                          categoryFilter === category.id
-                            ? "bg-slate-900 text-white shadow-sm"
-                            : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
-                        }`}
-                      >
-                        {category.name}
-                        <span className="ml-1.5 opacity-60">{category.product_count}</span>
-                      </button>
-                    ))}
-                  </>
-                )}
+              <button
+                type="button"
+                aria-label="Управление категориями"
+                onClick={() => openPanel("categories")}
+                className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-sm font-medium transition-colors ${
+                  panel === "categories"
+                    ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--text-main)]"
+                    : "border-[var(--line-soft)] bg-[var(--bg-card-soft)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text-main)]"
+                }`}
+              >
+                +
+              </button>
+            </div>
 
-                <button
-                  type="button"
-                  aria-label="Управление категориями"
-                  onClick={() => openPanel("categories")}
-                  className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-sm font-medium transition-colors ${
-                    panel === "categories"
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-900"
-                  }`}
-                >
-                  +
-                </button>
-              </div>
-
-              {!query.trim() && (
-                <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-                  <p className="text-slate-500">
-                    В каталоге видно{" "}
-                    <span className="font-semibold text-slate-900">{filteredProducts.length}</span>
-                    {hiddenZeroCount > 0 && !showAll && (
-                      <span className="text-slate-400"> из {totalProducts} товаров</span>
-                    )}
-                    {outOfStockCount > 0 && (
-                      <span className="text-slate-400"> · нулевых остатков: {outOfStockCount}</span>
-                    )}
-                  </p>
-
+            {!query.trim() && (
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm text-[var(--text-muted)]">
+                  Показано: <span className="font-medium text-[var(--text-main)]">{filteredProducts.length}</span>
+                  {!showAll && !showArchived && totalProducts > products.length && (
+                    <span className="text-[var(--text-muted)]"> (в наличии из {totalProducts})</span>
+                  )}
+                </p>
+                <div className="flex items-center gap-3">
                   <button
                     onClick={() => setShowAll((previous) => !previous)}
-                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
+                    className="text-xs text-[var(--text-muted)] underline underline-offset-2 hover:text-[var(--text-main)]"
                   >
-                    {showAll ? "Скрыть нулевые остатки" : `Показать все товары (${totalProducts})`}
+                    {showAll ? "Скрыть нулевые" : `Показать все (${totalProducts})`}
+                  </button>
+                  <span className="text-[var(--line-soft)]">·</span>
+                  <button
+                    onClick={() => {
+                      setShowArchived((previous) => !previous);
+                      setQuery("");
+                    }}
+                    className={`text-xs underline underline-offset-2 ${
+                      showArchived
+                        ? "text-[var(--warning)] hover:brightness-110"
+                        : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
+                    }`}
+                  >
+                    {showArchived ? "Скрыть архив" : "Архив"}
                   </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -412,6 +507,8 @@ export function ProductsTab() {
           onClose={() => setPanel(null)}
         />
       )}
+
+      {panel === "types" && <ProductTypesManager onClose={() => setPanel(null)} />}
 
       {panel === "supply" && (
         <NewSupplyPanel
@@ -434,208 +531,204 @@ export function ProductsTab() {
       )}
 
       {error && (
-        <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600 shadow-sm">
+        <div className="rounded-2xl border border-[rgba(248,81,73,0.35)] bg-[rgba(248,81,73,0.1)] px-4 py-3 text-sm text-[var(--danger)]">
           {error}
         </div>
       )}
 
       {loading ? (
-        <div className="rounded-[28px] border border-black/5 bg-white px-6 py-16 text-center text-sm text-slate-400 shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
+        <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-6 py-16 text-center text-sm text-[var(--text-muted)]">
           Загрузка каталога...
         </div>
       ) : (
-        <section className="overflow-hidden rounded-[30px] border border-black/5 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
-          <div className="flex flex-col gap-3 border-b border-black/5 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] px-5 py-4 sm:px-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="font-[family:var(--font-mono)] text-[11px] uppercase tracking-[0.26em] text-slate-400">
-                  product list
-                </p>
-                <h3 className="mt-2 text-lg font-semibold text-slate-950">
-                  {categoryFilter ? `Категория: ${selectedCategory}` : "Текущий каталог"}
-                </h3>
-              </div>
-
-              <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
-                  В наличии: {inStockCount}
-                </span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
-                  Низкий остаток: {lowStockCount}
-                </span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
-                  Стоимость: {formatMoney(totalStockValue)}
-                </span>
-              </div>
-            </div>
-
-            <div className="hidden grid-cols-[minmax(0,1.7fr)_110px_110px_110px_110px_auto] gap-4 text-[11px] uppercase tracking-[0.22em] text-slate-400 lg:grid">
-              <span>Товар</span>
-              <span className="text-right">Закупка</span>
-              <span className="text-right">Цена</span>
-              <span className="text-right">Маржа</span>
-              <span className="text-right">Остаток</span>
-              <span className="text-right">Действия</span>
-            </div>
+        <section className="overflow-hidden rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)]">
+          <div className="hidden grid-cols-[minmax(0,1.7fr)_110px_110px_110px_110px_auto] gap-4 border-b border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-6 py-4 text-[13px] font-medium uppercase tracking-[0.14em] text-slate-300 lg:grid">
+            <span>Товар</span>
+            <span className="text-right">Закупка</span>
+            <span className="text-right">Цена</span>
+            <span className="text-right">Маржа</span>
+            <span className="text-right">Остаток</span>
+            <span className="text-right">Действия</span>
           </div>
 
           {filteredProducts.length === 0 && (
-            <div className="px-6 py-16 text-center text-sm text-slate-400">Товары не найдены</div>
+            <div className="px-6 py-16 text-center text-sm text-[var(--text-muted)]">Товары не найдены</div>
           )}
 
-          {filteredProducts.map((product, index) => (
-            <Fragment key={product.id}>
-              <div
-                className={`relative flex items-center gap-4 px-5 py-5 transition-colors hover:bg-slate-50/70 sm:px-6 ${
-                  index < filteredProducts.length - 1 || inlineAction?.productId === product.id
-                    ? "border-b border-slate-50"
-                    : ""
-                } ${
-                  inlineAction?.productId === product.id
-                    ? "bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.96))]"
-                    : ""
-                }`}
-              >
+          {filteredProducts.map((product, index) => {
+            const displaySku = product.sku?.startsWith("IMPORT-") ? null : product.sku;
+            const typeBadge = getTypeBadge(product);
+
+            return (
+              <Fragment key={product.id}>
                 <div
-                  className={`absolute bottom-4 left-0 top-4 hidden w-1 rounded-full lg:block ${
-                    product.stock === 0
-                      ? "bg-red-200"
-                      : isLowStock(product)
-                        ? "bg-amber-200"
-                        : "bg-emerald-200"
-                  }`}
-                />
+                  className={`relative mx-3 my-2.5 flex items-center gap-5 rounded-[24px] border border-[#1E2733] px-6 py-5 transition-colors ${
+                    inlineAction?.productId === product.id
+                      ? "bg-[var(--bg-card-soft)]"
+                      : index % 2 === 0
+                        ? "bg-[rgba(240,246,255,0.03)] hover:bg-[#1C2333]"
+                        : "bg-[rgba(240,246,255,0.015)] hover:bg-[#1C2333]"
+                  } ${product.is_archived ? "bg-[rgba(240,246,255,0.02)] opacity-65 saturate-50" : ""}`}
+                >
+                  <div
+                    className={`absolute inset-y-0 left-0 w-[3px] rounded-l-[24px] ${
+                      !product.has_stock
+                        ? "bg-[rgba(0,191,165,0.8)]"
+                        : product.stock === 0
+                          ? "bg-[rgba(248,81,73,0.9)]"
+                          : isLowStock(product)
+                            ? "bg-[rgba(210,153,34,0.9)]"
+                            : "bg-[rgba(63,185,80,0.9)]"
+                    }`}
+                  />
 
-                <div className="min-w-0 flex-1 lg:pl-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="truncate text-[15px] font-semibold text-slate-950">{product.name}</p>
-                    {isLowStock(product) && (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                        мало
-                      </span>
+                  <div className="min-w-0 flex-1 lg:pl-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-[15px] font-semibold text-[var(--text-main)]">{product.name}</p>
+                      {typeBadge && (
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${typeBadge.className}`}>
+                          {typeBadge.label}
+                        </span>
+                      )}
+                      {product.is_archived && (
+                        <span className="rounded-full bg-[rgba(210,153,34,0.12)] px-2 py-0.5 text-[11px] font-medium text-[var(--warning)]">
+                          Архив
+                        </span>
+                      )}
+                      {isLowStock(product) && (
+                        <span className="rounded-full bg-[rgba(210,153,34,0.12)] px-2 py-0.5 text-[11px] font-medium text-[var(--warning)]">
+                          мало
+                        </span>
+                      )}
+                      {product.has_marking && product.is_marked && (
+                        <span className="rounded-full bg-[rgba(240,246,255,0.06)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-main)]">
+                          ЧЗ
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap gap-2.5 text-xs text-[var(--text-muted)]">
+                      {product.category_name && (
+                        <span className="rounded-full bg-[rgba(240,246,255,0.06)] px-2.5 py-1 text-[var(--text-main)]">
+                          {product.category_name}
+                        </span>
+                      )}
+                      {product.has_sku && displaySku && (
+                        <span className="rounded-full bg-[rgba(240,246,255,0.04)] px-2.5 py-1 font-mono text-[var(--text-muted)]">
+                          {displaySku}
+                        </span>
+                      )}
+                      {product.has_barcode && product.barcode && (
+                        <span className="rounded-full bg-[rgba(240,246,255,0.04)] px-2.5 py-1 font-mono text-[var(--text-muted)]">
+                          {product.barcode}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="hidden shrink-0 text-right lg:block">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-muted)]">Закупка</p>
+                    <p className="mt-2 text-sm font-semibold text-[var(--text-main)]">
+                      {product.has_cost_price ? formatMoney(product.cost_price) : "—"}
+                    </p>
+                  </div>
+
+                  <div className="hidden shrink-0 text-right lg:block">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-muted)]">Цена</p>
+                    <p className="mt-2 text-sm font-semibold text-[var(--text-main)]">
+                      {product.has_sale_price ? formatMoney(product.sale_price) : "—"}
+                    </p>
+                  </div>
+
+                  <div className="hidden shrink-0 text-right lg:block">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-muted)]">Маржа</p>
+                    <p className="mt-2 text-sm font-semibold text-[var(--success)]">
+                      {product.has_cost_price && product.has_sale_price ? formatMoney(product.margin) : "—"}
+                    </p>
+                  </div>
+
+                  <div className="shrink-0 text-right">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                      {product.has_stock ? "Остаток" : "Тип"}
+                    </p>
+                    <p className={`mt-2 text-base font-semibold ${stockColor(product)}`}>
+                      {product.has_stock ? `${product.stock} шт.` : product.product_type_name ?? "Без остатка"}
+                    </p>
+                    {product.position_value && Number.parseFloat(product.position_value) > 0 && (
+                      <p className="mt-1 text-xs text-[var(--text-muted)]">{formatMoney(product.position_value)}</p>
                     )}
-                    {product.is_marked && (
-                      <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-medium text-purple-600">
-                        ЧЗ
-                      </span>
+                    {product.has_min_stock && product.min_stock > 0 && (
+                      <p className="mt-1 text-[11px] text-[var(--text-muted)]">мин. {product.min_stock}</p>
                     )}
                   </div>
 
-                  <div className="mt-2 flex flex-wrap gap-2.5 text-xs text-slate-500">
-                    {product.category_name && (
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">
-                        {product.category_name}
-                      </span>
+                  <div className="shrink-0 flex gap-2 rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-1.5">
+                    <ActionIconButton
+                      label="Изменить"
+                      tone="edit"
+                      active={inlineAction?.productId === product.id && inlineAction.type === "edit"}
+                      onClick={() => toggleInlineAction(product.id, "edit")}
+                    >
+                      <EditIcon />
+                    </ActionIconButton>
+
+                    {product.has_stock && (
+                      <ActionIconButton
+                        label="Принять"
+                        tone="receipt"
+                        active={inlineAction?.productId === product.id && inlineAction.type === "receipt"}
+                        onClick={() => toggleInlineAction(product.id, "receipt")}
+                      >
+                        <ReceiptIcon />
+                      </ActionIconButton>
                     )}
-                    {product.sku && (
-                      <span className="rounded-full bg-slate-50 px-2.5 py-1 font-mono text-slate-500">
-                        {product.sku}
-                      </span>
-                    )}
-                    {product.barcode && (
-                      <span className="rounded-full bg-slate-50 px-2.5 py-1 font-mono text-slate-500">
-                        {product.barcode}
-                      </span>
+
+                    {product.has_stock && (
+                      <ActionIconButton
+                        label="Списать"
+                        tone="writeoff"
+                        active={inlineAction?.productId === product.id && inlineAction.type === "writeoff"}
+                        disabled={product.stock <= 0}
+                        onClick={() => toggleInlineAction(product.id, "writeoff")}
+                      >
+                        <WriteoffIcon />
+                      </ActionIconButton>
                     )}
                   </div>
                 </div>
 
-                <div className="hidden shrink-0 text-right lg:block">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Закупка</p>
-                  <p className="mt-2 text-sm font-semibold text-slate-900">
-                    {formatMoney(product.cost_price)}
-                  </p>
-                </div>
+                {inlineAction?.productId === product.id && inlineAction.type === "receipt" && (
+                  <InlineReceiptForm
+                    product={product}
+                    onClose={() => setInlineAction(null)}
+                    onDone={() => {
+                      void reload();
+                    }}
+                  />
+                )}
 
-                <div className="hidden shrink-0 text-right lg:block">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Цена</p>
-                  <p className="mt-2 text-sm font-semibold text-slate-900">
-                    {formatMoney(product.sale_price)}
-                  </p>
-                </div>
+                {inlineAction?.productId === product.id && inlineAction.type === "writeoff" && (
+                  <InlineWriteoffForm
+                    product={product}
+                    onClose={() => setInlineAction(null)}
+                    onDone={() => {
+                      void reload();
+                    }}
+                  />
+                )}
 
-                <div className="hidden shrink-0 text-right lg:block">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Маржа</p>
-                  <p className="mt-2 text-sm font-semibold text-emerald-600">
-                    {formatMoney(product.margin)}
-                  </p>
-                </div>
-
-                <div className="shrink-0 text-right">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Остаток</p>
-                  <p className={`mt-2 text-base font-semibold ${stockColor(product)}`}>
-                    {product.stock} шт.
-                  </p>
-                  {product.position_value && Number.parseFloat(product.position_value) > 0 && (
-                    <p className="mt-1 text-xs text-slate-400">{formatMoney(product.position_value)}</p>
-                  )}
-                  {product.min_stock > 0 && (
-                    <p className="mt-1 text-[11px] text-slate-300">мин. {product.min_stock}</p>
-                  )}
-                </div>
-
-                <div className="shrink-0 flex gap-2 rounded-[18px] border border-slate-200/80 bg-slate-50/80 p-1.5">
-                  <ActionIconButton
-                    label="Изменить"
-                    tone="edit"
-                    active={inlineAction?.productId === product.id && inlineAction.type === "edit"}
-                    onClick={() => toggleInlineAction(product.id, "edit")}
-                  >
-                    <EditIcon />
-                  </ActionIconButton>
-                  <ActionIconButton
-                    label="Принять"
-                    tone="receipt"
-                    active={inlineAction?.productId === product.id && inlineAction.type === "receipt"}
-                    onClick={() => toggleInlineAction(product.id, "receipt")}
-                  >
-                    <ReceiptIcon />
-                  </ActionIconButton>
-                  <ActionIconButton
-                    label="Списать"
-                    tone="writeoff"
-                    active={inlineAction?.productId === product.id && inlineAction.type === "writeoff"}
-                    disabled={product.stock <= 0}
-                    onClick={() => toggleInlineAction(product.id, "writeoff")}
-                  >
-                    <WriteoffIcon />
-                  </ActionIconButton>
-                </div>
-              </div>
-
-              {inlineAction?.productId === product.id && inlineAction.type === "receipt" && (
-                <InlineReceiptForm
-                  product={product}
-                  onClose={() => setInlineAction(null)}
-                  onDone={() => {
-                    void reload();
-                  }}
-                />
-              )}
-
-              {inlineAction?.productId === product.id && inlineAction.type === "writeoff" && (
-                <InlineWriteoffForm
-                  product={product}
-                  onClose={() => setInlineAction(null)}
-                  onDone={() => {
-                    void reload();
-                  }}
-                />
-              )}
-
-              {inlineAction?.productId === product.id && inlineAction.type === "edit" && (
-                <InlineEditForm
-                  product={product}
-                  categories={categories}
-                  categoriesLoading={categoriesLoading}
-                  onSuccess={() => {
-                    void refreshWarehouse();
-                  }}
-                  onClose={() => setInlineAction(null)}
-                />
-              )}
-            </Fragment>
-          ))}
+                {inlineAction?.productId === product.id && inlineAction.type === "edit" && (
+                  <InlineEditForm
+                    product={product}
+                    onSuccess={() => {
+                      void refreshWarehouse();
+                    }}
+                    onClose={() => setInlineAction(null)}
+                  />
+                )}
+              </Fragment>
+            );
+          })}
         </section>
       )}
     </div>

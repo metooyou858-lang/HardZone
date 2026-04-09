@@ -36,12 +36,15 @@ export function useReceipt(onSuccess?: (updatedStock: number) => void) {
   async function createAndReceive(
     productData: {
       name: string;
+      product_type_id?: number | null;
       sku?: string;
       barcode?: string;
       datamatrix_code?: string;
       cost_price?: number;
       sale_price?: number;
       is_marked?: boolean;
+      category_id?: number | null;
+      min_stock?: number;
     },
     receiptData: {
       quantity: number;
@@ -55,14 +58,21 @@ export function useReceipt(onSuccess?: (updatedStock: number) => void) {
 
     try {
       const product = await createProduct(productData);
-      const response = await createReceipt({
-        ...receiptData,
-        product_id: product.id,
-      });
 
-      setResult(response.receipt);
-      onSuccess?.(response.product.stock);
-      return response;
+      if (receiptData.quantity > 0) {
+        const response = await createReceipt({
+          ...receiptData,
+          product_id: product.id,
+        });
+
+        setResult(response.receipt);
+        onSuccess?.(response.product.stock);
+        return response;
+      }
+
+      setResult(null);
+      onSuccess?.(product.stock);
+      return { receipt: null, product };
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "Ошибка");
       return null;

@@ -1,139 +1,166 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   Inventory,
+  InventoryDetail,
+  InventoryItem,
+  confirmInventory,
+  createInventory,
+  deleteInventory,
   fetchInventories,
   fetchInventory,
-  createInventory,
   updateInventoryItem,
-  confirmInventory,
-  deleteInventory,
 } from "@/lib/api/inventories";
 
 export function useInventory() {
   const [inventories, setInventories] = useState<Inventory[]>([]);
-  const [current, setCurrent] = useState<Inventory | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [active, setActive] = useState<InventoryDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadList = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      setInventories(await fetchInventories());
+      const list = await fetchInventories();
+      setInventories(list);
+
+      const draft = list.find((inventory) => inventory.status === "draft");
+      if (draft) {
+        const detail = await fetchInventory(draft.id);
+        setActive(detail);
+      } else {
+        setActive(null);
+      }
+
+      return list;
     } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "Ошибка загрузки инвентаризаций");
+      setError(error instanceof Error ? error.message : "Ошибка загрузки");
+      return [];
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const loadOne = useCallback(async (id: string) => {
-    setLoading(true);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function start(comment?: string, onlyInStock = true) {
+    setSaving(true);
     setError(null);
 
     try {
-      const inventory = await fetchInventory(id);
-      setCurrent(inventory);
-      return inventory;
+      const inventory = await createInventory(comment, onlyInStock);
+      const detail = await fetchInventory(inventory.id);
+      setActive(detail);
+      setInventories((previous) => [inventory, ...previous.filter((item) => item.id !== inventory.id)]);
+      return detail;
     } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "Ошибка загрузки инвентаризации");
+      setError(error instanceof Error ? error.message : "Ошибка создания");
       return null;
     } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  async function create(comment?: string) {
-    setSubmitting(true);
-    setError(null);
-
-    try {
-      const inventory = await createInventory(comment);
-      const full = await fetchInventory(inventory.id);
-      setCurrent(full);
-      await loadList();
-      return full;
-    } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "Ошибка создания инвентаризации");
-      return null;
-    } finally {
-      setSubmitting(false);
+      setSaving(false);
     }
   }
 
-  async function updateItem(inventoryId: string, itemId: string, actualQty: number) {
-    try {
-      const updated = await updateInventoryItem(inventoryId, itemId, actualQty);
+  async function updateItem(item: InventoryItem, actualQty: number) {
+    if (!active) {
+      return;
+    }
 
-      setCurrent((previous) => {
+    try {
+      const updated = await updateInventoryItem(active.id, item.id, actualQty);
+
+      setActive((previous) => {
         if (!previous) {
           return previous;
         }
 
+        const items = previous.items.map((currentItem) =>
+          currentItem.id === item.id ? { ...currentItem, ...updated } : currentItem
+        );
+
+        const filledItems = items.filter((currentItem) => currentItem.actual_qty !== null).length;
+        const diffItems = items.filter(
+          (currentItem) => currentItem.actual_qty !== null && currentItem.difference !== 0
+        ).length;
+
         return {
           ...previous,
-          items: previous.items?.map((item) => (item.id === itemId ? updated : item)),
+          items,
+          filled_items: filledItems,
+          items_with_diff: diffItems,
         };
       });
     } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "Ошибка сохранения количества");
+      setError(error instanceof Error ? error.message : "Ошибка сохранения");
     }
   }
 
-  async function confirm(id: string) {
-    setSubmitting(true);
+  async function confirm() {
+    if (!active) {
+      return null;
+    }
+
+    setConfirming(true);
     setError(null);
 
     try {
-      const result = await confirmInventory(id);
-      const full = await fetchInventory(id);
-      setCurrent(full);
-      await loadList();
+      const result = await confirmInventory(active.id);
+      await load();
       return result;
     } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "Ошибка подтверждения инвентаризации");
+      setError(error instanceof Error ? error.message : "Ошибка подтверждения");
       return null;
     } finally {
-      setSubmitting(false);
+      setConfirming(false);
     }
   }
 
-  async function remove(id: string) {
-    setSubmitting(true);
+  async function remove() {
+    if (!active) {
+      return;
+    }
+
+    setSaving(true);
     setError(null);
 
     try {
-      await deleteInventory(id);
-      setCurrent(null);
-      await loadList();
+      await deleteInventory(active.id);
+      await load();
     } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "Ошибка удаления инвентаризации");
+      setError(error instanceof Error ? error.message : "Ошибка удаления");
     } finally {
-      setSubmitting(false);
+      setSaving(false);
     }
   }
 
-  function clearCurrent() {
-    setCurrent(null);
-  }
+  const filledCount = active?.items.filter((item) => item.actual_qty !== null).length ?? 0;
+  const totalCount = active?.items.length ?? 0;
+  const diffCount =
+    active?.items.filter((item) => item.actual_qty !== null && item.difference !== 0).length ?? 0;
 
   return {
     inventories,
-    current,
+    active,
     loading,
-    submitting,
+    saving,
+    confirming,
     error,
-    loadList,
-    loadOne,
-    create,
+    filledCount,
+    totalCount,
+    diffCount,
+    start,
     updateItem,
     confirm,
     remove,
-    clearCurrent,
+    reload: load,
+    setActive,
   };
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { fetchOrder, fetchOrders } from "@/lib/api/orders";
 import { fetchReceipts } from "@/lib/api/receipts";
 import { fetchSales } from "@/lib/api/sales";
 import { fetchWriteoffs } from "@/lib/api/writeoffs";
@@ -51,11 +52,43 @@ export function useWarehouseHistory() {
     setError(null);
 
     try {
-      const [receipts, writeoffs, sales] = await Promise.all([
+      const [receipts, writeoffs, sales, orders] = await Promise.all([
         fetchReceipts(),
         fetchWriteoffs(),
         fetchSales(),
+        fetchOrders(undefined, 50),
       ]);
+
+      const confirmedOrders = orders.filter((order) => order.status === "confirmed");
+      const confirmedOrderDetails = await Promise.allSettled(
+        confirmedOrders.map((order) => fetchOrder(order.id))
+      );
+
+      const orderSales: WarehouseOperation[] = confirmedOrderDetails.flatMap((result) => {
+        if (result.status !== "fulfilled") {
+          return [];
+        }
+
+        const detail = result.value;
+        const paymentLabel = detail.payment_type
+          ? (PAYMENT_LABELS[detail.payment_type] ?? detail.payment_type)
+          : "—";
+
+        return detail.items
+          .filter((item) => item.kind === "product")
+          .map((item) => ({
+            id: `o-${detail.id}-${item.id}`,
+            type: "sale" as const,
+            product_name: item.name ?? "",
+            product_sku: item.sku ?? "",
+            quantity: item.quantity,
+            amount: item.total
+              ? `${Number.parseFloat(item.total).toLocaleString("ru")} ₽`
+              : null,
+            detail: `${paymentLabel} · #${detail.id.slice(0, 8)}`,
+            created_at: detail.confirmed_at ?? detail.created_at,
+          }));
+      });
 
       const merged: WarehouseOperation[] = [
         ...receipts.map((receipt) => ({
@@ -80,18 +113,21 @@ export function useWarehouseHistory() {
           detail: REASON_LABELS[writeoff.reason_type] ?? writeoff.reason_type,
           created_at: writeoff.created_at,
         })),
-        ...sales.map((sale) => ({
-          id: `s-${sale.id}`,
-          type: "sale" as const,
-          product_name: sale.product_name ?? "",
-          product_sku: sale.product_sku ?? "",
-          quantity: sale.quantity,
-          amount: sale.sale_price_at_sale
-            ? `${(Number.parseFloat(sale.sale_price_at_sale) * sale.quantity).toLocaleString("ru")} ₽`
-            : null,
-          detail: `${PAYMENT_LABELS[sale.payment_type] ?? sale.payment_type} · ${STATUS_LABELS[sale.status] ?? sale.status}`,
-          created_at: sale.created_at,
-        })),
+        ...sales
+          .filter((sale) => sale.status === "confirmed")
+          .map((sale) => ({
+            id: `s-${sale.id}`,
+            type: "sale" as const,
+            product_name: sale.product_name ?? "",
+            product_sku: sale.product_sku ?? "",
+            quantity: sale.quantity,
+            amount: sale.sale_price_at_sale
+              ? `${(Number.parseFloat(sale.sale_price_at_sale) * sale.quantity).toLocaleString("ru")} ₽`
+              : null,
+            detail: `${PAYMENT_LABELS[sale.payment_type] ?? sale.payment_type} · ${STATUS_LABELS[sale.status] ?? sale.status}`,
+            created_at: sale.created_at,
+          })),
+        ...orderSales,
       ].sort((left, right) => (
         new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
       ));

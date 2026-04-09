@@ -1,7 +1,10 @@
 import { apiFetch } from "./client";
 
+export type InventoryStatus = "draft" | "confirmed";
+
 type RawInventoryItem = {
   id: string;
+  inventory_id?: string;
   product_id: string;
   product_name: string;
   product_sku: string | null;
@@ -14,7 +17,7 @@ type RawInventoryItem = {
 
 type RawInventory = {
   id: string;
-  status: "draft" | "confirmed";
+  status: InventoryStatus;
   comment: string | null;
   created_at: string;
   confirmed_at: string | null;
@@ -26,6 +29,7 @@ type RawInventory = {
 
 export type InventoryItem = {
   id: string;
+  inventory_id: string;
   product_id: string;
   product_name: string;
   product_sku: string | null;
@@ -38,14 +42,17 @@ export type InventoryItem = {
 
 export type Inventory = {
   id: string;
-  status: "draft" | "confirmed";
+  status: InventoryStatus;
   comment: string | null;
   created_at: string;
   confirmed_at: string | null;
   total_items: number;
   filled_items: number;
   items_with_diff: number;
-  items?: InventoryItem[];
+};
+
+export type InventoryDetail = Inventory & {
+  items: InventoryItem[];
 };
 
 function toNumber(value: number | string | null | undefined) {
@@ -56,9 +63,10 @@ function toNumber(value: number | string | null | undefined) {
   return Number(value);
 }
 
-function normalizeItem(item: RawInventoryItem): InventoryItem {
+function normalizeInventoryItem(item: RawInventoryItem, inventoryId: string): InventoryItem {
   return {
     id: item.id,
+    inventory_id: item.inventory_id ?? inventoryId,
     product_id: item.product_id,
     product_name: item.product_name,
     product_sku: item.product_sku,
@@ -80,7 +88,6 @@ function normalizeInventory(inventory: RawInventory): Inventory {
     total_items: Number(inventory.total_items),
     filled_items: Number(inventory.filled_items),
     items_with_diff: Number(inventory.items_with_diff),
-    items: inventory.items?.map(normalizeItem),
   };
 }
 
@@ -89,15 +96,20 @@ export async function fetchInventories(): Promise<Inventory[]> {
   return inventories.map(normalizeInventory);
 }
 
-export async function fetchInventory(id: string): Promise<Inventory> {
-  return normalizeInventory(await apiFetch<RawInventory>(`/inventories/${id}`));
+export async function fetchInventory(id: string): Promise<InventoryDetail> {
+  const inventory = await apiFetch<RawInventory>(`/inventories/${id}`);
+  const normalized = normalizeInventory(inventory);
+  return {
+    ...normalized,
+    items: (inventory.items ?? []).map((item) => normalizeInventoryItem(item, inventory.id)),
+  };
 }
 
-export async function createInventory(comment?: string): Promise<Inventory> {
+export async function createInventory(comment?: string, only_in_stock = true): Promise<Inventory> {
   return normalizeInventory(
     await apiFetch<RawInventory>("/inventories", {
       method: "POST",
-      body: JSON.stringify({ comment: comment || null }),
+      body: JSON.stringify({ comment: comment || null, only_in_stock }),
     })
   );
 }
@@ -107,27 +119,25 @@ export async function updateInventoryItem(
   itemId: string,
   actual_qty: number
 ): Promise<InventoryItem> {
-  return normalizeItem(
-    await apiFetch<RawInventoryItem>(`/inventories/${inventoryId}/items/${itemId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ actual_qty }),
-    })
-  );
+  const item = await apiFetch<RawInventoryItem>(`/inventories/${inventoryId}/items/${itemId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ actual_qty }),
+  });
+
+  return normalizeInventoryItem(item, inventoryId);
 }
 
 export async function confirmInventory(
   id: string
-): Promise<{ inventory: Inventory; updated_products: number; items_with_diff: number }> {
+): Promise<{ inventory: Inventory; updated_products: number }> {
   const result = await apiFetch<{
     inventory: RawInventory;
     updated_products: number | string;
-    items_with_diff: number | string;
   }>(`/inventories/${id}/confirm`, { method: "POST" });
 
   return {
     inventory: normalizeInventory(result.inventory),
     updated_products: Number(result.updated_products),
-    items_with_diff: Number(result.items_with_diff),
   };
 }
 

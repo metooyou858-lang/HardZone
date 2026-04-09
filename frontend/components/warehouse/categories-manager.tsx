@@ -78,17 +78,17 @@ export function CategoriesManager({
   }
 
   return (
-    <div className="max-w-xl space-y-5 rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
-      <div className="flex items-center justify-between">
+    <div className="max-w-xl space-y-5 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-6">
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="font-medium text-slate-900">Категории товаров</p>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="font-medium text-[var(--text-main)]">Категории товаров</p>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             Создавайте, переименовывайте и удаляйте категории прямо из склада.
           </p>
         </div>
         <button
           onClick={onClose}
-          className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-500 hover:bg-slate-50"
+          className="rounded-full border border-[var(--line-soft)] px-3 py-1 text-sm text-[var(--text-muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text-main)]"
         >
           Закрыть
         </button>
@@ -112,29 +112,29 @@ export function CategoriesManager({
             void handleCreate();
           }}
           disabled={submitting || !newName.trim()}
-          className="shrink-0 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-orange-600 disabled:opacity-50"
+          className="shrink-0 rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-[#062b26] transition-colors hover:brightness-110 disabled:opacity-50"
         >
           Добавить
         </button>
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+        <div className="rounded-xl border border-[rgba(248,81,73,0.35)] bg-[rgba(248,81,73,0.1)] px-4 py-3 text-sm text-[var(--danger)]">
           {error}
         </div>
       )}
 
       {loading ? (
-        <div className="py-6 text-center text-sm text-slate-400">Загрузка...</div>
+        <div className="py-6 text-center text-sm text-[var(--text-muted)]">Загрузка...</div>
       ) : categories.length === 0 ? (
-        <div className="py-6 text-center text-sm text-slate-400">Категорий пока нет</div>
+        <div className="py-6 text-center text-sm text-[var(--text-muted)]">Категорий пока нет</div>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-slate-100">
+        <div className="overflow-hidden rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card-soft)]">
           {categories.map((category, index) => (
             <div
               key={category.id}
               className={`flex items-center gap-3 px-4 py-3 ${
-                index < categories.length - 1 ? "border-b border-slate-50" : ""
+                index < categories.length - 1 ? "border-b border-[var(--line-soft)]" : ""
               }`}
             >
               {editId === category.id ? (
@@ -148,7 +148,7 @@ export function CategoriesManager({
                         void handleUpdate();
                       }
                     }}
-                    className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-orange-400"
+                    className="flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
                     autoFocus
                   />
                   <button
@@ -156,7 +156,7 @@ export function CategoriesManager({
                       void handleUpdate();
                     }}
                     disabled={submitting || !editName.trim()}
-                    className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+                    className="rounded-lg bg-[var(--accent)] px-3 py-2 text-xs font-medium text-[#062b26] hover:brightness-110 disabled:opacity-50"
                   >
                     Сохранить
                   </button>
@@ -165,7 +165,7 @@ export function CategoriesManager({
                       setEditId(null);
                       setEditName("");
                     }}
-                    className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-500 hover:bg-slate-50"
+                    className="rounded-lg border border-[var(--line-soft)] px-3 py-2 text-xs text-[var(--text-muted)] hover:bg-white/5"
                   >
                     Отмена
                   </button>
@@ -173,27 +173,39 @@ export function CategoriesManager({
               ) : (
                 <>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-900">{category.name}</p>
-                    <p className="text-xs text-slate-400">{category.product_count} товаров</p>
+                    <p className="truncate text-sm font-medium text-[var(--text-main)]">{category.name}</p>
+                    <p className="text-xs text-[var(--text-muted)]">{category.product_count} товаров</p>
                   </div>
                   <button
                     onClick={() => {
                       setEditId(category.id);
                       setEditName(category.name);
                     }}
-                    className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-600 hover:bg-slate-50"
+                    className="rounded-lg border border-[var(--line-soft)] px-3 py-2 text-xs text-[var(--text-muted)] transition-colors hover:bg-white/5 hover:text-[var(--text-main)]"
                   >
                     Изменить
                   </button>
-                  <button
-                    onClick={() => {
-                      void handleRemove(category.id);
-                    }}
-                    disabled={submitting || category.product_count > 0}
-                    className="rounded-lg border border-red-100 px-3 py-2 text-xs text-red-500 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    Удалить
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        void handleRemove(category.id);
+                      }}
+                      disabled={submitting || category.product_count > 0}
+                      title={
+                        category.product_count > 0
+                          ? `Нельзя удалить — ${category.product_count} товаров в категории`
+                          : "Удалить категорию"
+                      }
+                      className="rounded-lg border border-[rgba(248,81,73,0.35)] px-3 py-2 text-xs text-[var(--danger)] transition-colors hover:bg-[rgba(248,81,73,0.08)] disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Удалить
+                    </button>
+                    {category.product_count > 0 && (
+                      <span className="text-xs text-[var(--text-muted)]">
+                        {category.product_count} товаров
+                      </span>
+                    )}
+                  </div>
                 </>
               )}
             </div>

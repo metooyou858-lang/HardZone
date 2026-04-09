@@ -103,11 +103,14 @@ router.post('/', async (req, res, next) => {
     const updatedProduct = await client.query(
       `
       UPDATE products
-      SET stock = stock + $1, updated_at = NOW()
-      WHERE id = $2
-      RETURNING id, name, sku, stock
+      SET
+        stock = stock + $1,
+        cost_price = COALESCE($2, cost_price),
+        updated_at = NOW()
+      WHERE id = $3
+      RETURNING id, name, sku, stock, cost_price
     `,
-      [quantity, product_id]
+      [quantity, cost_price_at_receipt, product_id]
     );
 
     await client.query('COMMIT');

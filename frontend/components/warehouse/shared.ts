@@ -1,7 +1,7 @@
 export const inputCls =
-  "w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100";
+  "w-full rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-4 py-3 text-sm text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)] transition focus:border-[var(--accent)] focus:ring-4 focus:ring-[rgba(0,191,165,0.12)]";
 
-export const labelCls = "text-xs font-medium uppercase tracking-wider text-slate-400";
+export const labelCls = "text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]";
 
 export const REASONS = [
   { value: "damage", label: "Порча" },
@@ -39,12 +39,12 @@ export function formatDate(iso: string) {
 
 export function stockColor(stock: number) {
   if (stock === 0) {
-    return "text-red-500";
+    return "text-[var(--danger)]";
   }
 
   if (stock <= 5) {
-    return "text-amber-500";
+    return "text-[var(--warning)]";
   }
 
-  return "text-emerald-600";
+  return "text-[var(--success)]";
 }

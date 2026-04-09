@@ -11,6 +11,7 @@ const upload = multer({
 });
 
 const COL_MAP = {
+  category: ['категория', 'category', 'группа', 'раздел'],
   name: ['наименование', 'название', 'товар', 'name', 'номенклатура'],
   barcode: [
     'штрихкод',
@@ -117,6 +118,7 @@ function parseRow(row, colMap) {
 
   return {
     name: String(name).trim(),
+    category: get('category') ? String(get('category')).trim() : null,
     barcode: (() => {
       const val = get('barcode');
 
@@ -298,18 +300,36 @@ router.post('/confirm', async (req, res, next) => {
         continue;
       }
 
+      let categoryId = null;
+
+      if (item.category) {
+        const categoryResult = await client.query(
+          `
+            INSERT INTO categories (name)
+            VALUES ($1)
+            ON CONFLICT (name) DO UPDATE
+            SET name = EXCLUDED.name
+            RETURNING id
+          `,
+          [item.category]
+        );
+
+        categoryId = categoryResult.rows[0].id;
+      }
+
       let productId = item.existing_product?.id ?? null;
 
       if (!productId) {
         const created = await client.query(
           `
-            INSERT INTO products (name, sku, barcode, cost_price, sale_price)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO products (name, sku, barcode, cost_price, sale_price, category_id)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (barcode) DO UPDATE
             SET
               name = EXCLUDED.name,
               cost_price = COALESCE(EXCLUDED.cost_price, products.cost_price),
               sale_price = COALESCE(EXCLUDED.sale_price, products.sale_price),
+              category_id = COALESCE(products.category_id, EXCLUDED.category_id),
               updated_at = NOW()
             RETURNING id
           `,
@@ -319,21 +339,23 @@ router.post('/confirm', async (req, res, next) => {
             item.barcode || null,
             item.cost_price || null,
             item.sale_price || null,
+            categoryId,
           ]
         );
 
         productId = created.rows[0].id;
-      } else if (item.barcode) {
+      } else if (item.barcode || item.sku || categoryId) {
         await client.query(
           `
             UPDATE products
             SET
               barcode = COALESCE(barcode, $1),
               sku = COALESCE(sku, $2),
+              category_id = COALESCE(category_id, $3),
               updated_at = NOW()
-            WHERE id = $3
+            WHERE id = $4
           `,
-          [item.barcode, item.sku || null, productId]
+          [item.barcode || null, item.sku || null, categoryId, productId]
         );
       }
 

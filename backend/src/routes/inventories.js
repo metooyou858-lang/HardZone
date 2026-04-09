@@ -106,6 +106,7 @@ router.post('/', async (req, res, next) => {
     client = await pool.connect();
 
     const comment = asOptionalString(req.body.comment);
+    const onlyInStock = req.body.only_in_stock !== false;
 
     const openInventory = await client.query(
       `SELECT id FROM inventories WHERE status = 'draft' ORDER BY id DESC LIMIT 1`
@@ -136,7 +137,9 @@ router.post('/', async (req, res, next) => {
       INSERT INTO inventory_items (inventory_id, product_id, expected_qty)
       SELECT $1, id, stock
       FROM products
-      ORDER BY id
+      WHERE is_archived = false
+      ${onlyInStock ? 'AND stock > 0' : ''}
+      ORDER BY name ASC
     `,
       [inventoryId]
     );

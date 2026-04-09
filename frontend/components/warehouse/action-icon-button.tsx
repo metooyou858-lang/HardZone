@@ -70,21 +70,21 @@ export function ActionIconButton({
 
   const idleClass =
     tone === "edit"
-      ? "border border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-800"
+      ? "border border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text-main)]"
       : tone === "receipt"
-        ? "border border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:text-orange-600"
+        ? "border border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
         : tone === "writeoff"
-          ? "border border-slate-200 bg-white text-slate-600 hover:border-red-300 hover:text-red-600"
-          : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-800";
+          ? "border border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--text-muted)] hover:border-[var(--danger)] hover:text-[var(--danger)]"
+          : "border border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text-main)]";
 
   const activeClass =
     tone === "edit"
-      ? "bg-slate-800 text-white border-slate-800"
+      ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--text-main)]"
       : tone === "receipt"
-        ? "bg-orange-500 text-white border-orange-500"
+        ? "border-[var(--accent)] bg-[var(--accent)] text-[#062b26]"
         : tone === "writeoff"
-          ? "bg-red-500 text-white border-red-500"
-          : "bg-slate-900 text-white border-slate-900";
+          ? "border-[var(--danger)] bg-[rgba(248,81,73,0.16)] text-[var(--danger)]"
+          : "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--text-main)]";
 
   return (
     <button
@@ -117,7 +117,7 @@ export function ActionIconButton({
         createPortal(
           <span
             ref={tooltipRef}
-            className="pointer-events-none fixed z-[100] whitespace-nowrap rounded-lg bg-slate-950 px-2.5 py-1 text-xs font-medium text-white shadow-lg"
+            className="pointer-events-none fixed z-[100] whitespace-nowrap rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-2.5 py-1 text-xs font-medium text-[var(--text-main)]"
             style={{
               top: position.top,
               left: position.left,
@@ -125,7 +125,7 @@ export function ActionIconButton({
           >
             {label}
             <span
-              className={`absolute left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-slate-950 ${
+              className={`absolute left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 border-[var(--line-soft)] bg-[var(--bg-panel)] ${
                 position.side === "top" ? "top-full -mt-1" : "bottom-full -mb-1"
               }`}
             />

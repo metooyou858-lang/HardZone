@@ -7,15 +7,19 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "node --watch src/app.js",
-    "migrate": "node src/db/migrate.js"
+    "migrate": "node src/db/migrate.js",
+    "aqsi:debug": "node src/scripts/aqsi-debug.js"
   },
   "engines": {
     "node": ">=24"
   },
   "dependencies": {
+    "axios": "^1.13.1",
+    "csv-parse": "^5.6.0",
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
     "multer": "^2.0.2",
+    "nodemailer": "^6.10.1",
     "pg": "^8.16.3",
     "xlsx": "^0.18.5"
   }
