@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { createProxyUserHeaders, getBackendApiBase, getBackendApiToken } from "@/lib/server/backend";
+import { getBackendApiBase } from "@/lib/server/backend";
 import { createSessionToken, getSessionCookieName, getSessionCookieOptions, readSessionToken, type SessionUser } from "@/lib/server/session";
 
 type BackendMeResponse = {
@@ -23,10 +23,7 @@ export async function GET() {
 
   try {
     const headers = new Headers();
-    headers.set("Authorization", `Bearer ${getBackendApiToken()}`);
-
-    const proxyHeaders = createProxyUserHeaders(session.user);
-    Object.entries(proxyHeaders).forEach(([key, value]) => headers.set(key, value));
+    headers.set("x-hardzone-session", sessionToken || "");
 
     const backendResponse = await fetch(`${getBackendApiBase()}/auth/me`, {
       method: "GET",

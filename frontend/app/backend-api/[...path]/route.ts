@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
-import { createProxyUserHeaders, getBackendApiBase, getBackendApiToken } from "@/lib/server/backend";
+import { getBackendApiBase } from "@/lib/server/backend";
 import { getSessionCookieName, readSessionToken } from "@/lib/server/session";
 
 type RouteContext = {
@@ -24,10 +24,7 @@ async function proxyRequest(request: NextRequest, context: RouteContext) {
   });
 
   const headers = new Headers();
-  headers.set("Authorization", `Bearer ${getBackendApiToken()}`);
-
-  const proxyHeaders = createProxyUserHeaders(session.user);
-  Object.entries(proxyHeaders).forEach(([key, value]) => headers.set(key, value));
+  headers.set("x-hardzone-session", sessionToken || "");
 
   const contentType = request.headers.get("content-type");
   if (contentType) {

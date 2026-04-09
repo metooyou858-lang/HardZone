@@ -27,6 +27,7 @@ const { ensureBootstrapUser } = require('./services/user-auth');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
+const host = process.env.HOST || '127.0.0.1';
 const requireModule = authMiddleware.requireModule;
 
 app.use(express.json());
@@ -88,8 +89,8 @@ async function start() {
   markMissedBookings();
   const scheduleCleanupInterval = setInterval(markMissedBookings, 60 * 60 * 1000);
 
-  const server = app.listen(port, '0.0.0.0', () => {
-    console.log(`API started on port ${port}`);
+  const server = app.listen(port, host, () => {
+    console.log(`API started on ${host}:${port}`);
   });
 
   const shutdown = async (signal) => {
