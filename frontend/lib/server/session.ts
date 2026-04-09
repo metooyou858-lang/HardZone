@@ -105,10 +105,11 @@ export function getSessionCookieName(): string {
 
 export function getSessionCookieOptions(expiresAt?: number) {
   const finalExpiresAt = expiresAt ?? Date.now() + SESSION_MAX_AGE_SECONDS * 1000;
+  const secureCookie = process.env.SESSION_COOKIE_SECURE === "true";
 
   return {
     httpOnly: true,
-    secure: false,
+    secure: secureCookie,
     sameSite: "lax" as const,
     path: "/",
     maxAge: SESSION_MAX_AGE_SECONDS,
