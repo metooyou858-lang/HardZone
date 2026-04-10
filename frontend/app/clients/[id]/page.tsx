@@ -361,7 +361,7 @@ export default function ClientDetailsPage() {
           </div>
 
           <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-6">
-            <div className="grid gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
+            <div>
               <div>
                 <p className={clientLabelCls}>Штрихкод клиента</p>
                 {client.barcode ? (
@@ -371,16 +371,16 @@ export default function ClientDetailsPage() {
                 )}
               </div>
 
-              <div className="space-y-4">
+              {false && <div className="space-y-4">
                 <div className="rounded-[20px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4">
                   <p className={clientLabelCls}>Дата рождения</p>
-                  <p className="mt-2 text-sm text-[var(--text-main)]">{formatClientDate(client.birth_date)}</p>
+                  <p className="mt-2 text-sm text-[var(--text-main)]">{formatClientDate(client?.birth_date ?? null)}</p>
                 </div>
                 <div className="rounded-[20px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4">
                   <p className={clientLabelCls}>Персональная скидка</p>
-                  <p className="mt-2 text-sm text-[var(--text-main)]">{Number.parseFloat(client.discount || "0")} %</p>
+                  <p className="mt-2 text-sm text-[var(--text-main)]">{Number.parseFloat(client?.discount || "0")} %</p>
                 </div>
-              </div>
+              </div>}
             </div>
           </div>
         </section>
