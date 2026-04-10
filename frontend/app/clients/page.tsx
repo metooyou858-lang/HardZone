@@ -379,8 +379,8 @@ export default function ClientsPage() {
                             </div>
 
                             <div className="rounded-[20px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3.5">
-                              <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--text-muted)]">Штрихкод</p>
-                              <p className="mt-2 font-[family:var(--font-mono)] text-sm text-[var(--text-main)]">{client.barcode || "вЂ”"}</p>
+                              <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--text-muted)]">Комментарий</p>
+                              <p className="mt-2 text-sm text-[var(--text-main)]">{client.comment || "—"}</p>
                             </div>
 
                             <div className="rounded-[20px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3.5">
@@ -391,12 +391,6 @@ export default function ClientsPage() {
                             </div>
                           </div>
 
-                          {client.comment && (
-                            <div className="mt-3 rounded-[20px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-4">
-                              <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--text-muted)]">Комментарий</p>
-                              <p className="mt-2 text-sm leading-6 text-[var(--text-main)]">{client.comment}</p>
-                            </div>
-                          )}
                         </div>
                       )}
                       </div>
