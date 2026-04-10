@@ -1,4 +1,4 @@
-﻿import type { ClientDetail } from "@/lib/api/clients";
+import type { ClientDetail } from "@/lib/api/clients";
 import type { ScheduleBooking, ScheduleSlot, ScheduleSlotDetail, SlotType } from "@/lib/api/schedule";
 export type PageTab = "schedule" | "gym" | "trainers";
 export type CalendarView = "day" | "week" | "month";
@@ -22,46 +22,46 @@ const HOUR_HEIGHT = 72;
 const HOURS = Array.from({ length: PAGE_END_HOUR - PAGE_START_HOUR + 1 }, (_, index) => PAGE_START_HOUR + index);
 
 export const viewOptions: { value: CalendarView; label: string }[] = [
-  { value: "day", label: "Р”РµРЅСЊ" },
-  { value: "week", label: "РќРµРґРµР»СЏ" },
-  { value: "month", label: "РњРµСЃСЏС†" },
+  { value: "day", label: "День" },
+  { value: "week", label: "Неделя" },
+  { value: "month", label: "Месяц" },
 ];
 
 export const pageTabs: { value: PageTab; label: string }[] = [
-  { value: "schedule", label: "Р Р°СЃРїРёСЃР°РЅРёРµ" },
-  { value: "trainers", label: "РўСЂРµРЅРµСЂС‹" },
+  { value: "schedule", label: "Расписание" },
+  { value: "trainers", label: "Тренеры" },
 ];
 
 export const slotTypeOptions: { value: SlotType; label: string }[] = [
-  { value: "group", label: "Р“СЂСѓРїРїРѕРІРѕРµ" },
-  { value: "personal", label: "РџРµСЂСЃРѕРЅР°Р»СЊРЅРѕРµ" },
+  { value: "group", label: "Групповое" },
+  { value: "personal", label: "Персональное" },
 ];
 
 export const weekdayOptions = [
-  { value: 1, label: "РџРЅ" },
-  { value: 2, label: "Р’С‚" },
-  { value: 3, label: "РЎСЂ" },
-  { value: 4, label: "Р§С‚" },
-  { value: 5, label: "РџС‚" },
-  { value: 6, label: "РЎР±" },
-  { value: 7, label: "Р’СЃ" },
+  { value: 1, label: "Пн" },
+  { value: 2, label: "Вт" },
+  { value: 3, label: "Ср" },
+  { value: 4, label: "Чт" },
+  { value: 5, label: "Пт" },
+  { value: 6, label: "Сб" },
+  { value: 7, label: "Вс" },
 ];
 
 const statusMeta = {
   confirmed: {
-    label: "Р—Р°РїРёСЃР°РЅ",
+    label: "Записан",
     className: "border-[rgba(0,191,165,0.24)] bg-[rgba(0,191,165,0.12)] text-[var(--accent)]",
   },
   attended: {
-    label: "РџРѕСЃРµС‚РёР»",
+    label: "Посетил",
     className: "border-[rgba(63,185,80,0.24)] bg-[rgba(63,185,80,0.12)] text-[var(--success)]",
   },
   missed: {
-    label: "РџСЂРѕРїСѓСЃС‚РёР»",
+    label: "Пропустил",
     className: "border-[rgba(210,153,34,0.24)] bg-[rgba(210,153,34,0.12)] text-[var(--warning)]",
   },
   cancelled: {
-    label: "РћС‚РјРµРЅРµРЅР°",
+    label: "Отменена",
     className: "border-[rgba(248,81,73,0.24)] bg-[rgba(248,81,73,0.12)] text-[var(--danger)]",
   },
 } as const;
@@ -332,14 +332,14 @@ export function getBannerClass(tone: BannerTone) {
 
 export function getSlotTypeLabel(slotType: SlotType) {
   if (slotType === "personal") {
-    return "РџРµСЂСЃРѕРЅР°Р»СЊРЅРѕРµ";
+    return "Персональное";
   }
 
   if (slotType === "rental") {
-    return "РђСЂРµРЅРґР°";
+    return "Аренда";
   }
 
-  return "Р“СЂСѓРїРїРѕРІРѕРµ";
+  return "Групповое";
 }
 
 export function getBookingStatusMeta(status: ScheduleBooking["status"]) {
@@ -347,21 +347,21 @@ export function getBookingStatusMeta(status: ScheduleBooking["status"]) {
 }
 
 export function getSubscriptionOptionLabel(subscription: ClientDetail["subscriptions"][number]) {
-  const family = subscription.is_family ? " вЂў СЃРµРјРµР№РЅС‹Р№" : "";
+  const family = subscription.is_family ? " • семейный" : "";
 
   if (subscription.type === "single") {
-    return `Р Р°Р·РѕРІРѕРµ${family}`;
+    return `Разовое${family}`;
   }
 
   if (subscription.type === "visits") {
-    return `${subscription.visits_left ?? 0} Р·Р°РЅСЏС‚РёР№ РѕСЃС‚Р°Р»РѕСЃСЊ${family}`;
+    return `${subscription.visits_left ?? 0} занятий осталось${family}`;
   }
 
   if (subscription.expires_at) {
-    return `Р”Рѕ ${new Date(subscription.expires_at).toLocaleDateString("ru")}${family}`;
+    return `До ${new Date(subscription.expires_at).toLocaleDateString("ru")}${family}`;
   }
 
-  return `РђРєС‚РёРІРЅС‹Р№ Р°Р±РѕРЅРµРјРµРЅС‚${family}`;
+  return `Активный абонемент${family}`;
 }
 
 export function groupSlotsByDate(slots: ScheduleSlot[]) {

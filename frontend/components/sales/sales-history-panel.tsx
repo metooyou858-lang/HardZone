@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import type { Order, OrderDetail } from "@/lib/api/orders";
 import {
@@ -53,8 +53,8 @@ export function SalesHistoryPanel({
   return (        <section className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="font-[family:var(--font-heading)] text-xl font-semibold text-[var(--text-main)]">РСЃС‚РѕСЂРёСЏ РїСЂРѕРґР°Р¶</p>
-              <p className="mt-1 text-sm text-[var(--text-muted)]">РџРѕСЃР»РµРґРЅРёРµ С‡РµРєРё Рё РёС… С‚РµРєСѓС‰РёР№ СЃС‚Р°С‚СѓСЃ</p>
+              <p className="font-[family:var(--font-heading)] text-xl font-semibold text-[var(--text-main)]">История продаж</p>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">Последние чеки и их текущий статус</p>
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -83,18 +83,18 @@ export function SalesHistoryPanel({
 
           <div className="mt-5 overflow-hidden rounded-[24px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)]">
               <div className="hidden grid-cols-[1.4fr_110px_140px_140px_170px_120px] gap-4 border-b border-[var(--line-soft)] px-5 py-4 text-[13px] font-medium uppercase tracking-[0.14em] text-slate-300 lg:grid">
-                <span>Р”Р°С‚Р° Рё РІСЂРµРјСЏ</span>
-                <span>РџРѕР·РёС†РёРё</span>
-                <span>РЎСѓРјРјР°</span>
-              <span>РћРїР»Р°С‚Р°</span>
-              <span>РЎС‚Р°С‚СѓСЃ</span>
-              <span className="text-right">Р”РµР№СЃС‚РІРёСЏ</span>
+                <span>Дата и время</span>
+                <span>Позиции</span>
+                <span>Сумма</span>
+              <span>Оплата</span>
+              <span>Статус</span>
+              <span className="text-right">Действия</span>
             </div>
 
             {historyLoading ? (
-              <div className="py-16 text-center text-sm text-[var(--text-muted)]">Р—Р°РіСЂСѓР¶Р°РµРј РёСЃС‚РѕСЂРёСЋ...</div>
+              <div className="py-16 text-center text-sm text-[var(--text-muted)]">Загружаем историю...</div>
             ) : orders.length === 0 ? (
-              <div className="py-16 text-center text-sm text-[var(--text-muted)]">Р—Р°РєР°Р·РѕРІ РїРѕРєР° РЅРµС‚</div>
+              <div className="py-16 text-center text-sm text-[var(--text-muted)]">Заказов пока нет</div>
             ) : (
               <div className="divide-y divide-[var(--line-soft)]">
                 {orders.map((historyOrder, index) => {
@@ -142,7 +142,7 @@ export function SalesHistoryPanel({
                                 disabled={syncingHistoryOrder}
                                 className={getHistoryActionButtonClass("accent")}
                               >
-                                {syncingHistoryOrder ? "РџСЂРѕРІРµСЂСЏРµРј..." : "РџСЂРѕРІРµСЂРёС‚СЊ РѕРїР»Р°С‚Сѓ"}
+                                {syncingHistoryOrder ? "Проверяем..." : "Проверить оплату"}
                               </button>
                             ) : (
                               <span className={`inline-flex rounded-full border px-3 py-1 text-xs ${getStatusBadgeClass(historyOrder.status)}`}>
@@ -161,7 +161,7 @@ export function SalesHistoryPanel({
                                 disabled={cancelling}
                                 className={getHistoryActionButtonClass("danger")}
                               >
-                                {cancelling ? "РћС‚РјРµРЅСЏРµРј..." : "РћС‚РјРµРЅРёС‚СЊ"}
+                                {cancelling ? "Отменяем..." : "Отменить"}
                               </button>
                             )}
                             {historyOrder.status === "confirmed" && (
@@ -174,7 +174,7 @@ export function SalesHistoryPanel({
                                 disabled={refunding}
                                 className={getHistoryActionButtonClass("warning")}
                               >
-                                {refunding ? "Р’РѕР·РІСЂР°С‰Р°РµРј..." : "Р’РѕР·РІСЂР°С‚"}
+                                {refunding ? "Возвращаем..." : "Возврат"}
                               </button>
                             )}
                             <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--line-soft)] text-[var(--text-muted)]">
@@ -187,7 +187,7 @@ export function SalesHistoryPanel({
                       {isExpanded && (
                         <div className="border-t border-[var(--line-soft)] bg-[rgba(13,17,23,0.34)] px-5 py-4">
                           {detailLoading ? (
-                            <div className="py-6 text-sm text-[var(--text-muted)]">Р—Р°РіСЂСѓР¶Р°РµРј СЃРѕСЃС‚Р°РІ Р·Р°РєР°Р·Р°...</div>
+                            <div className="py-6 text-sm text-[var(--text-muted)]">Загружаем состав заказа...</div>
                           ) : detail ? (
                             <div className="space-y-3">
                               {detail.items.map((item) => (
@@ -203,7 +203,7 @@ export function SalesHistoryPanel({
                                         <p className="truncate text-sm font-medium text-[var(--text-main)]">{item.name}</p>
                                         {item.sku && <p className="mt-1 text-xs text-[var(--text-muted)]">{item.sku}</p>}
                                       </div>
-                                      <div className="text-sm text-[var(--text-main)]">{item.quantity} С€С‚.</div>
+                                      <div className="text-sm text-[var(--text-main)]">{item.quantity} шт.</div>
                                       <div className="text-sm text-[var(--text-main)]">{formatMoney(item.sale_price)}</div>
                                       <div className="text-right text-sm font-medium text-[var(--text-main)]">
                                         {summary.discountTotal > 0 && (
@@ -219,7 +219,7 @@ export function SalesHistoryPanel({
                               ))}
                             </div>
                           ) : (
-                            <div className="py-6 text-sm text-[var(--text-muted)]">РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЃРѕСЃС‚Р°РІ Р·Р°РєР°Р·Р°</div>
+                            <div className="py-6 text-sm text-[var(--text-muted)]">Не удалось загрузить состав заказа</div>
                           )}
                         </div>
                       )}
@@ -234,7 +234,7 @@ export function SalesHistoryPanel({
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
               <HistoryIcon />
             </span>
-            <span>РљР»РёРє РїРѕ СЃС‚СЂРѕРєРµ РѕС‚РєСЂС‹РІР°РµС‚ СЃРѕСЃС‚Р°РІ Р·Р°РєР°Р·Р°</span>
+            <span>Клик по строке открывает состав заказа</span>
           </div>
         </section>
   );

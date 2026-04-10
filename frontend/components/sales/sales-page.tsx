@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useRef, useState } from "react";
 
@@ -120,7 +120,7 @@ export default function SalesPage() {
       } catch (error) {
         setBanner({
           tone: "error",
-          text: error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ С‡РµРє",
+          text: error instanceof Error ? error.message : "Не удалось создать чек",
         });
         throw error;
       } finally {
@@ -159,7 +159,7 @@ export default function SalesPage() {
       setClientPickerOpen(false);
       setClientQuery("");
     } catch (error) {
-      setClientError(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РєР»РёРµРЅС‚Р° РІ С‡РµРєРµ");
+      setClientError(error instanceof Error ? error.message : "Не удалось сохранить клиента в чеке");
     } finally {
       setClientSaving(false);
     }
@@ -173,7 +173,7 @@ export default function SalesPage() {
       const client = await findClientByBarcode(barcode);
       await applyClientSelection(client);
     } catch (error) {
-      setClientError(error instanceof Error ? error.message : `РљР»РёРµРЅС‚ РїРѕ С€С‚СЂРёС…РєРѕРґСѓ ${barcode} РЅРµ РЅР°Р№РґРµРЅ`);
+      setClientError(error instanceof Error ? error.message : `Клиент по штрихкоду ${barcode} не найден`);
     } finally {
       setClientLoading(false);
     }
@@ -225,7 +225,7 @@ export default function SalesPage() {
     } catch (error) {
       setBanner({
         tone: "error",
-        text: error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±РЅРѕРІРёС‚СЊ СЃРєРёРґРєСѓ РЅР° С‡РµРє",
+        text: error instanceof Error ? error.message : "Не удалось обновить скидку на чек",
       });
     } finally {
       setReceiptDiscountSaving(false);
@@ -296,7 +296,7 @@ export default function SalesPage() {
     } catch (error) {
       setBanner({
         tone: "error",
-        text: error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ СЃРєРёРґРєСѓ РїРѕ РїРѕР·РёС†РёРё",
+        text: error instanceof Error ? error.message : "Не удалось сохранить скидку по позиции",
       });
     } finally {
       setLineDiscountSavingKey(null);
@@ -307,7 +307,7 @@ export default function SalesPage() {
     if (orderAwaitingPayment) {
       setBanner({
         tone: "info",
-        text: "Р­С‚РѕС‚ С‡РµРє СѓР¶Рµ РѕС‚РїСЂР°РІР»РµРЅ РЅР° РєР°СЃСЃСѓ. РЎРЅР°С‡Р°Р»Р° РїСЂРѕРІРµСЂСЊС‚Рµ РѕРїР»Р°С‚Сѓ РёР»Рё РѕС‚РєСЂРѕР№С‚Рµ РЅРѕРІС‹Р№ С‡РµРє.",
+        text: "Этот чек уже отправлен на кассу. Сначала проверьте оплату или откройте новый чек.",
       });
       return;
     }
@@ -315,7 +315,7 @@ export default function SalesPage() {
     if (!isSellableInCash(product)) {
       setBanner({
         tone: "error",
-        text: `РџРѕР·РёС†РёСЏ "${product.name}" РЅРµРґРѕСЃС‚СѓРїРЅР°: РѕСЃС‚Р°С‚РѕРє 0`,
+        text: `Позиция "${product.name}" недоступна: остаток 0`,
       });
       return;
     }
@@ -323,7 +323,7 @@ export default function SalesPage() {
     if (!product.sale_price) {
       setBanner({
         tone: "error",
-        text: `РЈ РїРѕР·РёС†РёРё "${product.name}" РЅРµ СѓРєР°Р·Р°РЅР° С†РµРЅР° РїСЂРѕРґР°Р¶Рё`,
+        text: `У позиции "${product.name}" не указана цена продажи`,
       });
       return;
     }
@@ -348,7 +348,7 @@ export default function SalesPage() {
     } catch (error) {
       setBanner({
         tone: "error",
-        text: error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РґРѕР±Р°РІРёС‚СЊ РїРѕР·РёС†РёСЋ",
+        text: error instanceof Error ? error.message : "Не удалось добавить позицию",
       });
     } finally {
       setLineBusyKey(null);
@@ -377,7 +377,7 @@ export default function SalesPage() {
     } catch (error) {
       setBanner({
         tone: "error",
-        text: error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РёР·РјРµРЅРёС‚СЊ РєРѕР»РёС‡РµСЃС‚РІРѕ",
+        text: error instanceof Error ? error.message : "Не удалось изменить количество",
       });
     } finally {
       setLineBusyKey(null);
@@ -417,7 +417,7 @@ export default function SalesPage() {
     } catch (error) {
       setBanner({
         tone: "error",
-        text: error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РёР·РјРµРЅРёС‚СЊ РєРѕР»РёС‡РµСЃС‚РІРѕ",
+        text: error instanceof Error ? error.message : "Не удалось изменить количество",
       });
     } finally {
       setLineBusyKey(null);
@@ -441,7 +441,7 @@ export default function SalesPage() {
     } catch (error) {
       setBanner({
         tone: "error",
-        text: error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ РїРѕР·РёС†РёСЋ",
+        text: error instanceof Error ? error.message : "Не удалось удалить позицию",
       });
     } finally {
       setLineBusyKey(null);
@@ -453,24 +453,24 @@ export default function SalesPage() {
       return;
     }
 
-    setBanner({ tone: "info", text: `РЎРєР°РЅРµСЂ: ${barcode}` });
+    setBanner({ tone: "info", text: `Сканер: ${barcode}` });
 
     try {
       const product = await findByBarcode(barcode);
       if (!isSellableInCash(product)) {
         setBanner({
           tone: "error",
-          text: `РџРѕР·РёС†РёСЏ "${product.name}" РЅРµРґРѕСЃС‚СѓРїРЅР°: РѕСЃС‚Р°С‚РѕРє 0`,
+          text: `Позиция "${product.name}" недоступна: остаток 0`,
         });
         return;
       }
 
       await addCatalogProduct(product);
-      setBanner({ tone: "success", text: `Р”РѕР±Р°РІР»РµРЅРѕ: ${product.name}` });
+      setBanner({ tone: "success", text: `Добавлено: ${product.name}` });
     } catch (error) {
       setBanner({
         tone: "error",
-        text: error instanceof Error ? error.message : `РЁС‚СЂРёС…РєРѕРґ ${barcode} РЅРµ РЅР°Р№РґРµРЅ`,
+        text: error instanceof Error ? error.message : `Штрихкод ${barcode} не найден`,
       });
     }
   }
@@ -484,7 +484,7 @@ export default function SalesPage() {
       !selectedClient?.id &&
       !order.client_id
     ) {
-      setBanner({ tone: "error", text: "Р’С‹Р±РµСЂРёС‚Рµ РєР»РёРµРЅС‚Р° РґР»СЏ СѓСЃР»СѓРіРё" });
+      setBanner({ tone: "error", text: "Выберите клиента для услуги" });
       return;
     }
 
@@ -500,12 +500,12 @@ export default function SalesPage() {
 
       await sendOrderToAqsi(order.id, selectedClient?.id ?? order.client_id ?? null);
       await refreshOrder(order.id);
-      setBanner({ tone: "success", text: "РћС‚РїСЂР°РІР»РµРЅРѕ вњ“" });
+      setBanner({ tone: "success", text: "Отправлено ✓" });
       setHistoryReloadToken((value) => value + 1);
     } catch (error) {
       setBanner({
         tone: "error",
-        text: error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РїСЂР°РІРёС‚СЊ С‡РµРє",
+        text: error instanceof Error ? error.message : "Не удалось отправить чек",
       });
     } finally {
       setConfirming(false);
@@ -562,10 +562,10 @@ export default function SalesPage() {
           tone: "success",
           text:
             result.payment_type === "cash"
-              ? "РћРїР»Р°С‚Р° РїРѕРґС‚РІРµСЂР¶РґРµРЅР° РєР°СЃСЃРѕР№: РЅР°Р»РёС‡РЅС‹Рµ вњ“"
+              ? "Оплата подтверждена кассой: наличные ✓"
               : result.payment_type === "card"
-                ? "РћРїР»Р°С‚Р° РїРѕРґС‚РІРµСЂР¶РґРµРЅР° РєР°СЃСЃРѕР№: РєР°СЂС‚Р° вњ“"
-              : "РћРїР»Р°С‚Р° РїРѕРґС‚РІРµСЂР¶РґРµРЅР° РєР°СЃСЃРѕР№ вњ“",
+                ? "Оплата подтверждена кассой: карта ✓"
+              : "Оплата подтверждена кассой ✓",
         });
 
         return;
@@ -573,11 +573,11 @@ export default function SalesPage() {
 
       setHistoryError(
         result.aqsi_status
-          ? `РљР°СЃСЃР° РїРѕРєР° РЅРµ РїРѕРґС‚РІРµСЂРґРёР»Р° РѕРїР»Р°С‚Сѓ: ${result.aqsi_status}`
-          : "РљР°СЃСЃР° РїРѕРєР° РЅРµ РїРѕРґС‚РІРµСЂРґРёР»Р° РѕРїР»Р°С‚Сѓ"
+          ? `Касса пока не подтвердила оплату: ${result.aqsi_status}`
+          : "Касса пока не подтвердила оплату"
       );
     } catch (error) {
-      setHistoryError(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕРІРµСЂРёС‚СЊ РѕРїР»Р°С‚Сѓ РЅР° РєР°СЃСЃРµ");
+      setHistoryError(error instanceof Error ? error.message : "Не удалось проверить оплату на кассе");
     } finally {
       setSyncingOrderId(null);
     }
@@ -604,7 +604,7 @@ export default function SalesPage() {
       const detail = await fetchOrder(orderId);
       setOrderDetails((prev) => ({ ...prev, [orderId]: detail }));
     } catch (error) {
-      setHistoryError(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЃРѕСЃС‚Р°РІ Р·Р°РєР°Р·Р°");
+      setHistoryError(error instanceof Error ? error.message : "Не удалось загрузить состав заказа");
     } finally {
       setDetailLoadingId(null);
     }
@@ -653,7 +653,7 @@ export default function SalesPage() {
         setSelectedClient(null);
       }
     } catch (error) {
-      setHistoryError(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РјРµРЅРёС‚СЊ Р·Р°РєР°Р·");
+      setHistoryError(error instanceof Error ? error.message : "Не удалось отменить заказ");
     } finally {
       setCancellingId(null);
     }
@@ -662,7 +662,7 @@ export default function SalesPage() {
   async function handleRefundOrder(orderId: string, amount: string) {
     const formattedAmount = formatMoney(amount);
 
-    if (!confirm(`РћС„РѕСЂРјРёС‚СЊ РІРѕР·РІСЂР°С‚ РЅР° СЃСѓРјРјСѓ ${formattedAmount}?`)) {
+    if (!confirm(`Оформить возврат на сумму ${formattedAmount}?`)) {
       return;
     }
 
@@ -690,7 +690,7 @@ export default function SalesPage() {
         setOrder((prev) => (prev ? { ...prev, ...updatedOrder } : prev));
       }
     } catch (error) {
-      setHistoryError(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РѕС„РѕСЂРјРёС‚СЊ РІРѕР·РІСЂР°С‚");
+      setHistoryError(error instanceof Error ? error.message : "Не удалось оформить возврат");
     } finally {
       setRefundingId(null);
     }
@@ -739,7 +739,7 @@ export default function SalesPage() {
         }
       } catch (error) {
         if (!cancelled) {
-          setClientError(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РєР»РёРµРЅС‚РѕРІ");
+          setClientError(error instanceof Error ? error.message : "Не удалось загрузить клиентов");
         }
       } finally {
         if (!cancelled) {
@@ -777,7 +777,7 @@ export default function SalesPage() {
         if (!cancelled) {
           setBanner({
             tone: "error",
-            text: error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РєР°С‚РµРіРѕСЂРёРё РїСЂРѕРґР°Р¶",
+            text: error instanceof Error ? error.message : "Не удалось загрузить категории продаж",
           });
         }
       } finally {
@@ -823,7 +823,7 @@ export default function SalesPage() {
         if (!cancelled) {
           setBanner({
             tone: "error",
-            text: error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РєР°С‚Р°Р»РѕРі",
+            text: error instanceof Error ? error.message : "Не удалось загрузить каталог",
           });
         }
       } finally {
@@ -857,7 +857,7 @@ export default function SalesPage() {
         }
       } catch (error) {
         if (!cancelled) {
-          setHistoryError(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РёСЃС‚РѕСЂРёСЋ РїСЂРѕРґР°Р¶");
+          setHistoryError(error instanceof Error ? error.message : "Не удалось загрузить историю продаж");
         }
       } finally {
         if (!cancelled) {
@@ -937,7 +937,7 @@ export default function SalesPage() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="font-[family:var(--font-heading)] text-3xl font-semibold tracking-tight text-[var(--text-main)]">
-            РџСЂРѕРґР°Р¶Рё
+            Продажи
           </h1>
         </div>
 
@@ -952,7 +952,7 @@ export default function SalesPage() {
                   : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
               }`}
             >
-              РљР°СЃСЃР°
+              Касса
             </button>
             <button
               type="button"
@@ -963,13 +963,13 @@ export default function SalesPage() {
                   : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
               }`}
             >
-              РСЃС‚РѕСЂРёСЏ
+              История
             </button>
           </div>
 
           {tab === "cash" && order && (
             <div className="rounded-full border border-[var(--line-soft)] bg-[var(--bg-card)] px-4 py-2 text-xs text-[var(--text-muted)]">
-              Р§РµРє #{order.id.slice(0, 8)}
+              Чек #{order.id.slice(0, 8)}
             </div>
           )}
         </div>

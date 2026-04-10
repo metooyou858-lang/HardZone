@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -123,7 +123,7 @@ export default function SchedulePage() {
         if (!cancelled) {
           setBanner({
             tone: "error",
-            text: loadError instanceof Error ? loadError.message : "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЃРїСЂР°РІРѕС‡РЅРёРєРё СЂР°СЃРїРёСЃР°РЅРёСЏ",
+            text: loadError instanceof Error ? loadError.message : "Не удалось загрузить справочники расписания",
           });
         }
       })
@@ -158,7 +158,7 @@ export default function SchedulePage() {
       })
       .catch((loadError) => {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЂР°СЃРїРёСЃР°РЅРёРµ");
+          setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить расписание");
         }
       })
       .finally(() => {
@@ -177,7 +177,7 @@ export default function SchedulePage() {
   }
 
   async function handleDeleteTrainer(id: string) {
-    if (!window.confirm("РЈРґР°Р»РёС‚СЊ С‚СЂРµРЅРµСЂР° РёР· Р°РєС‚РёРІРЅРѕРіРѕ СЃРїРёСЃРєР°?")) {
+    if (!window.confirm("Удалить тренера из активного списка?")) {
       return;
     }
 
@@ -186,11 +186,11 @@ export default function SchedulePage() {
     try {
       await deleteTrainer(id);
       refreshPage();
-      setBanner({ tone: "success", text: "РўСЂРµРЅРµСЂ СЃРєСЂС‹С‚ РёР· Р°РєС‚РёРІРЅРѕРіРѕ СЃРїРёСЃРєР°" });
+      setBanner({ tone: "success", text: "Тренер скрыт из активного списка" });
     } catch (deleteError) {
       setBanner({
         tone: "error",
-        text: deleteError instanceof Error ? deleteError.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ С‚СЂРµРЅРµСЂР°",
+        text: deleteError instanceof Error ? deleteError.message : "Не удалось удалить тренера",
       });
     } finally {
       setDeletingTrainerId(null);
@@ -202,10 +202,10 @@ export default function SchedulePage() {
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <h1 className="font-[family:var(--font-heading)] text-3xl font-semibold tracking-tight text-[var(--text-main)] sm:text-4xl">
-            Р Р°СЃРїРёСЃР°РЅРёРµ
+            Расписание
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-[var(--text-muted)]">
-            РљР°Р»РµРЅРґР°СЂСЊ Р·Р°РЅСЏС‚РёР№, Р·Р°РїРёСЃСЊ РєР»РёРµРЅС‚РѕРІ, РїРѕСЃРµС‰Р°РµРјРѕСЃС‚СЊ Рё СѓРїСЂР°РІР»РµРЅРёРµ С‚СЂРµРЅРµСЂСЃРєРёРј СЃРѕСЃС‚Р°РІРѕРј.
+            Календарь занятий, запись клиентов, посещаемость и управление тренерским составом.
           </p>
         </div>
 
@@ -233,7 +233,7 @@ export default function SchedulePage() {
                 : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
             }`}
           >
-            Р—Р°Р»
+            Зал
           </button>
         </div>
       </div>
@@ -269,7 +269,7 @@ export default function SchedulePage() {
                     type="button"
                     onClick={() => setCurrentDate((value) => shiftDateByView(value, view, -1))}
                     className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[var(--line-soft)] text-[var(--text-main)] transition-colors hover:bg-[rgba(255,255,255,0.04)]"
-                    aria-label="РќР°Р·Р°Рґ"
+                    aria-label="Назад"
                   >
                     <ChevronLeftIcon />
                   </button>
@@ -278,13 +278,13 @@ export default function SchedulePage() {
                     onClick={() => setCurrentDate(new Date())}
                     className="rounded-[18px] border border-[var(--line-soft)] px-4 py-2.5 text-sm text-[var(--text-main)] transition-colors hover:bg-[rgba(255,255,255,0.04)]"
                   >
-                    РЎРµРіРѕРґРЅСЏ
+                    Сегодня
                   </button>
                   <button
                     type="button"
                     onClick={() => setCurrentDate((value) => shiftDateByView(value, view, 1))}
                     className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[var(--line-soft)] text-[var(--text-main)] transition-colors hover:bg-[rgba(255,255,255,0.04)]"
-                    aria-label="Р’РїРµСЂС‘Рґ"
+                    aria-label="Вперёд"
                   >
                     <ChevronRightIcon />
                   </button>
@@ -307,7 +307,7 @@ export default function SchedulePage() {
                   className="inline-flex items-center justify-center gap-2 rounded-[18px] bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110"
                 >
                   <PlusIcon />
-                  Р”РѕР±Р°РІРёС‚СЊ
+                  Добавить
                   </button>
                 ) : null}
               </div>
@@ -324,7 +324,7 @@ export default function SchedulePage() {
 
               {slotsLoading || supportLoading ? (
                 <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-6 py-20 text-center text-sm text-[var(--text-muted)]">
-                  Р—Р°РіСЂСѓР¶Р°РµРј СЂР°СЃРїРёСЃР°РЅРёРµ...
+                  Загружаем расписание...
                 </div>
               ) : view === "day" ? (
                 <DayTimeline
@@ -379,35 +379,35 @@ export default function SchedulePage() {
 
             <aside className="space-y-4">
               <div className="rounded-[28px] border border-[var(--line-soft)] bg-[linear-gradient(180deg,rgba(0,191,165,0.16),rgba(13,17,23,0.18))] p-5">
-                <p className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">РљРѕРЅС‚СЂРѕР»СЊ</p>
+                <p className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Контроль</p>
                 <p className="mt-3 text-2xl font-semibold text-[var(--text-main)]">{slots.length}</p>
-                <p className="mt-1 text-sm text-[var(--text-muted)]">Р·Р°РЅСЏС‚РёР№ РІ С‚РµРєСѓС‰РµРј РґРёР°РїР°Р·РѕРЅРµ</p>
+                <p className="mt-1 text-sm text-[var(--text-muted)]">занятий в текущем диапазоне</p>
               </div>
 
               <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
-                <p className="text-sm font-semibold text-[var(--text-main)]">РЎРїСЂР°РІРѕС‡РЅРёРєРё</p>
+                <p className="text-sm font-semibold text-[var(--text-main)]">Справочники</p>
                 <div className="mt-4 space-y-3 text-sm text-[var(--text-main)]">
                   <div className="flex items-center justify-between rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3">
-                    <span>Р’РёРґС‹ С‚СЂРµРЅРёСЂРѕРІРѕРє</span>
+                    <span>Виды тренировок</span>
                     <span className="text-[var(--accent)]">{trainingTypes.length}</span>
                   </div>
                   <div className="flex items-center justify-between rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3">
-                    <span>РђРєС‚РёРІРЅС‹Рµ С‚СЂРµРЅРµСЂС‹</span>
+                    <span>Активные тренеры</span>
                     <span className="text-[var(--accent)]">{trainers.length}</span>
                   </div>
                   <div className="flex items-center justify-between rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3">
-                    <span>РЈСЃР»СѓРіРё РґР»СЏ СЃРїРёСЃР°РЅРёСЏ</span>
+                    <span>Услуги для списания</span>
                     <span className="text-[var(--accent)]">{services.length}</span>
                   </div>
                 </div>
               </div>
 
               <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
-                <p className="text-sm font-semibold text-[var(--text-main)]">РџРѕРґСЃРєР°Р·РєРё</p>
+                <p className="text-sm font-semibold text-[var(--text-main)]">Подсказки</p>
                 <ul className="mt-4 space-y-3 text-sm text-[var(--text-muted)]">
-                  <li>Р’ РґРЅРµРІРЅРѕРј РІРёРґРµ РјРѕР¶РЅРѕ РєР»РёРєРЅСѓС‚СЊ РїРѕ СЃРІРѕР±РѕРґРЅРѕРјСѓ РІСЂРµРјРµРЅРё Рё СЃСЂР°Р·Сѓ СЃРѕР·РґР°С‚СЊ СЃР»РѕС‚.</li>
-                  <li>Р—Р°РїРёСЃСЊ РєР»РёРµРЅС‚Р° РЅРµ СЃРїРёСЃС‹РІР°РµС‚ Р°Р±РѕРЅРµРјРµРЅС‚. РЎРїРёСЃР°РЅРёРµ РїСЂРѕРёСЃС…РѕРґРёС‚ С‚РѕР»СЊРєРѕ РїСЂРё РѕС‚РјРµС‚РєРµ РїРѕСЃРµС‰РµРЅРёСЏ.</li>
-                  <li>РќРµРѕС‚РјРµС‡РµРЅРЅС‹Рµ Р·Р°РїРёСЃРё РїРѕСЃР»Рµ РѕРєРѕРЅС‡Р°РЅРёСЏ Р·Р°РЅСЏС‚РёСЏ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РїРµСЂРµС…РѕРґСЏС‚ РІ СЃС‚Р°С‚СѓСЃ вЂњРџСЂРѕРїСѓСЃС‚РёР»вЂќ.</li>
+                  <li>В дневном виде можно кликнуть по свободному времени и сразу создать слот.</li>
+                  <li>Запись клиента не списывает абонемент. Списание происходит только при отметке посещения.</li>
+                  <li>Неотмеченные записи после окончания занятия автоматически переходят в статус “Пропустил”.</li>
                 </ul>
               </div>
             </aside>
@@ -419,8 +419,8 @@ export default function SchedulePage() {
         <section className="space-y-4">
           <div className="flex flex-col gap-4 rounded-[30px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-lg font-semibold text-[var(--text-main)]">РўСЂРµРЅРµСЂС‹</p>
-              <p className="mt-1 text-sm text-[var(--text-muted)]">РљРѕРЅС‚Р°РєС‚С‹, Р±РёРѕ Рё РїСЂРёРІСЏР·РєР° Рє РІРёРґР°Рј С‚СЂРµРЅРёСЂРѕРІРѕРє</p>
+              <p className="text-lg font-semibold text-[var(--text-main)]">Тренеры</p>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">Контакты, био и привязка к видам тренировок</p>
             </div>
 
             {canManageTrainers ? (
@@ -433,7 +433,7 @@ export default function SchedulePage() {
               className="inline-flex items-center justify-center gap-2 rounded-[18px] bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110"
             >
               <PlusIcon />
-              РќРѕРІС‹Р№ С‚СЂРµРЅРµСЂ
+              Новый тренер
               </button>
             ) : null}
           </div>
@@ -441,7 +441,7 @@ export default function SchedulePage() {
           <div className="grid gap-4 lg:grid-cols-2">
             {trainers.length === 0 ? (
               <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-6 py-16 text-center text-sm text-[var(--text-muted)]">
-                РўСЂРµРЅРµСЂРѕРІ РїРѕРєР° РЅРµС‚
+                Тренеров пока нет
               </div>
             ) : (
               trainers.map((trainer) => (
@@ -452,10 +452,10 @@ export default function SchedulePage() {
                         {trainer.last_name} {trainer.first_name}
                       </p>
                       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-[var(--text-muted)]">
-                        <span>{trainer.phone || "РўРµР»РµС„РѕРЅ РЅРµ СѓРєР°Р·Р°РЅ"}</span>
+                        <span>{trainer.phone || "Телефон не указан"}</span>
                         {trainer.email && (
                           <>
-                            <span>вЂў</span>
+                            <span>•</span>
                             <span>{trainer.email}</span>
                           </>
                         )}
@@ -472,7 +472,7 @@ export default function SchedulePage() {
                         }}
                         className="rounded-[16px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-main)] transition-colors hover:bg-[rgba(255,255,255,0.04)]"
                       >
-                        Р РµРґР°РєС‚РёСЂРѕРІР°С‚СЊ
+                        Редактировать
                       </button>
                       <button
                         type="button"
@@ -480,13 +480,13 @@ export default function SchedulePage() {
                         disabled={deletingTrainerId === trainer.id}
                         className="rounded-[16px] border border-[rgba(248,81,73,0.24)] px-3 py-2 text-sm text-[var(--danger)] transition-colors hover:bg-[rgba(248,81,73,0.12)] disabled:opacity-50"
                       >
-                        {deletingTrainerId === trainer.id ? "РЈРґР°Р»СЏРµРј..." : "РЈРґР°Р»РёС‚СЊ"}
+                        {deletingTrainerId === trainer.id ? "Удаляем..." : "Удалить"}
                       </button>
                       </div>
                     ) : null}
                   </div>
 
-                  <p className="mt-4 text-sm text-[var(--text-muted)]">{trainer.bio || "РћРїРёСЃР°РЅРёРµ РїРѕРєР° РЅРµ РґРѕР±Р°РІР»РµРЅРѕ"}</p>
+                  <p className="mt-4 text-sm text-[var(--text-muted)]">{trainer.bio || "Описание пока не добавлено"}</p>
 
                   <div className="mt-4 flex flex-wrap gap-2">
                     {trainer.training_types.length > 0 ? (
@@ -504,7 +504,7 @@ export default function SchedulePage() {
                         </span>
                       ))
                     ) : (
-                      <span className="text-sm text-[var(--text-muted)]">Р’РёРґС‹ С‚СЂРµРЅРёСЂРѕРІРѕРє РЅРµ РІС‹Р±СЂР°РЅС‹</span>
+                      <span className="text-sm text-[var(--text-muted)]">Виды тренировок не выбраны</span>
                     )}
                   </div>
                 </div>

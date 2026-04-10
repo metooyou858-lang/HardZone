@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 
@@ -95,27 +95,27 @@ export function SlotEditorModal({
 
   async function handleSubmit() {
     if (!dateValue || !startTime) {
-      setError("РЈРєР°Р¶РёС‚Рµ РґР°С‚Сѓ Рё РІСЂРµРјСЏ РЅР°С‡Р°Р»Р°");
+      setError("Укажите дату и время начала");
       return;
     }
 
     if (!trainingTypeId) {
-      setError("Р’С‹Р±РµСЂРёС‚Рµ РІРёРґ С‚СЂРµРЅРёСЂРѕРІРєРё");
+      setError("Выберите вид тренировки");
       return;
     }
 
     if (!durationMinutes.trim()) {
-      setError("РЈРєР°Р¶РёС‚Рµ РґР»РёС‚РµР»СЊРЅРѕСЃС‚СЊ");
+      setError("Укажите длительность");
       return;
     }
 
     if (!capacity.trim()) {
-      setError("Р”Р»СЏ РІС‹Р±СЂР°РЅРЅРѕРіРѕ РІРёРґР° С‚СЂРµРЅРёСЂРѕРІРєРё РЅРµ СѓРєР°Р·Р°РЅР° РІРјРµСЃС‚РёРјРѕСЃС‚СЊ");
+      setError("Для выбранного вида тренировки не указана вместимость");
       return;
     }
 
     if (entryMode === "regular" && repeatDays.length === 0) {
-      setError("Р’С‹Р±РµСЂРёС‚Рµ С…РѕС‚СЏ Р±С‹ РѕРґРёРЅ РґРµРЅСЊ РЅРµРґРµР»Рё");
+      setError("Выберите хотя бы один день недели");
       return;
     }
 
@@ -139,13 +139,13 @@ export function SlotEditorModal({
     try {
       if (editorState.slot) {
         await updateScheduleSlot(editorState.slot.id, payload);
-        onSaved("Р—Р°РЅСЏС‚РёРµ РѕР±РЅРѕРІР»РµРЅРѕ");
+        onSaved("Занятие обновлено");
         return;
       }
 
       if (entryMode === "single") {
         await createScheduleSlot(payload);
-        onSaved("Р—Р°РЅСЏС‚РёРµ СЃРѕР·РґР°РЅРѕ");
+        onSaved("Занятие создано");
         return;
       }
 
@@ -170,9 +170,9 @@ export function SlotEditorModal({
         date_to: monthBounds.to,
       });
 
-      onSaved("Р РµРіСѓР»СЏСЂРЅС‹Рµ Р·Р°РЅСЏС‚РёСЏ СЃРѕР·РґР°РЅС‹ РЅР° С‚РµРєСѓС‰РёР№ РјРµСЃСЏС†");
+      onSaved("Регулярные занятия созданы на текущий месяц");
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ Р·Р°РЅСЏС‚РёРµ");
+      setError(submitError instanceof Error ? submitError.message : "Не удалось сохранить занятие");
     } finally {
       setSaving(false);
     }
@@ -184,17 +184,17 @@ export function SlotEditorModal({
         <div className="flex items-start justify-between gap-4">
           <div className="max-w-2xl">
             <p className="font-[family:var(--font-heading)] text-[1.9rem] font-semibold leading-none text-[var(--text-main)]">
-              {editorState.slot ? "Р РµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ Р·Р°РЅСЏС‚РёСЏ" : "РќРѕРІРѕРµ Р·Р°РЅСЏС‚РёРµ"}
+              {editorState.slot ? "Редактирование занятия" : "Новое занятие"}
             </p>
             <p className="mt-1 text-sm text-[var(--text-muted)]">
-              {editorState.slot ? "РР·РјРµРЅРёС‚Рµ РїР°СЂР°РјРµС‚СЂС‹ СЃСѓС‰РµСЃС‚РІСѓСЋС‰РµРіРѕ СЃР»РѕС‚Р°" : "РЎРѕР·РґР°Р№С‚Рµ СЂР°Р·РѕРІРѕРµ РёР»Рё СЂРµРіСѓР»СЏСЂРЅРѕРµ Р·Р°РЅСЏС‚РёРµ"}
+              {editorState.slot ? "Измените параметры существующего слота" : "Создайте разовое или регулярное занятие"}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[var(--bg-card-soft)] text-[var(--text-muted)] shadow-[0_12px_30px_rgba(0,0,0,0.18)] transition-all hover:border-[rgba(255,255,255,0.14)] hover:text-[var(--text-main)]"
-            aria-label="Р—Р°РєСЂС‹С‚СЊ"
+            aria-label="Закрыть"
           >
             <CloseIcon />
           </button>
@@ -208,11 +208,11 @@ export function SlotEditorModal({
 
         {!editorState.slot && (
           <div className="mt-6 rounded-[24px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4">
-            <p className={labelCls}>Р’РёРґ Р·Р°РЅСЏС‚РёСЏ</p>
+            <p className={labelCls}>Вид занятия</p>
             <div className="mt-3 inline-flex rounded-full border border-[var(--line-soft)] bg-[var(--bg-card)] p-1">
               {([
-                { value: "single", label: "Р Р°Р·РѕРІРѕРµ" },
-                { value: "regular", label: "Р РµРіСѓР»СЏСЂРЅРѕРµ" },
+                { value: "single", label: "Разовое" },
+                { value: "regular", label: "Регулярное" },
               ] as const).map((item) => (
                 <button
                   key={item.value}
@@ -233,7 +233,7 @@ export function SlotEditorModal({
 
         <div className="mt-6 grid gap-4 lg:grid-cols-2">
           <div className="rounded-[24px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4">
-            <p className={labelCls}>РўРёРї Р·Р°РЅСЏС‚РёСЏ</p>
+            <p className={labelCls}>Тип занятия</p>
             <div className="mt-3 grid grid-cols-2 gap-2">
               {slotTypeOptions.map((option) => (
                 <button
@@ -256,7 +256,7 @@ export function SlotEditorModal({
             </div>
 
             <div className="mt-4">
-              <label className={labelCls}>Р’РёРґ С‚СЂРµРЅРёСЂРѕРІРєРё</label>
+              <label className={labelCls}>Вид тренировки</label>
               <select
                 value={trainingTypeId}
                 onChange={(event) => {
@@ -276,7 +276,7 @@ export function SlotEditorModal({
                 }}
                 className={`mt-2 ${inputCls}`}
               >
-                <option value="">РќРµ РІС‹Р±СЂР°РЅ</option>
+                <option value="">Не выбран</option>
                 {availableTrainingTypes.map((type) => (
                   <option key={type.id} value={type.id}>
                     {type.name}
@@ -286,13 +286,13 @@ export function SlotEditorModal({
             </div>
 
             <div className="mt-4">
-              <label className={labelCls}>РўСЂРµРЅРµСЂ</label>
+              <label className={labelCls}>Тренер</label>
               <select
                 value={trainerId}
                 onChange={(event) => setTrainerId(event.target.value)}
                 className={`mt-2 ${inputCls}`}
               >
-                <option value="">РќРµ РЅР°Р·РЅР°С‡РµРЅ</option>
+                <option value="">Не назначен</option>
                 {trainers.map((trainer) => (
                   <option key={trainer.id} value={trainer.id}>
                     {trainer.last_name} {trainer.first_name}
@@ -302,13 +302,13 @@ export function SlotEditorModal({
             </div>
 
             <div className="mt-4">
-              <label className={labelCls}>РЈСЃР»СѓРіР° РґР»СЏ СЃРїРёСЃР°РЅРёСЏ</label>
+              <label className={labelCls}>Услуга для списания</label>
               <select
                 value={productId}
                 onChange={(event) => setProductId(event.target.value)}
                 className={`mt-2 ${inputCls}`}
               >
-                <option value="">Р‘РµР· СѓСЃР»СѓРіРё</option>
+                <option value="">Без услуги</option>
                 {services.map((service) => (
                   <option key={service.id} value={service.id}>
                     {service.name}
@@ -321,7 +321,7 @@ export function SlotEditorModal({
           <div className="rounded-[24px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className={labelCls}>Р”Р°С‚Р°</label>
+                <label className={labelCls}>Дата</label>
                 <input
                   type="date"
                   value={dateValue}
@@ -330,7 +330,7 @@ export function SlotEditorModal({
                 />
               </div>
               <div>
-                <label className={labelCls}>Р’СЂРµРјСЏ РЅР°С‡Р°Р»Р°</label>
+                <label className={labelCls}>Время начала</label>
                 <input
                   type="time"
                   value={startTime}
@@ -339,7 +339,7 @@ export function SlotEditorModal({
                 />
               </div>
               <div>
-                <label className={labelCls}>Р”Р»РёС‚РµР»СЊРЅРѕСЃС‚СЊ, РјРёРЅ</label>
+                <label className={labelCls}>Длительность, мин</label>
                 <input
                   type="number"
                   min="15"
@@ -350,7 +350,7 @@ export function SlotEditorModal({
                 />
               </div>
               <div>
-                <label className={labelCls}>Р’РјРµСЃС‚РёРјРѕСЃС‚СЊ</label>
+                <label className={labelCls}>Вместимость</label>
                 <input
                   type="number"
                   min="1"
@@ -359,18 +359,18 @@ export function SlotEditorModal({
                   className={`mt-2 ${inputCls} cursor-not-allowed opacity-80`}
                 />
                 <p className="mt-2 text-xs text-[var(--text-muted)]">
-                  Р’РјРµСЃС‚РёРјРѕСЃС‚СЊ Р±РµСЂС‘С‚СЃСЏ РёР· РІС‹Р±СЂР°РЅРЅРѕРіРѕ РІРёРґР° С‚СЂРµРЅРёСЂРѕРІРєРё.
+                  Вместимость берётся из выбранного вида тренировки.
                 </p>
               </div>
               <div>
-                <label className={labelCls}>Р‘Р»РѕРєРёСЂРѕРІРєР° Р·Р°РїРёСЃРё, С‡Р°СЃС‹</label>
+                <label className={labelCls}>Блокировка записи, часы</label>
                 <input
                   type="number"
                   min="0"
                   value={blockIfEmptyHours}
                   onChange={(event) => setBlockIfEmptyHours(event.target.value)}
                   className={`mt-2 ${inputCls}`}
-                  placeholder="РќР°РїСЂРёРјРµСЂ 6"
+                  placeholder="Например 6"
                 />
               </div>
               <label className="flex items-center gap-3 rounded-[18px] border border-[var(--line-soft)] px-4 py-3 text-sm text-[var(--text-main)]">
@@ -380,13 +380,13 @@ export function SlotEditorModal({
                   onChange={(event) => setIsFree(event.target.checked)}
                   className="h-4 w-4 rounded border-[var(--line-soft)] bg-transparent text-[var(--accent)] focus:ring-[var(--accent)]"
                 />
-                Р‘РµСЃРїР»Р°С‚РЅРѕРµ Р·Р°РЅСЏС‚РёРµ
+                Бесплатное занятие
               </label>
             </div>
 
             {!editorState.slot && entryMode === "regular" && (
               <div className="mt-4 rounded-[20px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-4">
-                <p className={labelCls}>Р”РЅРё РЅРµРґРµР»Рё</p>
+                <p className={labelCls}>Дни недели</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {weekdayOptions.map((day) => {
                     const active = repeatDays.includes(day.value);
@@ -414,19 +414,19 @@ export function SlotEditorModal({
                   })}
                 </div>
                 <p className="mt-3 text-xs text-[var(--text-muted)]">
-                  РџРѕСЃР»Рµ СЃРѕС…СЂР°РЅРµРЅРёСЏ С€Р°Р±Р»РѕРЅС‹ Р±СѓРґСѓС‚ СЃРіРµРЅРµСЂРёСЂРѕРІР°РЅС‹ РЅР° РјРµСЃСЏС† РІС‹Р±СЂР°РЅРЅРѕР№ РґР°С‚С‹.
+                  После сохранения шаблоны будут сгенерированы на месяц выбранной даты.
                 </p>
               </div>
             )}
 
             <div className="mt-4">
-              <label className={labelCls}>РљРѕРјРјРµРЅС‚Р°СЂРёР№</label>
+              <label className={labelCls}>Комментарий</label>
               <textarea
                 value={comment}
                 onChange={(event) => setComment(event.target.value)}
                 rows={4}
                 className={`mt-2 ${inputCls} resize-none`}
-                placeholder="РќР°РїСЂРёРјРµСЂ: РїРµСЂРІС‹Р№ РІРІРѕРґРЅС‹Р№ РєР»Р°СЃСЃ РґР»СЏ РЅРѕРІРёС‡РєРѕРІ"
+                placeholder="Например: первый вводный класс для новичков"
               />
             </div>
           </div>
@@ -440,14 +440,14 @@ export function SlotEditorModal({
             className="inline-flex items-center gap-2 rounded-[18px] bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110 disabled:opacity-50"
           >
             <PlusIcon />
-            {saving ? "РЎРѕС…СЂР°РЅСЏРµРј..." : editorState.slot ? "РЎРѕС…СЂР°РЅРёС‚СЊ" : "РЎРѕР·РґР°С‚СЊ"}
+            {saving ? "Сохраняем..." : editorState.slot ? "Сохранить" : "Создать"}
           </button>
           <button
             type="button"
             onClick={onClose}
             className="rounded-[18px] border border-[var(--line-soft)] px-5 py-3 text-sm text-[var(--text-main)] transition-colors hover:bg-[rgba(255,255,255,0.04)]"
           >
-            РћС‚РјРµРЅР°
+            Отмена
           </button>
         </div>
       </div>

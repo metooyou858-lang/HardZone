@@ -1,4 +1,4 @@
-﻿import { formatMoney } from "@/components/warehouse/shared";
+import { formatMoney } from "@/components/warehouse/shared";
 import type { Category } from "@/lib/api/categories";
 import type { ClientListItem } from "@/lib/api/clients";
 import type { Order, OrderItem, OrderItemKind, OrderStatus } from "@/lib/api/orders";
@@ -43,11 +43,11 @@ export const searchInputCls =
 export const SERVICES_GROUP_ID = "__services__";
 
 export const historyFilters: { value: HistoryFilter; label: string }[] = [
-  { value: "all", label: "Р’СЃРµ" },
-  { value: "open", label: "РћР¶РёРґР°РµС‚" },
-  { value: "confirmed", label: "РћРїР»Р°С‡РµРЅ" },
-  { value: "refunded", label: "Р’РѕР·РІСЂР°С‚" },
-  { value: "cancelled", label: "РћС‚РјРµРЅС‘РЅ" },
+  { value: "all", label: "Все" },
+  { value: "open", label: "Ожидает" },
+  { value: "confirmed", label: "Оплачен" },
+  { value: "refunded", label: "Возврат" },
+  { value: "cancelled", label: "Отменён" },
 ];
 
 export function SearchIcon() {
@@ -155,7 +155,7 @@ export function resolveOrderItemKind(product: Product): OrderItemKind {
   }
 
   const typeName = (product.product_type_name ?? "").toLowerCase();
-  if (typeName.includes("Р°Р±РѕРЅ")) {
+  if (typeName.includes("абон")) {
     return "subscription";
   }
 
@@ -167,7 +167,7 @@ export function getTypeLabel(product: Product) {
     return product.product_type_name;
   }
 
-  return product.has_stock ? "РўРѕРІР°СЂ" : "РЈСЃР»СѓРіР°";
+  return product.has_stock ? "Товар" : "Услуга";
 }
 
 export function getCatalogAccentMeta(product: Product) {
@@ -175,7 +175,7 @@ export function getCatalogAccentMeta(product: Product) {
 
   if (kind === "subscription") {
     return {
-      label: "РђР±РѕРЅРµРјРµРЅС‚",
+      label: "Абонемент",
       chipClass: "border-[rgba(210,153,34,0.22)] bg-[rgba(210,153,34,0.12)] text-[var(--warning)]",
       lineClass: "bg-[rgba(210,153,34,0.9)]",
     };
@@ -183,7 +183,7 @@ export function getCatalogAccentMeta(product: Product) {
 
   if (kind === "service") {
     return {
-      label: "РЈСЃР»СѓРіР°",
+      label: "Услуга",
       chipClass: "border-[rgba(0,191,165,0.22)] bg-[var(--accent-soft)] text-[var(--accent)]",
       lineClass: "bg-[rgba(0,191,165,0.92)]",
     };
@@ -213,7 +213,7 @@ export function buildCatalogGroups(categories: Category[], serviceCount: number)
   if (serviceCount > 0) {
     groups.push({
       id: SERVICES_GROUP_ID,
-      label: "РЈСЃР»СѓРіРё",
+      label: "Услуги",
       count: serviceCount,
       kind: "services",
     });
@@ -236,18 +236,18 @@ export function getBannerClass(tone: BannerTone) {
 
 export function getStatusLabel(status: OrderStatus) {
   if (status === "refunded") {
-    return "Р’РѕР·РІСЂР°С‚";
+    return "Возврат";
   }
 
   if (status === "confirmed") {
-    return "РћРїР»Р°С‡РµРЅ";
+    return "Оплачен";
   }
 
   if (status === "cancelled") {
-    return "РћС‚РјРµРЅС‘РЅ";
+    return "Отменён";
   }
 
-  return "РћР¶РёРґР°РµС‚ РѕРїР»Р°С‚С‹";
+  return "Ожидает оплаты";
 }
 
 export function getStatusBadgeClass(status: OrderStatus) {
@@ -268,14 +268,14 @@ export function getStatusBadgeClass(status: OrderStatus) {
 
 export function getPaymentLabel(paymentType: Order["payment_type"]) {
   if (paymentType === "cash") {
-    return "РќР°Р»РёС‡РЅС‹Рµ";
+    return "Наличные";
   }
 
   if (paymentType === "card") {
-    return "РљР°СЂС‚Р°";
+    return "Карта";
   }
 
-  return "вЂ”";
+  return "—";
 }
 
 export function getHistoryActionButtonClass(tone: "accent" | "danger" | "warning") {
@@ -296,35 +296,35 @@ export function getClientName(client: Pick<ClientListItem, "first_name" | "last_
 
 export function getSubscriptionTypeLabel(type: ClientListItem["subscription_type"]) {
   if (type === "single") {
-    return "Р Р°Р·РѕРІРѕРµ";
+    return "Разовое";
   }
 
   if (type === "visits") {
-    return "РќР° Р·Р°РЅСЏС‚РёСЏ";
+    return "На занятия";
   }
 
   if (type === "period") {
-    return "РќР° РїРµСЂРёРѕРґ";
+    return "На период";
   }
 
   if (type === "unlimited") {
-    return "Р‘РµР·Р»РёРјРёС‚";
+    return "Безлимит";
   }
 
-  return "Р‘РµР· Р°Р±РѕРЅРµРјРµРЅС‚Р°";
+  return "Без абонемента";
 }
 
 export function getClientSubscriptionLabel(client: ClientListItem) {
   if (!client.subscription_id || client.subscription_status !== "active" || !client.subscription_type) {
-    return "Р‘РµР· Р°РєС‚РёРІРЅРѕРіРѕ Р°Р±РѕРЅРµРјРµРЅС‚Р°";
+    return "Без активного абонемента";
   }
 
   if (client.subscription_type === "single" || client.subscription_type === "visits") {
-    return `${getSubscriptionTypeLabel(client.subscription_type)} В· РѕСЃС‚Р°Р»РѕСЃСЊ ${client.visits_left ?? 0}`;
+    return `${getSubscriptionTypeLabel(client.subscription_type)} · осталось ${client.visits_left ?? 0}`;
   }
 
   if (client.expires_at) {
-    return `${getSubscriptionTypeLabel(client.subscription_type)} В· РґРѕ ${new Date(client.expires_at).toLocaleDateString("ru")}`;
+    return `${getSubscriptionTypeLabel(client.subscription_type)} · до ${new Date(client.expires_at).toLocaleDateString("ru")}`;
   }
 
   return getSubscriptionTypeLabel(client.subscription_type);

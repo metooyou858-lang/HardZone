@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useRef, useState } from "react";
 
@@ -73,7 +73,7 @@ export function SlotDetailsModal({
       const response = await fetchScheduleSlot(nextId);
       setDetail(response);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ Р·Р°РЅСЏС‚РёРµ");
+      setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить занятие");
     } finally {
       setLoading(false);
     }
@@ -89,7 +89,7 @@ export function SlotDetailsModal({
       setSelectedClientDetail(detailResponse);
       setSelectedSubscriptionId(activeSubscriptions[0]?.id ?? "");
     } catch (loadError) {
-      setClientError(loadError instanceof Error ? loadError.message : "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ Р°Р±РѕРЅРµРјРµРЅС‚С‹ РєР»РёРµРЅС‚Р°");
+      setClientError(loadError instanceof Error ? loadError.message : "Не удалось загрузить абонементы клиента");
       setSelectedClientDetail(null);
       setSelectedSubscriptionId("");
     }
@@ -103,7 +103,7 @@ export function SlotDetailsModal({
       const client = await findClientByBarcode(barcode);
       await selectClient(client);
     } catch (scanError) {
-      setClientError(scanError instanceof Error ? scanError.message : "РљР»РёРµРЅС‚ РїРѕ С€С‚СЂРёС…РєРѕРґСѓ РЅРµ РЅР°Р№РґРµРЅ");
+      setClientError(scanError instanceof Error ? scanError.message : "Клиент по штрихкоду не найден");
     } finally {
       setClientLoading(false);
     }
@@ -146,7 +146,7 @@ export function SlotDetailsModal({
         }
       } catch (loadError) {
         if (!cancelled) {
-          setClientError(loadError instanceof Error ? loadError.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РЅР°Р№С‚Рё РєР»РёРµРЅС‚РѕРІ");
+          setClientError(loadError instanceof Error ? loadError.message : "Не удалось найти клиентов");
         }
       } finally {
         if (!cancelled) {
@@ -173,22 +173,22 @@ export function SlotDetailsModal({
         <div className="flex items-start justify-between gap-4">
           <div className="max-w-2xl">
             <p className="font-[family:var(--font-heading)] text-[1.9rem] font-semibold leading-none text-[var(--text-main)]">
-              Р”РµС‚Р°Р»Рё Р·Р°РЅСЏС‚РёСЏ
+              Детали занятия
             </p>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">Р—Р°РїРёСЃРё, РїРѕСЃРµС‰Р°РµРјРѕСЃС‚СЊ Рё РґРµР№СЃС‚РІРёСЏ РїРѕ СЃР»РѕС‚Сѓ</p>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">Записи, посещаемость и действия по слоту</p>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[var(--bg-card-soft)] text-[var(--text-muted)] shadow-[0_12px_30px_rgba(0,0,0,0.18)] transition-all hover:border-[rgba(255,255,255,0.14)] hover:text-[var(--text-main)]"
-            aria-label="Р—Р°РєСЂС‹С‚СЊ"
+            aria-label="Закрыть"
           >
             <CloseIcon />
           </button>
         </div>
 
         {loading ? (
-          <div className="py-20 text-center text-sm text-[var(--text-muted)]">Р—Р°РіСЂСѓР¶Р°РµРј Р·Р°РЅСЏС‚РёРµ...</div>
+          <div className="py-20 text-center text-sm text-[var(--text-muted)]">Загружаем занятие...</div>
         ) : error ? (
           <div className="mt-6 rounded-2xl border border-[rgba(248,81,73,0.35)] bg-[rgba(248,81,73,0.12)] px-4 py-3 text-sm text-[var(--danger)]">
             {error}
@@ -209,10 +209,10 @@ export function SlotDetailsModal({
                       <span className="rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 py-1.5 text-[var(--text-muted)]">
                         {formatDateLabel(parseIsoDate(detail.date))}
                       </span>
-                      <span>вЂў</span>
-                      <span>{detail.trainer_name || "РўСЂРµРЅРµСЂ РЅРµ РЅР°Р·РЅР°С‡РµРЅ"}</span>
-                      <span>вЂў</span>
-                      <span>{detail.booked_count}/{detail.capacity} РјРµСЃС‚</span>
+                      <span>•</span>
+                      <span>{detail.trainer_name || "Тренер не назначен"}</span>
+                      <span>•</span>
+                      <span>{detail.booked_count}/{detail.capacity} мест</span>
                     </div>
                   </div>
                   <span
@@ -229,24 +229,24 @@ export function SlotDetailsModal({
 
                 <div className="mt-4 grid gap-3 text-sm text-[var(--text-main)] sm:grid-cols-2">
                   <div className="rounded-[20px] border border-[rgba(255,255,255,0.07)] bg-[rgba(10,15,25,0.35)] px-4 py-3.5">
-                    <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">РЈСЃР»СѓРіР°</p>
-                    <p className="mt-2">{detail.product_name || "Р‘РµР· СѓСЃР»СѓРіРё"}</p>
+                    <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">Услуга</p>
+                    <p className="mt-2">{detail.product_name || "Без услуги"}</p>
                   </div>
                   <div className="rounded-[20px] border border-[rgba(255,255,255,0.07)] bg-[rgba(10,15,25,0.35)] px-4 py-3.5">
-                    <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">Р—Р°РїРёСЃСЊ</p>
+                    <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">Запись</p>
                     <p className="mt-2">
                       {detail.block_if_empty_hours
-                        ? `Р—Р°РєСЂС‹РІР°РµС‚СЃСЏ Р·Р° ${detail.block_if_empty_hours} С‡. РїСЂРё РїСѓСЃС‚РѕРј СЃР»РѕС‚Рµ`
-                        : "Р‘РµР· РѕРіСЂР°РЅРёС‡РµРЅРёР№"}
+                        ? `Закрывается за ${detail.block_if_empty_hours} ч. при пустом слоте`
+                        : "Без ограничений"}
                     </p>
                   </div>
                   <div className="rounded-[20px] border border-[rgba(255,255,255,0.07)] bg-[rgba(10,15,25,0.35)] px-4 py-3.5">
-                    <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">Р‘РµСЃРїР»Р°С‚РЅРѕРµ</p>
-                    <p className="mt-2">{detail.is_free ? "Р”Р°" : "РќРµС‚"}</p>
+                    <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">Бесплатное</p>
+                    <p className="mt-2">{detail.is_free ? "Да" : "Нет"}</p>
                   </div>
                   <div className="rounded-[20px] border border-[rgba(255,255,255,0.07)] bg-[rgba(10,15,25,0.35)] px-4 py-3.5">
-                    <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">РљРѕРјРјРµРЅС‚Р°СЂРёР№</p>
-                    <p className="mt-2">{detail.comment || "вЂ”"}</p>
+                    <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">Комментарий</p>
+                    <p className="mt-2">{detail.comment || "—"}</p>
                   </div>
                 </div>
 
@@ -257,12 +257,12 @@ export function SlotDetailsModal({
                     onClick={() => onEdit(detail)}
                     className="rounded-[18px] border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] px-4 py-2.5 text-sm text-[var(--text-main)] transition-colors hover:bg-[rgba(255,255,255,0.07)]"
                   >
-                    Р РµРґР°РєС‚РёСЂРѕРІР°С‚СЊ
+                    Редактировать
                   </button>
                   <button
                     type="button"
                     onClick={async () => {
-                      if (!window.confirm("РћС‚РјРµРЅРёС‚СЊ СЌС‚Рѕ Р·Р°РЅСЏС‚РёРµ Рё РІСЃРµ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅС‹Рµ Р·Р°РїРёСЃРё?")) {
+                      if (!window.confirm("Отменить это занятие и все подтверждённые записи?")) {
                         return;
                       }
 
@@ -271,12 +271,12 @@ export function SlotDetailsModal({
                       try {
                         await cancelScheduleSlot(detail.id);
                         onChanged();
-                        onNotice({ tone: "success", text: "Р—Р°РЅСЏС‚РёРµ РѕС‚РјРµРЅРµРЅРѕ" });
+                        onNotice({ tone: "success", text: "Занятие отменено" });
                         onClose();
                       } catch (cancelError) {
                         onNotice({
                           tone: "error",
-                          text: cancelError instanceof Error ? cancelError.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РјРµРЅРёС‚СЊ Р·Р°РЅСЏС‚РёРµ",
+                          text: cancelError instanceof Error ? cancelError.message : "Не удалось отменить занятие",
                         });
                       } finally {
                         setCancellingSlot(false);
@@ -285,7 +285,7 @@ export function SlotDetailsModal({
                     disabled={cancellingSlot}
                     className="rounded-[18px] border border-[rgba(248,81,73,0.24)] px-4 py-2.5 text-sm text-[var(--danger)] transition-colors hover:bg-[rgba(248,81,73,0.12)] disabled:opacity-50"
                   >
-                    {cancellingSlot ? "РћС‚РјРµРЅСЏРµРј..." : "РћС‚РјРµРЅРёС‚СЊ Р·Р°РЅСЏС‚РёРµ"}
+                    {cancellingSlot ? "Отменяем..." : "Отменить занятие"}
                   </button>
                 </div>
                 ) : null}
@@ -297,9 +297,9 @@ export function SlotDetailsModal({
                     <SearchIcon />
                   </span>
                   <div>
-                    <p className="text-lg font-semibold text-[var(--text-main)]">Р—Р°РїРёСЃР°С‚СЊ РєР»РёРµРЅС‚Р°</p>
+                    <p className="text-lg font-semibold text-[var(--text-main)]">Записать клиента</p>
                     <p className="mt-1 text-sm text-[var(--text-muted)]">
-                      РџРѕРёСЃРє РїРѕ РёРјРµРЅРё РёР»Рё Р±С‹СЃС‚СЂРѕРµ СЃРєР°РЅРёСЂРѕРІР°РЅРёРµ С€С‚СЂРёС…РєРѕРґР° РєР»РёРµРЅС‚Р°
+                      Поиск по имени или быстрое сканирование штрихкода клиента
                     </p>
                   </div>
                 </div>
@@ -345,7 +345,7 @@ export function SlotDetailsModal({
                           clientScannerLastTsRef.current = now;
                         }
                       }}
-                      placeholder="Р’РІРµРґРёС‚Рµ Р¤РРћ РєР»РёРµРЅС‚Р° РёР»Рё СЃРєР°РЅРёСЂСѓР№С‚Рµ С€С‚СЂРёС…РєРѕРґ..."
+                      placeholder="Введите ФИО клиента или сканируйте штрихкод..."
                       className={`${inputCls} pl-12`}
                     />
                   </label>
@@ -360,7 +360,7 @@ export function SlotDetailsModal({
                 <div className="mt-4 space-y-3">
                   {clientLoading ? (
                     <div className="rounded-[20px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-4 py-6 text-center text-sm text-[var(--text-muted)]">
-                      РС‰РµРј РєР»РёРµРЅС‚РѕРІ...
+                      Ищем клиентов...
                     </div>
                   ) : clientResults.length > 0 ? (
                     clientResults.slice(0, 5).map((client) => (
@@ -372,7 +372,7 @@ export function SlotDetailsModal({
                       >
                         <p className="text-sm font-semibold text-[var(--text-main)]">{formatClientName(client)}</p>
                         <p className="mt-1 text-xs text-[var(--text-muted)]">
-                          {client.phone || "РўРµР»РµС„РѕРЅ РЅРµ СѓРєР°Р·Р°РЅ"} вЂў {describeSubscription(client)}
+                          {client.phone || "Телефон не указан"} • {describeSubscription(client)}
                         </p>
                       </button>
                     ))
@@ -384,7 +384,7 @@ export function SlotDetailsModal({
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-[var(--text-main)]">{formatClientName(selectedClient)}</p>
-                        <p className="mt-1 text-xs text-[var(--text-muted)]">{selectedClient.phone || "РўРµР»РµС„РѕРЅ РЅРµ СѓРєР°Р·Р°РЅ"}</p>
+                        <p className="mt-1 text-xs text-[var(--text-muted)]">{selectedClient.phone || "Телефон не указан"}</p>
                       </div>
                       <button
                         type="button"
@@ -394,20 +394,20 @@ export function SlotDetailsModal({
                           setSelectedSubscriptionId("");
                         }}
                         className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-[var(--line-soft)] text-[var(--text-muted)] transition-colors hover:text-[var(--text-main)]"
-                        aria-label="РћС‡РёСЃС‚РёС‚СЊ РєР»РёРµРЅС‚Р°"
+                        aria-label="Очистить клиента"
                       >
                         <CloseIcon />
                       </button>
                     </div>
 
                     <div className="mt-4">
-                      <label className={labelCls}>РђР±РѕРЅРµРјРµРЅС‚ РґР»СЏ СЃРїРёСЃР°РЅРёСЏ</label>
+                      <label className={labelCls}>Абонемент для списания</label>
                       <select
                         value={selectedSubscriptionId}
                         onChange={(event) => setSelectedSubscriptionId(event.target.value)}
                         className={`mt-2 ${inputCls}`}
                       >
-                        <option value="">Р‘РµР· СЃРїРёСЃР°РЅРёСЏ</option>
+                        <option value="">Без списания</option>
                         {activeSubscriptions.map((subscription) => (
                           <option key={subscription.id} value={subscription.id}>
                             {getSubscriptionOptionLabel(subscription)}
@@ -439,9 +439,9 @@ export function SlotDetailsModal({
                           setSelectedSubscriptionId("");
                           await loadDetail(detail.id);
                           onChanged();
-                          onNotice({ tone: "success", text: "РљР»РёРµРЅС‚ Р·Р°РїРёСЃР°РЅ РЅР° Р·Р°РЅСЏС‚РёРµ" });
+                          onNotice({ tone: "success", text: "Клиент записан на занятие" });
                         } catch (bookingError) {
-                          setClientError(bookingError instanceof Error ? bookingError.message : "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїРёСЃР°С‚СЊ РєР»РёРµРЅС‚Р°");
+                          setClientError(bookingError instanceof Error ? bookingError.message : "Не удалось записать клиента");
                         } finally {
                           setBookingSaving(false);
                         }
@@ -449,7 +449,7 @@ export function SlotDetailsModal({
                       disabled={bookingSaving}
                       className="mt-4 rounded-[18px] bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110 disabled:opacity-50"
                     >
-                      {bookingSaving ? "Р—Р°РїРёСЃС‹РІР°РµРј..." : "Р—Р°РїРёСЃР°С‚СЊ РєР»РёРµРЅС‚Р°"}
+                      {bookingSaving ? "Записываем..." : "Записать клиента"}
                     </button>
                   </div>
                 )}
@@ -458,20 +458,20 @@ export function SlotDetailsModal({
               <section className="rounded-[26px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-5">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-lg font-semibold text-[var(--text-main)]">Р—Р°РїРёСЃР°РЅРЅС‹Рµ РєР»РёРµРЅС‚С‹</p>
+                    <p className="text-lg font-semibold text-[var(--text-main)]">Записанные клиенты</p>
                     <p className="mt-1 text-sm text-[var(--text-muted)]">
-                      Р’СЃРµ Р±СЂРѕРЅРё РїРѕ Р·Р°РЅСЏС‚РёСЋ Рё С„РёРєСЃР°С†РёСЏ РїРѕСЃРµС‰РµРЅРёСЏ РїСЂСЏРјРѕ РїРѕ СЃС‚СЂРѕРєРµ РєР»РёРµРЅС‚Р°
+                      Все брони по занятию и фиксация посещения прямо по строке клиента
                     </p>
                   </div>
                   <span className="rounded-full border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-1 text-xs text-[var(--text-muted)]">
-                    {detail.bookings.length} Р·Р°РїРёСЃРµР№
+                    {detail.bookings.length} записей
                   </span>
                 </div>
 
                 <div className="mt-4 space-y-3">
                   {detail.bookings.length === 0 ? (
                     <div className="rounded-[20px] border border-dashed border-[var(--line-soft)] px-4 py-10 text-center text-sm text-[var(--text-muted)]">
-                      РџРѕРєР° РЅРёРєС‚Рѕ РЅРµ Р·Р°РїРёСЃР°РЅ
+                      Пока никто не записан
                     </div>
                   ) : (
                     detail.bookings.map((booking) => {
@@ -485,15 +485,15 @@ export function SlotDetailsModal({
                           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                             <div className="min-w-0">
                               <p className="truncate text-sm font-semibold text-[var(--text-main)]">
-                                {booking.client_name || `РљР»РёРµРЅС‚ #${booking.client_id}`}
+                                {booking.client_name || `Клиент #${booking.client_id}`}
                               </p>
                               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--text-muted)]">
-                                <span>{booking.client_phone || "РўРµР»РµС„РѕРЅ РЅРµ СѓРєР°Р·Р°РЅ"}</span>
-                                <span>вЂў</span>
-                                <span>{booking.places_count} РјРµСЃС‚</span>
+                                <span>{booking.client_phone || "Телефон не указан"}</span>
+                                <span>•</span>
+                                <span>{booking.places_count} мест</span>
                                 {booking.client_barcode && (
                                   <>
-                                    <span>вЂў</span>
+                                    <span>•</span>
                                     <span>{booking.client_barcode}</span>
                                   </>
                                 )}
@@ -512,11 +512,11 @@ export function SlotDetailsModal({
                                       await attendBooking(booking.id);
                                       await loadDetail(detail.id);
                                       onChanged();
-                                      onNotice({ tone: "success", text: "РџРѕСЃРµС‰РµРЅРёРµ РѕС‚РјРµС‡РµРЅРѕ" });
+                                      onNotice({ tone: "success", text: "Посещение отмечено" });
                                     } catch (attendError) {
                                       onNotice({
                                         tone: "error",
-                                        text: attendError instanceof Error ? attendError.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РјРµС‚РёС‚СЊ РїРѕСЃРµС‰РµРЅРёРµ",
+                                        text: attendError instanceof Error ? attendError.message : "Не удалось отметить посещение",
                                       });
                                     } finally {
                                       setBookingActionId(null);
@@ -526,7 +526,7 @@ export function SlotDetailsModal({
                                   className="inline-flex items-center gap-2 rounded-full border border-[rgba(63,185,80,0.24)] bg-[rgba(63,185,80,0.1)] px-3 py-1.5 text-xs font-medium text-[var(--success)] transition-colors hover:bg-[rgba(63,185,80,0.16)] disabled:opacity-50"
                                 >
                                   <CheckIcon />
-                                  {bookingActionId === booking.id ? "Р¤РёРєСЃРёСЂСѓРµРј..." : "Р—Р°С„РёРєСЃРёСЂРѕРІР°С‚СЊ РїРѕСЃРµС‰РµРЅРёРµ"}
+                                  {bookingActionId === booking.id ? "Фиксируем..." : "Зафиксировать посещение"}
                                 </button>
                               )}
                             </div>
