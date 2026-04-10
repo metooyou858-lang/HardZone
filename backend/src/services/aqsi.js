@@ -1,5 +1,7 @@
 const axios = require('axios');
 
+const AQSI_RECEIPT_TYPE_SELL = 1;
+
 function getHeaders() {
   return {
     'x-client-key': `Application ${process.env.AQSI_API_KEY}`,
@@ -44,7 +46,8 @@ function buildAqsiOrderPayload(order) {
     dateTime: new Date().toISOString(),
     shop: String(process.env.AQSI_SHOP_ID),
     content: {
-      type: 3,
+      // aQsi: 1 = Приход, 2 = Возврат прихода, 3 = Расход, 4 = Возврат расхода.
+      type: AQSI_RECEIPT_TYPE_SELL,
       discountMoney: asAmount(order.discount_money),
       discountPercent: asAmount(order.discount_percent),
       positions: order.items.map((item, index) => ({
