@@ -39,6 +39,14 @@ function resolveItemDiscountMoney(item) {
   );
 }
 
+function calculateItemsNetTotal(items) {
+  return items.reduce((sum, item) => {
+    const gross = resolveItemGrossTotal(item);
+    const discount = resolveItemDiscountMoney(item);
+    return sum + Math.max(0, gross - discount);
+  }, 0);
+}
+
 function buildAqsiOrderPayload(order) {
   return {
     id: String(order.id),
@@ -109,7 +117,7 @@ function mapPaymentTypeToAqsi(paymentType) {
   return paymentType === 'cash' ? 0 : 1;
 }
 
-async function sendRefundToAqsi(order, items) {
+async function sendRefundToAqsi(order, items, amountOverride) {
   const body = {
     fiscalDocumentNumber: Number(order.fiscal_fd),
     fiscalStorageNumber: order.fiscal_fn,
@@ -132,7 +140,10 @@ async function sendRefundToAqsi(order, items) {
       payments: [
         {
           type: mapPaymentTypeToAqsi(order.payment_type),
-          amount: asAmount(order.total_amount),
+          amount:
+            amountOverride === undefined
+              ? calculateItemsNetTotal(items)
+              : asAmount(amountOverride),
         },
       ],
       taxationSystem: 1,

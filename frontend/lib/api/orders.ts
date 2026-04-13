@@ -1,6 +1,6 @@
 import { apiFetch } from "./client";
 
-export type OrderStatus = "open" | "confirmed" | "cancelled" | "refunded";
+export type OrderStatus = "open" | "confirmed" | "cancelled" | "partially_refunded" | "refunded";
 export type OrderItemKind = "product" | "service" | "subscription";
 export type PaymentType = "cash" | "card";
 
@@ -36,6 +36,8 @@ export type OrderItem = {
   total: string;
   discount_percent: string | null;
   discount_money: string | null;
+  refunded_quantity: number;
+  last_refunded_at?: string | null;
   created_at: string;
 };
 
@@ -183,9 +185,19 @@ export async function cancelOrder(orderId: string): Promise<Order> {
   return response.data;
 }
 
-export async function refundOrder(orderId: string): Promise<Order> {
-  const response = await apiFetch<ApiEnvelope<{ order: Order }>>(`/orders/${orderId}/refund`, {
+export async function refundOrder(
+  orderId: string,
+  items?: Array<{ item_id: string; quantity: number }>
+): Promise<{ order: Order; refund_amount?: string; items?: Array<{ item_id: string; name: string; quantity: number }> }> {
+  const response = await apiFetch<
+    ApiEnvelope<{
+      order: Order;
+      refund_amount?: string;
+      items?: Array<{ item_id: string; name: string; quantity: number }>;
+    }>
+  >(`/orders/${orderId}/refund`, {
     method: "POST",
+    body: JSON.stringify(items?.length ? { items } : {}),
   });
-  return response.data.order;
+  return response.data;
 }

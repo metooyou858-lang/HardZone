@@ -68,6 +68,109 @@ function resolveDiscountMoney(baseAmount, discountPercent, discountMoney) {
   return Math.min(safeBase, rawDiscount);
 }
 
+function createHttpError(statusCode, message) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+function roundMoney(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+function getRefundableQuantity(item) {
+  return Math.max(0, Number(item.quantity || 0) - Number(item.refunded_quantity || 0));
+}
+
+function getItemNetTotal(item, quantity = Number(item.quantity || 0)) {
+  const safeQuantity = Math.max(0, Number(quantity || 0));
+  const grossTotal = roundMoney(Number(item.sale_price || 0) * safeQuantity);
+
+  if (safeQuantity === 0) {
+    return { grossTotal: 0, discountTotal: 0, total: 0 };
+  }
+
+  const fullGross = roundMoney(Number(item.sale_price || 0) * Number(item.quantity || 0));
+  const fullDiscount = resolveDiscountMoney(fullGross, item.discount_percent, item.discount_money);
+  const proportionalDiscount =
+    Number(item.quantity || 0) > 0 ? roundMoney((fullDiscount / Number(item.quantity || 0)) * safeQuantity) : 0;
+
+  return {
+    grossTotal,
+    discountTotal: proportionalDiscount,
+    total: Math.max(0, roundMoney(grossTotal - proportionalDiscount)),
+  };
+}
+
+function buildRefundItem(item, quantity) {
+  const summary = getItemNetTotal(item, quantity);
+
+  return {
+    ...item,
+    quantity,
+    total: summary.grossTotal,
+    discount_percent: 0,
+    discount_money: summary.discountTotal,
+  };
+}
+
+function calculateRefundAmount(items) {
+  return roundMoney(
+    items.reduce((sum, item) => {
+      const summary = getItemNetTotal(item, item.quantity);
+      return sum + summary.total;
+    }, 0)
+  );
+}
+
+async function refreshOrderRefundStatus(client, orderId) {
+  const { rows: itemRows } = await client.query(
+    'SELECT quantity, refunded_quantity FROM order_items WHERE order_id = $1',
+    [orderId]
+  );
+
+  const allRefunded = itemRows.length > 0 && itemRows.every((item) => Number(item.refunded_quantity || 0) >= Number(item.quantity || 0));
+  const nextStatus = allRefunded ? 'refunded' : 'partially_refunded';
+
+  const { rows } = await client.query(
+    `UPDATE orders
+     SET status = $2
+     WHERE id = $1
+     RETURNING *`,
+    [orderId, nextStatus]
+  );
+
+  return rows[0];
+}
+
+function parseRefundRequests(rawItems) {
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
+    return null;
+  }
+
+  const seen = new Set();
+
+  return rawItems.map((item) => {
+    const itemId = typeof item?.item_id === 'string' ? item.item_id : '';
+    const quantity = Number.parseInt(String(item?.quantity), 10);
+
+    if (!itemId) {
+      throw createHttpError(422, 'Укажите позицию для возврата');
+    }
+
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      throw createHttpError(422, 'Некорректное количество для возврата');
+    }
+
+    if (seen.has(itemId)) {
+      throw createHttpError(422, 'Позиции возврата не должны повторяться');
+    }
+    seen.add(itemId);
+
+    return { itemId, quantity };
+  });
+}
+
 async function recalcOrderSummary(client, orderId) {
   const { rows: orderRows } = await client.query(
     'SELECT discount_percent, discount_money FROM orders WHERE id = $1',
@@ -694,48 +797,115 @@ router.post('/:id/cancel', async (req, res) => {
 });
 
 router.post('/:id/refund', async (req, res) => {
+  const client = await pool.connect();
+
   try {
-    const { rows: orderRows } = await pool.query('SELECT * FROM orders WHERE id = $1', [req.params.id]);
+    const requestedRefunds = parseRefundRequests(req.body?.items);
+
+    await client.query('BEGIN');
+
+    const { rows: orderRows } = await client.query(
+      'SELECT * FROM orders WHERE id = $1 FOR UPDATE',
+      [req.params.id]
+    );
     const order = orderRows[0];
 
     if (!order) {
-      return res.status(404).json({ success: false, error: 'Р—Р°РєР°Р· РЅРµ РЅР°Р№РґРµРЅ' });
-    }
-    if (order.status !== 'confirmed') {
-      return res.status(409).json({ success: false, error: 'РњРѕР¶РЅРѕ РІРµСЂРЅСѓС‚СЊ С‚РѕР»СЊРєРѕ РѕРїР»Р°С‡РµРЅРЅС‹Р№ Р·Р°РєР°Р·' });
-    }
-    if (!order.fiscal_fd || !order.fiscal_fn || !order.fiscal_fp || !order.fiscal_kkt_reg || !order.fiscal_date) {
-      return res.status(422).json({ success: false, error: 'РќРµС‚ С„РёСЃРєР°Р»СЊРЅС‹С… РґР°РЅРЅС‹С… РґР»СЏ РІРѕР·РІСЂР°С‚Р°' });
+      throw createHttpError(404, 'Заказ не найден');
     }
 
-    const { rows: items } = await pool.query(
-      'SELECT * FROM order_items WHERE order_id = $1 ORDER BY created_at',
+    if (!['confirmed', 'partially_refunded'].includes(order.status)) {
+      throw createHttpError(409, 'Можно вернуть только оплаченный заказ');
+    }
+
+    if (!order.fiscal_fd || !order.fiscal_fn || !order.fiscal_fp || !order.fiscal_kkt_reg || !order.fiscal_date) {
+      throw createHttpError(422, 'Нет фискальных данных для возврата');
+    }
+
+    const { rows: items } = await client.query(
+      'SELECT * FROM order_items WHERE order_id = $1 ORDER BY created_at FOR UPDATE',
       [req.params.id]
     );
 
     if (items.length === 0) {
-      return res.status(422).json({ success: false, error: 'Р’ Р·Р°РєР°Р·Рµ РЅРµС‚ РїРѕР·РёС†РёР№ РґР»СЏ РІРѕР·РІСЂР°С‚Р°' });
+      throw createHttpError(422, 'В заказе нет позиций для возврата');
     }
 
-    const aqsiResult = await sendRefundToAqsi(order, items);
+    const refundItems =
+      requestedRefunds === null
+        ? items
+            .filter((item) => getRefundableQuantity(item) > 0)
+            .map((item) => buildRefundItem(item, getRefundableQuantity(item)))
+        : requestedRefunds.map((request) => {
+            const item = items.find((candidate) => candidate.id === request.itemId);
 
-    const { rows } = await pool.query(
-      `UPDATE orders
-       SET status = 'refunded'
-       WHERE id = $1
-       RETURNING *`,
-      [req.params.id]
-    );
+            if (!item) {
+              throw createHttpError(404, 'Позиция для возврата не найдена');
+            }
+
+            const refundableQuantity = getRefundableQuantity(item);
+            if (refundableQuantity === 0) {
+              throw createHttpError(409, `Позиция "${item.name}" уже возвращена полностью`);
+            }
+
+            if (request.quantity > refundableQuantity) {
+              throw createHttpError(
+                409,
+                `Для позиции "${item.name}" доступно к возврату только ${refundableQuantity}`
+              );
+            }
+
+            return buildRefundItem(item, request.quantity);
+          });
+
+    if (refundItems.length === 0) {
+      throw createHttpError(422, 'В заказе не осталось позиций для возврата');
+    }
+
+    const refundAmount = calculateRefundAmount(refundItems);
+    if (refundAmount <= 0) {
+      throw createHttpError(422, 'Сумма возврата должна быть больше нуля');
+    }
+
+    const aqsiResult = await sendRefundToAqsi(order, refundItems, refundAmount);
+
+    for (const refundItem of refundItems) {
+      await client.query(
+        `UPDATE order_items
+         SET refunded_quantity = refunded_quantity + $2,
+             last_refunded_at = NOW()
+         WHERE id = $1`,
+        [refundItem.id, refundItem.quantity]
+      );
+    }
+
+    const updatedOrder = await refreshOrderRefundStatus(client, req.params.id);
+
+    await client.query('COMMIT');
 
     return res.json({
       success: true,
       data: {
-        order: rows[0],
+        order: updatedOrder,
         aqsi: aqsiResult,
+        refund_amount: refundAmount.toFixed(2),
+        items: refundItems.map((item) => ({
+          item_id: item.id,
+          name: item.name,
+          quantity: item.quantity,
+        })),
       },
     });
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('Order refund rollback failed', rollbackError);
+    }
+
+    return res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  } finally {
+    client.release();
   }
 });
 

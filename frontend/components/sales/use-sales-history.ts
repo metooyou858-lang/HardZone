@@ -2,7 +2,13 @@
 
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
-import { type BannerState, formatMoney, shouldDisplayInHistory, type HistoryFilter } from "@/components/sales/sales-shared";
+import {
+  formatMoney,
+  getRefundableQuantity,
+  shouldDisplayInHistory,
+  type BannerState,
+  type HistoryFilter,
+} from "@/components/sales/sales-shared";
 import type { ClientListItem } from "@/lib/api/clients";
 import {
   cancelOrder,
@@ -12,6 +18,7 @@ import {
   syncOrderWithAqsi,
   type Order,
   type OrderDetail,
+  type OrderItem,
 } from "@/lib/api/orders";
 
 type UseSalesHistoryOptions = {
@@ -23,6 +30,19 @@ type UseSalesHistoryOptions = {
   setBanner: Dispatch<SetStateAction<BannerState>>;
   onCatalogChanged?: () => void;
 };
+
+function getPartialRefundAmount(item: OrderItem, quantity: number) {
+  const grossTotal = Number(item.sale_price || 0) * quantity;
+  const fullGross = Number(item.sale_price || 0) * Number(item.quantity || 0);
+  const fullDiscount =
+    Number(item.discount_money || 0) > 0
+      ? Number(item.discount_money || 0)
+      : fullGross * (Number(item.discount_percent || 0) / 100);
+  const proportionalDiscount =
+    Number(item.quantity || 0) > 0 ? (fullDiscount / Number(item.quantity || 0)) * quantity : 0;
+
+  return Math.max(0, grossTotal - proportionalDiscount);
+}
 
 export function useSalesHistory({
   enabled,
@@ -95,19 +115,10 @@ export function useSalesHistory({
       const freshOrder = await fetchOrder(orderId);
 
       setOrders((prev) => prev.map((item) => (item.id === orderId ? { ...item, ...freshOrder } : item)));
-      setOrderDetails((prev) => {
-        if (!prev[orderId]) {
-          return prev;
-        }
-
-        return {
-          ...prev,
-          [orderId]: {
-            ...prev[orderId],
-            ...freshOrder,
-          },
-        };
-      });
+      setOrderDetails((prev) => ({
+        ...prev,
+        [orderId]: freshOrder,
+      }));
 
       if (isCurrentOrder) {
         if (result.paid) {
@@ -126,10 +137,10 @@ export function useSalesHistory({
           tone: "success",
           text:
             result.payment_type === "cash"
-              ? "Оплата подтверждена кассой: наличные ✓"
+              ? "Оплата подтверждена кассой: наличные"
               : result.payment_type === "card"
-                ? "Оплата подтверждена кассой: карта ✓"
-                : "Оплата подтверждена кассой ✓",
+                ? "Оплата подтверждена кассой: карта"
+                : "Оплата подтверждена кассой",
         });
         return;
       }
@@ -181,10 +192,48 @@ export function useSalesHistory({
     }
   }
 
-  async function handleRefundOrder(orderId: string, amount: string) {
-    const formattedAmount = formatMoney(amount);
+  async function handleRefundOrder(orderId: string, item?: OrderItem) {
+    const isItemRefund = Boolean(item);
+    let refundItems: Array<{ item_id: string; quantity: number }> | undefined;
+    let confirmMessage = "";
 
-    if (!window.confirm(`Оформить возврат на сумму ${formattedAmount}?`)) {
+    if (item) {
+      const refundableQuantity = getRefundableQuantity(item);
+
+      if (refundableQuantity <= 0) {
+        setHistoryError(`Позиция "${item.name}" уже возвращена полностью`);
+        return;
+      }
+
+      let quantity = refundableQuantity;
+
+      if (refundableQuantity > 1) {
+        const input = window.prompt(
+          `Сколько единиц вернуть по позиции «${item.name}»? Доступно: ${refundableQuantity}`,
+          String(refundableQuantity)
+        );
+
+        if (input === null) {
+          return;
+        }
+
+        const parsedQuantity = Number.parseInt(input, 10);
+        if (!Number.isInteger(parsedQuantity) || parsedQuantity <= 0 || parsedQuantity > refundableQuantity) {
+          setHistoryError(`Укажите корректное количество от 1 до ${refundableQuantity}`);
+          return;
+        }
+
+        quantity = parsedQuantity;
+      }
+
+      const refundAmount = formatMoney(getPartialRefundAmount(item, quantity));
+      confirmMessage = `Оформить возврат ${quantity} шт. по позиции «${item.name}» на сумму ${refundAmount}?`;
+      refundItems = [{ item_id: item.id, quantity }];
+    } else {
+      confirmMessage = "Оформить возврат по всем оставшимся позициям заказа?";
+    }
+
+    if (!window.confirm(confirmMessage)) {
       return;
     }
 
@@ -192,25 +241,28 @@ export function useSalesHistory({
     setHistoryError(null);
 
     try {
-      const updatedOrder = await refundOrder(orderId);
-      setOrders((prev) => prev.map((item) => (item.id === orderId ? { ...item, ...updatedOrder } : item)));
-      setOrderDetails((prev) => {
-        if (!prev[orderId]) {
-          return prev;
-        }
+      const result = await refundOrder(orderId, refundItems);
+      const freshOrder = await fetchOrder(orderId);
 
-        return {
-          ...prev,
-          [orderId]: {
-            ...prev[orderId],
-            ...updatedOrder,
-          },
-        };
-      });
+      setOrders((prev) => prev.map((order) => (order.id === orderId ? { ...order, ...freshOrder } : order)));
+      setOrderDetails((prev) => ({
+        ...prev,
+        [orderId]: freshOrder,
+      }));
 
       if (currentOrder?.id === orderId) {
-        setCurrentOrder((prev) => (prev ? { ...prev, ...updatedOrder } : prev));
+        setCurrentOrder(freshOrder);
       }
+
+      setBanner({
+        tone: "success",
+        text: isItemRefund
+          ? `Частичный возврат оформлен${result.refund_amount ? ` на ${formatMoney(result.refund_amount)}` : ""}`
+          : `Возврат оформлен${result.refund_amount ? ` на ${formatMoney(result.refund_amount)}` : ""}`,
+      });
+
+      reloadHistory();
+      onCatalogChanged?.();
     } catch (error) {
       setHistoryError(error instanceof Error ? error.message : "Не удалось оформить возврат");
     } finally {

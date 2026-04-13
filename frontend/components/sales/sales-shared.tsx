@@ -3,10 +3,12 @@ import type { Category } from "@/lib/api/categories";
 import type { ClientListItem } from "@/lib/api/clients";
 import type { Order, OrderItem, OrderItemKind, OrderStatus } from "@/lib/api/orders";
 import type { Product } from "@/lib/api/products";
+
 export type BannerTone = "info" | "success" | "error";
 export type SalesTab = "cash" | "history";
 export type HistoryFilter = "all" | OrderStatus;
 export type DiscountMode = "percent" | "money";
+
 export type CatalogGroup = {
   id: string;
   label: string;
@@ -40,12 +42,14 @@ export { formatMoney };
 
 export const searchInputCls =
   "w-full rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)] transition focus:border-[var(--accent)] focus:ring-4 focus:ring-[rgba(0,191,165,0.12)]";
+
 export const SERVICES_GROUP_ID = "__services__";
 
 export const historyFilters: { value: HistoryFilter; label: string }[] = [
   { value: "all", label: "Все" },
   { value: "open", label: "Ожидает" },
   { value: "confirmed", label: "Оплачен" },
+  { value: "partially_refunded", label: "Частичный возврат" },
   { value: "refunded", label: "Возврат" },
   { value: "cancelled", label: "Отменён" },
 ];
@@ -235,6 +239,10 @@ export function getBannerClass(tone: BannerTone) {
 }
 
 export function getStatusLabel(status: OrderStatus) {
+  if (status === "partially_refunded") {
+    return "Частичный возврат";
+  }
+
   if (status === "refunded") {
     return "Возврат";
   }
@@ -251,6 +259,10 @@ export function getStatusLabel(status: OrderStatus) {
 }
 
 export function getStatusBadgeClass(status: OrderStatus) {
+  if (status === "partially_refunded") {
+    return "border-[rgba(210,153,34,0.24)] bg-[rgba(210,153,34,0.16)] text-[var(--warning)]";
+  }
+
   if (status === "refunded") {
     return "border-[rgba(210,153,34,0.28)] bg-[rgba(210,153,34,0.12)] text-[var(--warning)]";
   }
@@ -405,6 +417,10 @@ export function getItemNetTotal(item: OrderItem) {
   };
 }
 
+export function getRefundableQuantity(item: OrderItem) {
+  return Math.max(0, Number(item.quantity || 0) - Number(item.refunded_quantity || 0));
+}
+
 export function groupOrderItems(items: OrderItem[]) {
   const grouped = new Map<string, BasketLine>();
 
@@ -448,4 +464,3 @@ export function groupOrderItems(items: OrderItem[]) {
 
   return Array.from(grouped.values());
 }
-
