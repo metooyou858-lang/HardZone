@@ -66,6 +66,7 @@ export function useSalesOrder({
   const [lineDiscountValue, setLineDiscountValue] = useState("");
   const [lineDiscountSavingKey, setLineDiscountSavingKey] = useState<string | null>(null);
   const [markingSavingKey, setMarkingSavingKey] = useState<string | null>(null);
+  const [markingDrafts, setMarkingDrafts] = useState<Record<string, string>>({});
 
   const receiptDiscountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scannerBufferRef = useRef("");
@@ -114,6 +115,13 @@ export function useSalesOrder({
   async function refreshOrder(orderId: string) {
     const freshOrder = await fetchOrder(orderId);
     setOrder(freshOrder);
+  }
+
+  function setMarkingDraftValue(lineKey: string, value: string) {
+    setMarkingDrafts((current) => ({
+      ...current,
+      [lineKey]: value,
+    }));
   }
 
   async function applyClientSelection(nextClient: ClientListItem | null) {
@@ -318,7 +326,7 @@ export function useSalesOrder({
     try {
       const activeOrder = order ?? (await ensureOrder());
 
-      await addOrderItem(activeOrder.id, {
+      const created = await addOrderItem(activeOrder.id, {
         kind: resolveOrderItemKind(product),
         product_id: product.id,
         name: product.name,
@@ -326,8 +334,16 @@ export function useSalesOrder({
         sale_price: Number.parseFloat(product.sale_price),
         cost_price: product.cost_price ? Number.parseFloat(product.cost_price) : null,
         quantity: 1,
-        marking_code: options?.markingCode?.trim() || null,
       });
+
+      const initialMarkingCode = options?.markingCode?.trim();
+
+      if (initialMarkingCode) {
+        setMarkingDrafts((current) => ({
+          ...current,
+          [`marked:${created.item.id}`]: initialMarkingCode,
+        }));
+      }
 
       await refreshOrder(activeOrder.id);
     } catch (error) {
@@ -423,33 +439,6 @@ export function useSalesOrder({
     }
   }
 
-  async function saveLineMarking(line: BasketLine, value: string) {
-    if (!order || orderAwaitingPayment || !line.markingRequired || line.itemIds.length !== 1) {
-      return;
-    }
-
-    setMarkingSavingKey(line.key);
-    setBanner(null);
-
-    try {
-      await updateOrderItem(order.id, line.itemIds[0], {
-        marking_code: value.trim() || null,
-      });
-      await refreshOrder(order.id);
-      setBanner({
-        tone: "success",
-        text: value.trim() ? `Код маркировки сохранён для "${line.name}"` : `Код маркировки очищен для "${line.name}"`,
-      });
-    } catch (error) {
-      setBanner({
-        tone: "error",
-        text: error instanceof Error ? error.message : "Не удалось сохранить код маркировки",
-      });
-    } finally {
-      setMarkingSavingKey(null);
-    }
-  }
-
   async function removeLine(line: BasketLine) {
     if (!order || orderAwaitingPayment) {
       return;
@@ -529,7 +518,14 @@ export function useSalesOrder({
       return;
     }
 
-    const missingMarkingLine = basketLines.find((line) => line.markingRequired && !line.markingCode);
+    const missingMarkingLine = basketLines.find((line) => {
+      if (!line.markingRequired) {
+        return false;
+      }
+
+      const draftCode = (markingDrafts[line.key] ?? line.markingCode ?? "").trim();
+      return draftCode.length === 0;
+    });
     if (missingMarkingLine) {
       setBanner({
         tone: "error",
@@ -548,6 +544,26 @@ export function useSalesOrder({
         await persistReceiptDiscount(order.id, receiptDiscountMode, receiptDiscountValue);
       }
 
+      for (const line of basketLines) {
+        if (!line.markingRequired || line.itemIds.length !== 1) {
+          continue;
+        }
+
+        const nextMarkingCode = (markingDrafts[line.key] ?? line.markingCode ?? "").trim();
+        const savedMarkingCode = (line.markingCode ?? "").trim();
+
+        if (nextMarkingCode === savedMarkingCode) {
+          continue;
+        }
+
+        setMarkingSavingKey(line.key);
+        await updateOrderItem(order.id, line.itemIds[0], {
+          marking_code: nextMarkingCode || null,
+        });
+      }
+
+      await refreshOrder(order.id);
+
       await sendOrderToAqsi(order.id, selectedClient?.id ?? order.client_id ?? null);
       await refreshOrder(order.id);
       setBanner({ tone: "success", text: "Отправлено ✓" });
@@ -558,6 +574,7 @@ export function useSalesOrder({
         text: error instanceof Error ? error.message : "Не удалось отправить чек",
       });
     } finally {
+      setMarkingSavingKey(null);
       setConfirming(false);
     }
   }
@@ -574,6 +591,7 @@ export function useSalesOrder({
     setReceiptDiscountValue("");
     setEditingLineDiscountKey(null);
     setLineDiscountValue("");
+    setMarkingDrafts({});
     orderPromiseRef.current = null;
   }
 
@@ -688,6 +706,20 @@ export function useSalesOrder({
   const sendBlockedByClient = serviceRequiresClient && !orderClientId;
   const sendBlockedByMarking = basketLines.some((line) => line.markingRequired && !line.markingCode);
 
+  useEffect(() => {
+    setMarkingDrafts((current) => {
+      const next: Record<string, string> = {};
+
+      for (const line of basketLines) {
+        if (line.markingRequired) {
+          next[line.key] = current[line.key] ?? line.markingCode ?? "";
+        }
+      }
+
+      return next;
+    });
+  }, [basketLines]);
+
   return {
     order,
     setOrder,
@@ -724,10 +756,12 @@ export function useSalesOrder({
     basketLineDiscountTotal,
     orderLevelDiscount,
     hasAnyDiscount,
+    markingDrafts,
     orderClientId,
     serviceRequiresClient,
     sendBlockedByClient,
     sendBlockedByMarking,
+    setMarkingDraftValue,
     applyClientSelection,
     handleClientSearchKeyDown,
     setClientQuery: (value: string) => {
@@ -738,7 +772,6 @@ export function useSalesOrder({
     decrementLine,
     incrementLine,
     removeLine,
-    saveLineMarking,
     openLineDiscountEditor,
     saveLineDiscount,
     scheduleReceiptDiscount,

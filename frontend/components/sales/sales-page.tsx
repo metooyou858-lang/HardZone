@@ -136,7 +136,6 @@ export default function SalesPage() {
             decrementLine={orderApi.decrementLine}
             incrementLine={orderApi.incrementLine}
             saveLineDiscount={orderApi.saveLineDiscount}
-            saveLineMarking={orderApi.saveLineMarking}
             setEditingLineDiscountKey={orderApi.setEditingLineDiscountKey}
             receiptDiscountMode={orderApi.receiptDiscountMode}
             receiptDiscountValue={orderApi.receiptDiscountValue}
@@ -146,10 +145,12 @@ export default function SalesPage() {
             basketGrossTotal={orderApi.basketGrossTotal}
             basketLineDiscountTotal={orderApi.basketLineDiscountTotal}
             orderLevelDiscount={orderApi.orderLevelDiscount}
+            markingDrafts={orderApi.markingDrafts}
             confirming={orderApi.confirming}
             orderAwaitingPayment={orderApi.orderAwaitingPayment}
             sendBlockedByClient={orderApi.sendBlockedByClient}
             sendBlockedByMarking={orderApi.sendBlockedByMarking}
+            setMarkingDraftValue={orderApi.setMarkingDraftValue}
             handleConfirm={orderApi.handleConfirm}
             handleStartNewOrder={orderApi.handleStartNewOrder}
           />

@@ -1,7 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
 import type { ClientListItem } from "@/lib/api/clients";
 import type { OrderDetail } from "@/lib/api/orders";
 import {
@@ -42,7 +40,6 @@ type CheckoutPanelProps = {
   decrementLine: (line: BasketLine) => void | Promise<void>;
   incrementLine: (line: BasketLine) => void | Promise<void>;
   saveLineDiscount: (line: BasketLine) => void | Promise<void>;
-  saveLineMarking: (line: BasketLine, value: string) => void | Promise<void>;
   setEditingLineDiscountKey: (value: string | null) => void;
   receiptDiscountMode: DiscountMode;
   receiptDiscountValue: string;
@@ -52,10 +49,12 @@ type CheckoutPanelProps = {
   basketGrossTotal: number;
   basketLineDiscountTotal: number;
   orderLevelDiscount: number;
+  markingDrafts: Record<string, string>;
   confirming: boolean;
   orderAwaitingPayment: boolean;
   sendBlockedByClient: boolean;
   sendBlockedByMarking: boolean;
+  setMarkingDraftValue: (lineKey: string, value: string) => void;
   handleConfirm: () => void | Promise<void>;
   handleStartNewOrder: () => void;
 };
@@ -86,7 +85,6 @@ export function CheckoutPanel({
   decrementLine,
   incrementLine,
   saveLineDiscount,
-  saveLineMarking,
   setEditingLineDiscountKey,
   receiptDiscountMode,
   receiptDiscountValue,
@@ -96,29 +94,15 @@ export function CheckoutPanel({
   basketGrossTotal,
   basketLineDiscountTotal,
   orderLevelDiscount,
+  markingDrafts,
   confirming,
   orderAwaitingPayment,
   sendBlockedByClient,
   sendBlockedByMarking,
+  setMarkingDraftValue,
   handleConfirm,
   handleStartNewOrder,
 }: CheckoutPanelProps) {
-  const [markingDrafts, setMarkingDrafts] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    setMarkingDrafts((current) => {
-      const next: Record<string, string> = {};
-
-      for (const line of basketLines) {
-        if (line.markingRequired) {
-          next[line.key] = current[line.key] ?? line.markingCode ?? "";
-        }
-      }
-
-      return next;
-    });
-  }, [basketLines]);
-
   return (
     <aside className="flex min-h-0 flex-col rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)]">
       <div className="border-b border-[var(--line-soft)] p-5">
@@ -221,6 +205,7 @@ export function CheckoutPanel({
               const hasLineDiscount = line.discountTotal > 0;
               const isMarkingSaving = markingSavingKey === line.key;
               const markingValue = markingDrafts[line.key] ?? line.markingCode ?? "";
+              const hasMarkingValue = markingValue.trim().length > 0;
 
               return (
                 <div
@@ -373,50 +358,38 @@ export function CheckoutPanel({
                             Код маркировки
                           </p>
                           <p className="mt-1 text-xs text-[var(--text-muted)]">
-                            {line.markingCode
-                              ? "Код маркировки уже сохранён для этой единицы товара"
+                            {hasMarkingValue
+                              ? "Код считан и будет приложен к этой позиции при отправке на кассу"
                               : "Отсканируйте DataMatrix перед отправкой чека на кассу"}
                           </p>
                         </div>
                         <span
                           className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${
-                            line.markingCode
+                            hasMarkingValue
                               ? "border border-[rgba(63,185,80,0.24)] bg-[rgba(63,185,80,0.12)] text-[var(--success)]"
                               : "border border-[rgba(210,153,34,0.24)] bg-[rgba(210,153,34,0.12)] text-[var(--warning)]"
                           }`}
                         >
-                          {line.markingCode ? "Считан" : "Нужен"}
+                          {hasMarkingValue ? "Считан" : "Нужен"}
                         </span>
                       </div>
                       <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                         <input
                           type="text"
                           value={markingValue}
-                          onChange={(event) =>
-                            setMarkingDrafts((current) => ({
-                              ...current,
-                              [line.key]: event.target.value,
-                            }))
-                          }
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              void saveLineMarking(line, markingValue);
-                            }
-                          }}
+                          onChange={(event) => setMarkingDraftValue(line.key, event.target.value)}
                           placeholder="Сканируйте или вставьте код маркировки"
                           disabled={orderLocked || isMarkingSaving}
                           className="min-w-0 flex-1 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-soft)] disabled:opacity-50"
                         />
-                        <button
-                          type="button"
-                          onClick={() => void saveLineMarking(line, markingValue)}
-                          disabled={orderLocked || isMarkingSaving}
-                          className="rounded-xl border border-[rgba(0,191,165,0.24)] bg-[var(--accent-soft)] px-3 py-2 text-xs font-semibold text-[var(--accent)] transition-colors hover:brightness-110 disabled:opacity-50"
-                        >
-                          {isMarkingSaving ? "Сохраняем..." : "Сохранить код"}
-                        </button>
                       </div>
+                      <p className="mt-2 text-[11px] text-[var(--text-muted)]">
+                        {isMarkingSaving
+                          ? "Сохраняем код..."
+                          : hasMarkingValue
+                            ? "Код сохранится в строку чека автоматически в момент отправки на кассу."
+                            : "Код сохраняется в чек автоматически в момент отправки на кассу."}
+                      </p>
                     </div>
                   )}
 
