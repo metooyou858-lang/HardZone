@@ -283,7 +283,7 @@ export function SalesHistoryPanel({
         <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
           <HistoryIcon />
         </span>
-        <span>Клик по строке открывает состав заказа и возврат по отдельным позициям</span>
+        <span>Клик по строке открывает состав заказа. Товар вернётся на склад, а услуга вернётся только если доступ ещё не использовали.</span>
       </div>
     </section>
   );

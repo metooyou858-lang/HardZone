@@ -171,6 +171,231 @@ function parseRefundRequests(rawItems) {
   });
 }
 
+function toDateOnly(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
+function diffDateOnlyDays(startDate, endDate) {
+  if (!startDate || !endDate) {
+    return null;
+  }
+
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  const end = new Date(`${endDate}T00:00:00.000Z`);
+  const diff = Math.round((end.getTime() - start.getTime()) / 86400000);
+  return Number.isFinite(diff) && diff >= 0 ? diff : null;
+}
+
+function addDateOnlyDays(startDate, days) {
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  start.setUTCDate(start.getUTCDate() + Number(days || 0));
+  return start.toISOString().slice(0, 10);
+}
+
+async function buildServiceRefundAdjustments(client, order, orderItemsById, refundItems) {
+  const adjustments = [];
+
+  for (const refundItem of refundItems) {
+    const sourceItem = orderItemsById.get(refundItem.id);
+    if (!sourceItem || !['service', 'subscription'].includes(sourceItem.kind) || !sourceItem.product_id) {
+      continue;
+    }
+
+    const { rows: paramRows } = await client.query(
+      `SELECT subscription_type, visits_total, validity_days
+       FROM product_subscription_params
+       WHERE product_id = $1`,
+      [sourceItem.product_id]
+    );
+    const params = paramRows[0];
+
+    if (!params?.subscription_type || !order.client_id) {
+      continue;
+    }
+
+    const { rows: subscriptionRows } = await client.query(
+      `SELECT *
+       FROM client_subscriptions
+       WHERE order_id = $1
+         AND client_id = $2
+         AND product_id = $3
+       ORDER BY id DESC
+       LIMIT 1
+       FOR UPDATE`,
+      [order.id, order.client_id, sourceItem.product_id]
+    );
+    const subscription = subscriptionRows[0];
+
+    if (!subscription) {
+      continue;
+    }
+
+    const { rows: visitRows } = await client.query(
+      'SELECT COUNT(*)::int AS count FROM client_visits WHERE subscription_id = $1',
+      [subscription.id]
+    );
+    const { rows: bookingRows } = await client.query(
+      `SELECT COUNT(*)::int AS count
+       FROM bookings
+       WHERE subscription_id = $1
+         AND status != 'cancelled'`,
+      [subscription.id]
+    );
+
+    if ((visitRows[0]?.count || 0) > 0 || (bookingRows[0]?.count || 0) > 0) {
+      throw createHttpError(
+        409,
+        `Нельзя автоматически вернуть услугу "${sourceItem.name}": по ней уже есть посещения или записи`
+      );
+    }
+
+    const remainingUnits = getRefundableQuantity(sourceItem);
+    const refundUnits = Number(refundItem.quantity || 0);
+    const refundAllRemaining = refundUnits === remainingUnits;
+
+    if (['single', 'visits'].includes(subscription.type)) {
+      if (Number(subscription.visits_left || 0) !== Number(subscription.visits_total || 0)) {
+        throw createHttpError(
+          409,
+          `Нельзя автоматически вернуть услугу "${sourceItem.name}": абонемент уже частично использован`
+        );
+      }
+
+      const unitVisitsFromCurrent =
+        remainingUnits > 0 && Number(subscription.visits_total || 0) > 0
+          ? Number(subscription.visits_total || 0) / remainingUnits
+          : null;
+      const unitVisits =
+        Number(params.visits_total || 0) > 0
+          ? Number(params.visits_total)
+          : subscription.type === 'single'
+            ? 1
+            : unitVisitsFromCurrent;
+
+      if (!unitVisits || !Number.isFinite(unitVisits)) {
+        throw createHttpError(
+          409,
+          `Не удалось безопасно рассчитать возврат по услуге "${sourceItem.name}"`
+        );
+      }
+
+      const nextVisits = Number(subscription.visits_total || 0) - unitVisits * refundUnits;
+      if (nextVisits < 0) {
+        throw createHttpError(409, `Возврат по услуге "${sourceItem.name}" превышает остаток доступа`);
+      }
+
+      adjustments.push({
+        kind: 'subscription',
+        subscriptionId: subscription.id,
+        values:
+          nextVisits === 0
+            ? {
+                visits_total: 0,
+                visits_left: 0,
+                status: 'expired',
+              }
+            : {
+                visits_total: nextVisits,
+                visits_left: nextVisits,
+                status: subscription.status,
+              },
+      });
+      continue;
+    }
+
+    if (refundAllRemaining) {
+      adjustments.push({
+        kind: 'subscription',
+        subscriptionId: subscription.id,
+        values: {
+          status: 'expired',
+        },
+      });
+      continue;
+    }
+
+    if (!subscription.started_at || !subscription.expires_at) {
+      throw createHttpError(
+        409,
+        `Частичный возврат по услуге "${sourceItem.name}" пока возможен только целиком, пока доступ ещё не использован`
+      );
+    }
+
+    const totalValidityDays = diffDateOnlyDays(subscription.started_at, subscription.expires_at);
+    const unitValidity =
+      Number(params.validity_days || 0) > 0
+        ? Number(params.validity_days)
+        : remainingUnits > 0 && totalValidityDays && totalValidityDays > 0
+          ? totalValidityDays / remainingUnits
+          : null;
+
+    if (!unitValidity || !Number.isFinite(unitValidity)) {
+      throw createHttpError(
+        409,
+        `Не удалось безопасно сократить срок доступа по услуге "${sourceItem.name}"`
+      );
+    }
+
+    const nextValidityDays = totalValidityDays - unitValidity * refundUnits;
+    if (nextValidityDays <= 0) {
+      adjustments.push({
+        kind: 'subscription',
+        subscriptionId: subscription.id,
+        values: {
+          status: 'expired',
+        },
+      });
+      continue;
+    }
+
+    adjustments.push({
+      kind: 'subscription',
+      subscriptionId: subscription.id,
+      values: {
+        status: subscription.status,
+        expires_at: addDateOnlyDays(subscription.started_at, nextValidityDays),
+      },
+    });
+  }
+
+  return adjustments;
+}
+
+async function applyRefundSideEffects(client, orderItemsById, refundItems, serviceAdjustments) {
+  for (const refundItem of refundItems) {
+    const sourceItem = orderItemsById.get(refundItem.id);
+
+    if (sourceItem?.has_stock && sourceItem.product_id) {
+      await client.query(
+        `UPDATE products
+         SET stock = stock + $1,
+             updated_at = NOW()
+         WHERE id = $2`,
+        [refundItem.quantity, sourceItem.product_id]
+      );
+    }
+  }
+
+  for (const adjustment of serviceAdjustments) {
+    const fields = [];
+    const values = [];
+
+    for (const [key, value] of Object.entries(adjustment.values)) {
+      values.push(value ?? null);
+      fields.push(`${key} = $${values.length}`);
+    }
+
+    values.push(adjustment.subscriptionId);
+    await client.query(
+      `UPDATE client_subscriptions
+       SET ${fields.join(', ')}, updated_at = NOW()
+       WHERE id = $${values.length}`,
+      values
+    );
+  }
+}
+
 async function recalcOrderSummary(client, orderId) {
   const { rows: orderRows } = await client.query(
     'SELECT discount_percent, discount_money FROM orders WHERE id = $1',
@@ -823,7 +1048,13 @@ router.post('/:id/refund', async (req, res) => {
     }
 
     const { rows: items } = await client.query(
-      'SELECT * FROM order_items WHERE order_id = $1 ORDER BY created_at FOR UPDATE',
+      `SELECT oi.*, pt.has_stock
+       FROM order_items oi
+       LEFT JOIN products p ON p.id = oi.product_id
+       LEFT JOIN product_types pt ON pt.id = p.product_type_id
+       WHERE oi.order_id = $1
+       ORDER BY oi.created_at
+       FOR UPDATE OF oi`,
       [req.params.id]
     );
 
@@ -862,12 +1093,16 @@ router.post('/:id/refund', async (req, res) => {
       throw createHttpError(422, 'В заказе не осталось позиций для возврата');
     }
 
+    const orderItemsById = new Map(items.map((item) => [item.id, item]));
+    const serviceAdjustments = await buildServiceRefundAdjustments(client, order, orderItemsById, refundItems);
     const refundAmount = calculateRefundAmount(refundItems);
     if (refundAmount <= 0) {
       throw createHttpError(422, 'Сумма возврата должна быть больше нуля');
     }
 
     const aqsiResult = await sendRefundToAqsi(order, refundItems, refundAmount);
+
+    await applyRefundSideEffects(client, orderItemsById, refundItems, serviceAdjustments);
 
     for (const refundItem of refundItems) {
       await client.query(
