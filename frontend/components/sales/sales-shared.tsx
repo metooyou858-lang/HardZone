@@ -36,6 +36,8 @@ export type BasketLine = {
   discountMoney: number;
   discountTotal: number;
   total: number;
+  markingRequired: boolean;
+  markingCode: string | null;
 };
 
 export { formatMoney };
@@ -427,9 +429,11 @@ export function groupOrderItems(items: OrderItem[]) {
   for (const item of items) {
     const discountPercent = asAmount(item.discount_percent);
     const discountMoney = asAmount(item.discount_money);
-    const key = item.product_id
-      ? `product:${item.product_id}:${item.sale_price}:${discountPercent}:${discountMoney}`
-      : `custom:${item.name}:${item.sale_price}:${discountPercent}:${discountMoney}`;
+    const key = item.marking_required
+      ? `marked:${item.id}`
+      : item.product_id
+        ? `product:${item.product_id}:${item.sale_price}:${discountPercent}:${discountMoney}`
+        : `custom:${item.name}:${item.sale_price}:${discountPercent}:${discountMoney}`;
     const existing = grouped.get(key);
     const grossTotal = asAmount(item.total);
     const discountTotal = resolveDiscountMoney(grossTotal, discountPercent, discountMoney);
@@ -459,6 +463,8 @@ export function groupOrderItems(items: OrderItem[]) {
       discountMoney,
       discountTotal,
       total: itemTotal,
+      markingRequired: item.marking_required,
+      markingCode: item.marking_code,
     });
   }
 

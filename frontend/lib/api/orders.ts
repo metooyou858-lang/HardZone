@@ -36,6 +36,8 @@ export type OrderItem = {
   total: string;
   discount_percent: string | null;
   discount_money: string | null;
+  marking_required: boolean;
+  marking_code: string | null;
   refunded_quantity: number;
   last_refunded_at?: string | null;
   created_at: string;
@@ -102,6 +104,7 @@ export async function addOrderItem(
     quantity: number;
     discount_percent?: number;
     discount_money?: number;
+    marking_code?: string | null;
   }
 ): Promise<{ order: Order; item: OrderItem }> {
   const response = await apiFetch<ApiEnvelope<{ order: Order; item: OrderItem }>>(
@@ -121,6 +124,7 @@ export async function updateOrderItem(
     quantity?: number;
     discount_percent?: number;
     discount_money?: number;
+    marking_code?: string | null;
   }
 ): Promise<{ order: Order; item: OrderItem }> {
   const response = await apiFetch<ApiEnvelope<{ order: Order; item: OrderItem }>>(

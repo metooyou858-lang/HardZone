@@ -48,6 +48,19 @@ function parseClientId(value) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : Number.NaN;
 }
 
+function parseMarkingCode(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
 function normalizeDiscounts(discountPercent, discountMoney) {
   const nextPercent = discountPercent && discountPercent > 0 ? discountPercent : 0;
   const nextMoney = discountMoney && discountMoney > 0 ? discountMoney : 0;
@@ -467,7 +480,7 @@ async function getOpenOrder(client, orderId) {
 
 async function validateProductAvailability(client, productId, quantity) {
   const { rows: productRows } = await client.query(
-    `SELECT p.*, pt.has_stock
+    `SELECT p.*, pt.has_stock, pt.has_marking
      FROM products p
      JOIN product_types pt ON pt.id = p.product_type_id
      WHERE p.id = $1 AND p.is_archived = false`,
@@ -650,11 +663,13 @@ router.post('/:id/items', async (req, res) => {
       quantity,
       discount_percent,
       discount_money,
+      marking_code,
     } = req.body;
 
     const qty = parseInt(quantity, 10);
     const parsedDiscountPercent = discount_percent === undefined ? 0 : parseDiscountPercent(discount_percent);
     const parsedDiscountMoney = discount_money === undefined ? 0 : parseDiscountMoney(discount_money);
+    const parsedMarkingCode = parseMarkingCode(marking_code);
 
     const result = await getOpenOrder(client, req.params.id);
     if (result.error) {
@@ -679,6 +694,7 @@ router.post('/:id/items', async (req, res) => {
     let resolvedSalePrice = sale_price;
     let resolvedCostPrice = cost_price;
     let resolvedSku = sku;
+    let markingRequired = false;
 
     if (kind === 'product' && product_id) {
       const productResult = await validateProductAvailability(client, product_id, qty);
@@ -693,6 +709,14 @@ router.post('/:id/items', async (req, res) => {
       resolvedSku = resolvedSku || product.sku;
       resolvedSalePrice = resolvedSalePrice || Number(product.sale_price);
       resolvedCostPrice = resolvedCostPrice || Number(product.cost_price);
+      markingRequired = Boolean(product.is_marked || product.has_marking);
+    }
+
+    if (markingRequired && qty !== 1) {
+      return res.status(422).json({
+        success: false,
+        error: 'Маркированный товар добавляется в чек по одной единице',
+      });
     }
 
     if (!resolvedName) {
@@ -703,6 +727,25 @@ router.post('/:id/items', async (req, res) => {
     }
 
     await client.query('BEGIN');
+
+    if (markingRequired && parsedMarkingCode) {
+      const { rows: duplicateMarkingRows } = await client.query(
+        `SELECT id
+         FROM order_items
+         WHERE order_id = $1
+           AND marking_code = $2
+         LIMIT 1`,
+        [req.params.id, parsedMarkingCode]
+      );
+
+      if (duplicateMarkingRows[0]) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          success: false,
+          error: 'Этот код маркировки уже добавлен в текущий чек',
+        });
+      }
+    }
 
     const { rows: itemRows } = await client.query(
       `INSERT INTO order_items (
@@ -715,9 +758,11 @@ router.post('/:id/items', async (req, res) => {
          cost_price,
          quantity,
          discount_percent,
-         discount_money
+         discount_money,
+         marking_required,
+         marking_code
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING *`,
       [
         req.params.id,
@@ -730,6 +775,8 @@ router.post('/:id/items', async (req, res) => {
         qty,
         normalizedDiscounts.discountPercent,
         normalizedDiscounts.discountMoney,
+        markingRequired,
+        markingRequired ? parsedMarkingCode ?? null : null,
       ]
     );
 
@@ -772,6 +819,8 @@ router.patch('/:id/items/:itemId', async (req, res) => {
     }
 
     const nextQuantity = req.body.quantity !== undefined ? parseInt(req.body.quantity, 10) : item.quantity;
+    const nextMarkingCode =
+      req.body.marking_code !== undefined ? parseMarkingCode(req.body.marking_code) : item.marking_code;
     if (!nextQuantity || nextQuantity <= 0) {
       return res.status(422).json({
         success: false,
@@ -804,15 +853,50 @@ router.patch('/:id/items/:itemId', async (req, res) => {
       }
     }
 
+    if (item.marking_required && nextQuantity !== 1) {
+      return res.status(422).json({
+        success: false,
+        error: 'Количество маркированного товара в строке должно быть равно 1',
+      });
+    }
+
+    if (!item.marking_required && req.body.marking_code !== undefined) {
+      return res.status(422).json({
+        success: false,
+        error: 'Код маркировки можно сохранить только для маркированного товара',
+      });
+    }
+
     const normalizedDiscounts = normalizeDiscounts(rawDiscountPercent, rawDiscountMoney);
 
     await client.query('BEGIN');
+
+    if (item.marking_required && nextMarkingCode) {
+      const { rows: duplicateMarkingRows } = await client.query(
+        `SELECT id
+         FROM order_items
+         WHERE order_id = $1
+           AND id != $2
+           AND marking_code = $3
+         LIMIT 1`,
+        [req.params.id, req.params.itemId, nextMarkingCode]
+      );
+
+      if (duplicateMarkingRows[0]) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          success: false,
+          error: 'Этот код маркировки уже добавлен в текущий чек',
+        });
+      }
+    }
 
     const { rows: updatedItems } = await client.query(
       `UPDATE order_items SET
          quantity = $3,
          discount_percent = $4,
-         discount_money = $5
+         discount_money = $5,
+         marking_code = $6
        WHERE id = $1 AND order_id = $2
        RETURNING *`,
       [
@@ -821,6 +905,7 @@ router.patch('/:id/items/:itemId', async (req, res) => {
         nextQuantity,
         normalizedDiscounts.discountPercent,
         normalizedDiscounts.discountMoney,
+        item.marking_required ? nextMarkingCode ?? null : item.marking_code,
       ]
     );
 
@@ -914,6 +999,14 @@ router.post('/:id/send-to-aqsi', async (req, res) => {
 
     if (orderRequiresClient(items) && !nextClientId) {
       return res.status(422).json({ success: false, error: 'Выберите клиента для услуги' });
+    }
+
+    const missingMarkedItem = items.find((item) => item.marking_required && !item.marking_code);
+    if (missingMarkedItem) {
+      return res.status(422).json({
+        success: false,
+        error: `Для товара "${missingMarkedItem.name}" нужно отсканировать код маркировки`,
+      });
     }
 
     const { rows: preparedRows } = await pool.query(

@@ -61,7 +61,7 @@ export function CatalogPanel({
                   <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
                     <ScanIcon />
                   </span>
-                  <span>Сканер: 6+ символов за 100мс + Enter</span>
+                  <span>Сканер: штрихкод или код маркировки, 6+ символов за 100мс + Enter</span>
                 </div>
               </div>
 

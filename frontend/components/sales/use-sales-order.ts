@@ -65,6 +65,7 @@ export function useSalesOrder({
   const [lineDiscountMode, setLineDiscountMode] = useState<DiscountMode>("percent");
   const [lineDiscountValue, setLineDiscountValue] = useState("");
   const [lineDiscountSavingKey, setLineDiscountSavingKey] = useState<string | null>(null);
+  const [markingSavingKey, setMarkingSavingKey] = useState<string | null>(null);
 
   const receiptDiscountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scannerBufferRef = useRef("");
@@ -281,7 +282,12 @@ export function useSalesOrder({
     }
   }
 
-  async function addCatalogProduct(product: Product) {
+  async function addCatalogProduct(
+    product: Product,
+    options?: {
+      markingCode?: string | null;
+    }
+  ) {
     if (orderAwaitingPayment) {
       setBanner({
         tone: "info",
@@ -320,6 +326,7 @@ export function useSalesOrder({
         sale_price: Number.parseFloat(product.sale_price),
         cost_price: product.cost_price ? Number.parseFloat(product.cost_price) : null,
         quantity: 1,
+        marking_code: options?.markingCode?.trim() || null,
       });
 
       await refreshOrder(activeOrder.id);
@@ -342,7 +349,9 @@ export function useSalesOrder({
     setBanner(null);
 
     try {
-      if (line.itemIds.length === 1 && line.quantity > 1) {
+      if (line.markingRequired) {
+        await removeOrderItem(order.id, line.itemIds[0]);
+      } else if (line.itemIds.length === 1 && line.quantity > 1) {
         await updateOrderItem(order.id, line.itemIds[0], {
           quantity: line.quantity - 1,
           discount_percent: line.discountPercent,
@@ -371,7 +380,19 @@ export function useSalesOrder({
     setBanner(null);
 
     try {
-      if (line.itemIds.length === 1) {
+      if (line.markingRequired) {
+        await addOrderItem(order.id, {
+          kind: line.kind,
+          product_id: line.productId,
+          name: line.name,
+          sku: line.sku,
+          sale_price: Number.parseFloat(line.salePrice),
+          cost_price: line.costPrice ? Number.parseFloat(line.costPrice) : null,
+          quantity: 1,
+          discount_percent: line.discountPercent,
+          discount_money: line.discountMoney,
+        });
+      } else if (line.itemIds.length === 1) {
         await updateOrderItem(order.id, line.itemIds[0], {
           quantity: line.quantity + 1,
           discount_percent: line.discountPercent,
@@ -399,6 +420,33 @@ export function useSalesOrder({
       });
     } finally {
       setLineBusyKey(null);
+    }
+  }
+
+  async function saveLineMarking(line: BasketLine, value: string) {
+    if (!order || orderAwaitingPayment || !line.markingRequired || line.itemIds.length !== 1) {
+      return;
+    }
+
+    setMarkingSavingKey(line.key);
+    setBanner(null);
+
+    try {
+      await updateOrderItem(order.id, line.itemIds[0], {
+        marking_code: value.trim() || null,
+      });
+      await refreshOrder(order.id);
+      setBanner({
+        tone: "success",
+        text: value.trim() ? `Код маркировки сохранён для "${line.name}"` : `Код маркировки очищен для "${line.name}"`,
+      });
+    } catch (error) {
+      setBanner({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Не удалось сохранить код маркировки",
+      });
+    } finally {
+      setMarkingSavingKey(null);
     }
   }
 
@@ -434,7 +482,8 @@ export function useSalesOrder({
     setBanner({ tone: "info", text: `Сканер: ${barcode}` });
 
     try {
-      const product = await findByBarcode(barcode);
+      const scannedValue = barcode.trim();
+      const product = await findByBarcode(scannedValue);
       if (!isSellableInCash(product)) {
         setBanner({
           tone: "error",
@@ -443,8 +492,21 @@ export function useSalesOrder({
         return;
       }
 
-      await addCatalogProduct(product);
-      setBanner({ tone: "success", text: `Добавлено: ${product.name}` });
+      const normalizedBarcode = product.barcode?.trim() ?? "";
+      const shouldCaptureMarking =
+        Boolean(product.is_marked || product.has_marking) &&
+        scannedValue.length > 0 &&
+        scannedValue !== normalizedBarcode;
+
+      await addCatalogProduct(product, {
+        markingCode: shouldCaptureMarking ? scannedValue : null,
+      });
+      setBanner({
+        tone: "success",
+        text: shouldCaptureMarking
+          ? `Добавлено: ${product.name} — код маркировки считан`
+          : `Добавлено: ${product.name}`,
+      });
     } catch (error) {
       setBanner({
         tone: "error",
@@ -464,6 +526,15 @@ export function useSalesOrder({
 
     if (serviceRequiresClient && !selectedClient?.id && !order.client_id) {
       setBanner({ tone: "error", text: "Выберите клиента для услуги" });
+      return;
+    }
+
+    const missingMarkingLine = basketLines.find((line) => line.markingRequired && !line.markingCode);
+    if (missingMarkingLine) {
+      setBanner({
+        tone: "error",
+        text: `Для товара "${missingMarkingLine.name}" нужно отсканировать код маркировки`,
+      });
       return;
     }
 
@@ -615,6 +686,7 @@ export function useSalesOrder({
     (line) => line.kind === "service" || line.kind === "subscription"
   );
   const sendBlockedByClient = serviceRequiresClient && !orderClientId;
+  const sendBlockedByMarking = basketLines.some((line) => line.markingRequired && !line.markingCode);
 
   return {
     order,
@@ -643,6 +715,7 @@ export function useSalesOrder({
     lineDiscountValue,
     setLineDiscountValue,
     lineDiscountSavingKey,
+    markingSavingKey,
     orderAwaitingPayment,
     orderLocked,
     clientSelectionLocked,
@@ -654,6 +727,7 @@ export function useSalesOrder({
     orderClientId,
     serviceRequiresClient,
     sendBlockedByClient,
+    sendBlockedByMarking,
     applyClientSelection,
     handleClientSearchKeyDown,
     setClientQuery: (value: string) => {
@@ -664,6 +738,7 @@ export function useSalesOrder({
     decrementLine,
     incrementLine,
     removeLine,
+    saveLineMarking,
     openLineDiscountEditor,
     saveLineDiscount,
     scheduleReceiptDiscount,

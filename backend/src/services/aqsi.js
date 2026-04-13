@@ -47,6 +47,14 @@ function calculateItemsNetTotal(items) {
   }, 0);
 }
 
+function resolvePaymentSubjectType(item) {
+  if (item.kind !== 'product') {
+    return 4;
+  }
+
+  return item.marking_required || item.marking_code ? 33 : 1;
+}
+
 function buildAqsiOrderPayload(order) {
   return {
     id: String(order.id),
@@ -65,12 +73,13 @@ function buildAqsiOrderPayload(order) {
         price: asAmount(item.sale_price),
         tax: 6,
         paymentMethodType: 4,
-        paymentSubjectType: item.kind === 'product' ? 1 : 4,
+        paymentSubjectType: resolvePaymentSubjectType(item),
         unitOfMeasurement: 'Piece',
         unitCode: 0,
         addingType: 0,
         editable: false,
         discountMoney: resolveItemDiscountMoney(item),
+        itemCode: item.marking_code || null,
       })),
       checkClose: {
         taxationSystem: 1,
@@ -131,10 +140,11 @@ async function sendRefundToAqsi(order, items, amountOverride) {
       price: asAmount(item.sale_price),
       tax: 6,
       paymentMethodType: 4,
-      paymentSubjectType: item.kind === 'product' ? 1 : 4,
+      paymentSubjectType: resolvePaymentSubjectType(item),
       unitOfMeasurement: 'Piece',
       unitCode: 0,
       discountMoney: resolveItemDiscountMoney(item),
+      itemCode: item.marking_code || null,
     })),
     checkClose: {
       payments: [
