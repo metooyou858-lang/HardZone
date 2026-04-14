@@ -179,9 +179,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       style={{ ["--sidebar-width" as string]: collapsed ? "92px" : "264px" }}
       data-sidebar-collapsed={collapsed ? "true" : "false"}
     >
-      <aside className="sidebar-scrollbar relative overflow-hidden border-r border-[var(--line-soft)] bg-[var(--bg-app)] text-[var(--text-inverse)]">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(0,191,165,0.18),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(63,185,80,0.08),_transparent_24%)]" />
-        <div className="relative flex h-full flex-col gap-7 p-5">
+      <aside className="sidebar-scrollbar sticky top-0 z-[70] h-screen overflow-y-auto overflow-x-hidden border-r border-[var(--line-soft)] bg-[var(--bg-app)] text-[var(--text-inverse)]">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(0,191,165,0.18),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(63,185,80,0.08),_transparent_24%)]" />
+        <div className="relative flex min-h-full flex-col gap-7 p-5">
           <div className="space-y-4">
             <div className={`flex items-center ${collapsed ? "justify-center" : "justify-between"} gap-3`}>
               <Link
@@ -292,7 +292,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div className="min-w-0 bg-[var(--bg-app)]">
+      <div className="relative z-0 min-w-0 overflow-x-hidden bg-[var(--bg-app)]">
         <main className="mx-auto max-w-[1680px] px-6 py-6 sm:px-8 sm:py-8 lg:px-10">{children}</main>
       </div>
     </div>
