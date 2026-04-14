@@ -709,7 +709,7 @@ router.post('/:id/items', async (req, res) => {
       resolvedSku = resolvedSku || product.sku;
       resolvedSalePrice = resolvedSalePrice || Number(product.sale_price);
       resolvedCostPrice = resolvedCostPrice || Number(product.cost_price);
-      markingRequired = Boolean(product.is_marked || product.has_marking);
+      markingRequired = Boolean(product.is_marked);
     }
 
     if (markingRequired && qty !== 1) {

@@ -483,7 +483,7 @@ export function useSalesOrder({
 
       const normalizedBarcode = product.barcode?.trim() ?? "";
       const shouldCaptureMarking =
-        Boolean(product.is_marked || product.has_marking) &&
+        Boolean(product.is_marked) &&
         scannedValue.length > 0 &&
         scannedValue !== normalizedBarcode;
 
