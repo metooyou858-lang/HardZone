@@ -77,6 +77,7 @@ export type ScheduleBooking = {
   slot_id: string;
   client_id: string;
   subscription_id: string | null;
+  covered_by_booking_id: string | null;
   places_count: number;
   status: BookingStatus;
   booked_by: string | null;
@@ -228,6 +229,7 @@ export async function saveGymHours(days: GymHour[]): Promise<GymOverview> {
 export async function checkInOpenGym(data: {
   client_id?: string | number;
   barcode?: string;
+  subscription_id?: string | number | null;
   created_by?: string;
 }): Promise<{
   visit: OpenGymVisit;
@@ -249,6 +251,21 @@ export async function checkInOpenGym(data: {
     body: JSON.stringify(data),
   });
 
+  return response.data;
+}
+
+export async function deleteGymVisit(visitId: string): Promise<{
+  visits: OpenGymVisit[];
+  total_today: number;
+  today: GymOverview["today"];
+}> {
+  const response = await apiFetch<
+    ApiEnvelope<{
+      visits: OpenGymVisit[];
+      total_today: number;
+      today: GymOverview["today"];
+    }>
+  >(`/schedule/open-gym/visits/${visitId}`, { method: "DELETE" });
   return response.data;
 }
 
@@ -288,6 +305,7 @@ export async function createBooking(data: {
   client_id: string | number;
   subscription_id?: string | number | null;
   booked_by?: string;
+  covered_by_booking_id?: string | null;
 }): Promise<ScheduleBooking> {
   const response = await apiFetch<ApiEnvelope<ScheduleBooking>>("/bookings", {
     method: "POST",
@@ -304,8 +322,15 @@ export async function cancelBooking(id: string | number, cancel_reason?: string 
   });
 }
 
-export async function attendBooking(id: string | number): Promise<void> {
+export async function attendBooking(id: string | number, options?: { skipSubscription?: boolean }): Promise<void> {
   await apiFetch<ApiEnvelope<unknown>>(`/bookings/${id}/attend`, {
+    method: "POST",
+    body: JSON.stringify({ skip_subscription: options?.skipSubscription ?? false }),
+  });
+}
+
+export async function unattendBooking(id: string | number): Promise<void> {
+  await apiFetch<ApiEnvelope<unknown>>(`/bookings/${id}/unattend`, {
     method: "POST",
   });
 }

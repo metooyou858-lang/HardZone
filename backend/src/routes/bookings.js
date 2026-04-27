@@ -1,14 +1,16 @@
 const express = require('express');
 
+const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
 
 const router = express.Router();
+const requireModule = authMiddleware.requireModule;
 
 function combineSlotDateTime(dateValue, timeValue) {
   return new Date(`${dateValue}T${timeValue}`);
 }
 
-async function markBookingAsAttended(client, bookingId) {
+async function markBookingAsAttended(client, bookingId, { skipSubscription = false } = {}) {
   const { rows: bookingRows } = await client.query(
     'SELECT * FROM bookings WHERE id = $1 AND status = $2',
     [bookingId, 'confirmed']
@@ -21,28 +23,34 @@ async function markBookingAsAttended(client, bookingId) {
     throw error;
   }
 
+  // партнёр по сплиту — всегда без списания, независимо от флага skipSubscription
+  const isCoveredPartner = !!booking.covered_by_booking_id;
+  const effectiveSubscriptionId = (skipSubscription || isCoveredPartner) ? null : booking.subscription_id;
+
+  // если фактически не списываем — обнуляем subscription_id в брони,
+  // чтобы UI показывал реальную картину а не "выбранный при записи" абонемент
   await client.query(
-    'UPDATE bookings SET status = $1, updated_at = NOW() WHERE id = $2',
-    ['attended', bookingId]
+    'UPDATE bookings SET status = $1, subscription_id = $2, updated_at = NOW() WHERE id = $3',
+    ['attended', effectiveSubscriptionId, bookingId]
   );
 
-  if (booking.subscription_id) {
+  if (effectiveSubscriptionId) {
     const { rows: subscriptionRows } = await client.query(
       'SELECT * FROM client_subscriptions WHERE id = $1',
-      [booking.subscription_id]
+      [effectiveSubscriptionId]
     );
     const subscription = subscriptionRows[0];
 
     if (subscription && ['visits', 'single'].includes(subscription.type) && (subscription.visits_left || 0) > 0) {
       await client.query(
         'UPDATE client_subscriptions SET visits_left = visits_left - 1, updated_at = NOW() WHERE id = $1',
-        [booking.subscription_id]
+        [effectiveSubscriptionId]
       );
 
       if ((subscription.visits_left || 0) - 1 === 0) {
         await client.query(
           'UPDATE client_subscriptions SET status = $1, updated_at = NOW() WHERE id = $2',
-          ['exhausted', booking.subscription_id]
+          ['exhausted', effectiveSubscriptionId]
         );
       }
     }
@@ -53,15 +61,15 @@ async function markBookingAsAttended(client, bookingId) {
       INSERT INTO client_visits (client_id, subscription_id, visit_type, slot_id)
       VALUES ($1, $2, 'group', $3)
     `,
-    [booking.client_id, booking.subscription_id || null, booking.slot_id]
+    [booking.client_id, effectiveSubscriptionId, booking.slot_id]
   );
 
   return booking;
 }
 
-router.post('/', async (req, res) => {
+router.post('/', requireModule('schedule_clients'), async (req, res) => {
   try {
-    const { slot_id, client_id, subscription_id, booked_by = 'admin' } = req.body;
+    const { slot_id, client_id, subscription_id, booked_by = 'admin', covered_by_booking_id } = req.body;
 
     if (!slot_id || !client_id) {
       return res.status(422).json({ success: false, error: 'Укажите занятие и клиента' });
@@ -105,7 +113,8 @@ router.post('/', async (req, res) => {
         }
       }
 
-      if ((slot.booked_count || 0) + placesCount > slot.capacity) {
+      // партнёр по сплиту не занимает отдельное место — проверку вместимости пропускаем
+      if (!covered_by_booking_id && (slot.booked_count || 0) + placesCount > slot.capacity) {
         await client.query('ROLLBACK');
         return res.status(409).json({ success: false, error: 'Нет свободных мест' });
       }
@@ -122,11 +131,11 @@ router.post('/', async (req, res) => {
 
       const { rows } = await client.query(
         `
-          INSERT INTO bookings (slot_id, client_id, subscription_id, places_count, booked_by)
-          VALUES ($1, $2, $3, $4, $5)
+          INSERT INTO bookings (slot_id, client_id, subscription_id, places_count, booked_by, covered_by_booking_id)
+          VALUES ($1, $2, $3, $4, $5, $6)
           RETURNING *
         `,
-        [slot_id, client_id, subscription_id || null, placesCount, booked_by]
+        [slot_id, client_id, subscription_id || null, placesCount, booked_by, covered_by_booking_id || null]
       );
 
       await client.query(
@@ -147,7 +156,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.post('/:id/cancel', async (req, res) => {
+router.post('/:id/cancel', requireModule('schedule_clients'), async (req, res) => {
   try {
     const { cancel_reason } = req.body;
     const client = await pool.connect();
@@ -178,17 +187,10 @@ router.post('/:id/cancel', async (req, res) => {
         return res.status(409).json({ success: false, error: 'Нельзя отменить запись после начала занятия' });
       }
 
-      await client.query(
-        `
-          UPDATE bookings
-          SET status = 'cancelled', cancelled_at = NOW(), cancel_reason = $1, updated_at = NOW()
-          WHERE id = $2
-        `,
-        [cancel_reason || null, req.params.id]
-      );
+      await client.query('DELETE FROM bookings WHERE id = $1', [req.params.id]);
 
       await client.query(
-        'UPDATE schedule_slots SET booked_count = booked_count - $1, updated_at = NOW() WHERE id = $2',
+        'UPDATE schedule_slots SET booked_count = GREATEST(booked_count - $1, 0), updated_at = NOW() WHERE id = $2',
         [booking.places_count, booking.slot_id]
       );
 
@@ -205,13 +207,14 @@ router.post('/:id/cancel', async (req, res) => {
   }
 });
 
-router.post('/:id/attend', async (req, res) => {
+router.post('/:id/attend', requireModule('schedule_attendance'), async (req, res) => {
   try {
+    const skipSubscription = req.body?.skip_subscription === true;
     const client = await pool.connect();
 
     try {
       await client.query('BEGIN');
-      await markBookingAsAttended(client, req.params.id);
+      await markBookingAsAttended(client, req.params.id, { skipSubscription });
       await client.query('COMMIT');
       res.json({ success: true });
     } catch (error) {
@@ -225,7 +228,81 @@ router.post('/:id/attend', async (req, res) => {
   }
 });
 
-router.post('/attend-by-barcode', async (req, res) => {
+router.post('/:id/unattend', requireModule('schedule_attendance'), async (req, res) => {
+  try {
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const { rows: bookingRows } = await client.query(
+        'SELECT * FROM bookings WHERE id = $1 AND status = $2',
+        [req.params.id, 'attended']
+      );
+      const booking = bookingRows[0];
+
+      if (!booking) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ success: false, error: 'Запись не найдена или статус не «attended»' });
+      }
+
+      // Удаляем запись о визите, возвращаем реальный subscription_id (null при skip_subscription)
+      const { rows: visitRows } = await client.query(
+        `DELETE FROM client_visits
+         WHERE id = (
+           SELECT id FROM client_visits
+           WHERE client_id = $1 AND slot_id = $2 AND visit_type = 'group'
+           ORDER BY visited_at DESC
+           LIMIT 1
+         )
+         RETURNING subscription_id`,
+        [booking.client_id, booking.slot_id]
+      );
+
+      // Возвращаем визит только если при attend реально списывали (subscription_id в client_visits не null)
+      const chargedSubscriptionId = visitRows[0]?.subscription_id ?? null;
+      if (chargedSubscriptionId) {
+        const { rows: subRows } = await client.query(
+          'SELECT * FROM client_subscriptions WHERE id = $1',
+          [chargedSubscriptionId]
+        );
+        const sub = subRows[0];
+
+        if (sub && ['visits', 'single'].includes(sub.type)) {
+          await client.query(
+            'UPDATE client_subscriptions SET visits_left = visits_left + 1, updated_at = NOW() WHERE id = $1',
+            [chargedSubscriptionId]
+          );
+          if (sub.status === 'exhausted') {
+            await client.query(
+              "UPDATE client_subscriptions SET status = 'active', updated_at = NOW() WHERE id = $1",
+              [chargedSubscriptionId]
+            );
+          }
+        }
+      }
+
+      // Удаляем бронь целиком и уменьшаем счётчик слота
+      await client.query('DELETE FROM bookings WHERE id = $1', [booking.id]);
+      await client.query(
+        'UPDATE schedule_slots SET booked_count = GREATEST(booked_count - $1, 0), updated_at = NOW() WHERE id = $2',
+        [booking.places_count, booking.slot_id]
+      );
+
+      await client.query('COMMIT');
+      res.json({ success: true });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/attend-by-barcode', requireModule('schedule_attendance'), async (req, res) => {
   try {
     const { barcode, slot_id } = req.body;
 
