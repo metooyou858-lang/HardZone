@@ -1,0 +1,2 @@
+ALTER TABLE products
+  ADD COLUMN IF NOT EXISTS marking_type INTEGER;

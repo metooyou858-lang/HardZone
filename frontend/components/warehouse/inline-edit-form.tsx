@@ -107,6 +107,9 @@ export function InlineEditForm({
   const [costPrice, setCostPrice] = useState(product.cost_price ?? "");
   const [salePrice, setSalePrice] = useState(product.sale_price ?? "");
   const [isMarked, setIsMarked] = useState(product.is_marked);
+  const [markingType, setMarkingType] = useState<number | null>(
+    (product as { marking_type?: number | null }).marking_type ?? null
+  );
   const [categoryId, setCategoryId] = useState(product.category_id ?? "");
   const [minStock, setMinStock] = useState(String(product.min_stock ?? 0));
   const [archiving, setArchiving] = useState(false);
@@ -219,6 +222,7 @@ export function InlineEditForm({
       cost_price: cfg.has_cost_price && costPrice !== "" ? Number.parseFloat(String(costPrice)) : null,
       sale_price: cfg.has_sale_price && salePrice !== "" ? Number.parseFloat(String(salePrice)) : null,
       is_marked: cfg.has_marking ? isMarked : false,
+      marking_type: cfg.has_marking && isMarked ? markingType : null,
       category_id: categoryId ? Number.parseInt(categoryId, 10) : null,
       min_stock: cfg.has_min_stock ? Number.parseInt(minStock, 10) || 0 : 0,
     });
@@ -419,17 +423,55 @@ export function InlineEditForm({
           )}
 
           {cfg.has_marking && (
-            <div className="flex items-center gap-3 md:col-span-2">
-              <input
-                type="checkbox"
-                id={`marked-${product.id}`}
-                checked={isMarked}
-                onChange={(event) => setIsMarked(event.target.checked)}
-                className="h-4 w-4 rounded border-slate-600"
-              />
-              <label htmlFor={`marked-${product.id}`} className="text-sm text-slate-300">
-                Маркированный товар (Честный знак)
-              </label>
+            <div className="md:col-span-2 space-y-3">
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id={`marked-${product.id}`}
+                  checked={isMarked}
+                  onChange={(event) => setIsMarked(event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-600"
+                />
+                <label htmlFor={`marked-${product.id}`} className="text-sm text-slate-300">
+                  Маркированный товар (Честный знак)
+                </label>
+              </div>
+              {isMarked && (
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-slate-400 whitespace-nowrap">Тип маркировки</label>
+                  <div className="relative group">
+                    <span className="flex h-4 w-4 cursor-default items-center justify-center rounded-full border border-slate-600 text-xs text-slate-400 select-none">?</span>
+                    <div className="absolute bottom-full left-0 z-50 mb-2 hidden w-64 rounded-lg border border-slate-700 bg-slate-900 p-3 text-xs text-slate-300 shadow-lg group-hover:block">
+                      <div className="font-semibold text-slate-200 mb-1">Коды типов маркировки:</div>
+                      <div className="space-y-0.5">
+                        <div><span className="text-cyan-400">21</span> — Упакованная вода</div>
+                        <div><span className="text-cyan-400">25</span> — Соки, безалкогольные напитки</div>
+                        <div><span className="text-cyan-400">13</span> — Молочная продукция</div>
+                        <div><span className="text-cyan-400">15</span> — Пиво и слабоалкогольные напитки</div>
+                        <div><span className="text-cyan-400">2</span> — Лекарственные препараты</div>
+                        <div><span className="text-cyan-400">4</span> — Табачные изделия</div>
+                        <div><span className="text-cyan-400">6</span> — Обувные товары</div>
+                        <div><span className="text-cyan-400">7</span> — Одежда и текстиль</div>
+                      </div>
+                    </div>
+                  </div>
+                  <select
+                    value={markingType ?? ""}
+                    onChange={(e) => setMarkingType(e.target.value ? Number(e.target.value) : null)}
+                    className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                  >
+                    <option value="">— не выбрано —</option>
+                    <option value="21">21 — Упакованная вода</option>
+                    <option value="25">25 — Соки / безалк. напитки</option>
+                    <option value="13">13 — Молочная продукция</option>
+                    <option value="15">15 — Пиво и слабоалк. напитки</option>
+                    <option value="2">2 — Лекарственные препараты</option>
+                    <option value="4">4 — Табачные изделия</option>
+                    <option value="6">6 — Обувные товары</option>
+                    <option value="7">7 — Одежда и текстиль</option>
+                  </select>
+                </div>
+              )}
             </div>
           )}
         </div>

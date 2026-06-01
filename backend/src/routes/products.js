@@ -9,7 +9,7 @@ const requireServiceSettingsManage = authMiddleware.requireModule('services');
 
 const PRODUCT_SELECT = `
   SELECT
-    p.id, p.name, p.sku, p.barcode, p.datamatrix_code, p.is_marked,
+    p.id, p.name, p.sku, p.barcode, p.datamatrix_code, p.is_marked, p.marking_type,
     p.is_archived,
     p.product_type_id,
     pt.name AS product_type_name,
@@ -103,15 +103,44 @@ router.get('/', requireProductsRead, async (req, res, next) => {
   }
 });
 
+/**
+ * Extract EAN-13 from a GS1 DataMatrix marking code.
+ * GS1 format: 01{14-digit GTIN}21{serial}...
+ * Returns null if the value doesn't look like GS1.
+ */
+function extractEanFromGs1(value) {
+  const noGs = value.replace(/\x1d/g, '');
+  const match = noGs.match(/^01(\d{14})21/);
+  if (!match) return null;
+  const gtin14 = match[1];
+  return gtin14.startsWith('0') ? gtin14.slice(1) : gtin14;
+}
+
 // GET /api/products/barcode/:barcode
 router.get('/barcode/:barcode', requireProductsRead, async (req, res, next) => {
   try {
-    const result = await query(
+    const raw = req.params.barcode.trim();
+
+    let result = await query(
       `${PRODUCT_SELECT}
        WHERE (p.barcode = $1 OR p.datamatrix_code = $1)
        AND p.is_archived = false`,
-      [req.params.barcode.trim()]
+      [raw]
     );
+
+    // If not found by exact match, try to extract EAN-13 from GS1 DataMatrix marking code
+    if (result.rowCount === 0) {
+      const ean = extractEanFromGs1(raw);
+      if (ean && ean !== raw) {
+        result = await query(
+          `${PRODUCT_SELECT}
+           WHERE (p.barcode = $1 OR p.datamatrix_code = $1)
+           AND p.is_archived = false`,
+          [ean]
+        );
+      }
+    }
+
     if (result.rowCount === 0) return res.status(404).json({ error: 'Product not found' });
     return res.json(result.rows[0]);
   } catch (error) {
@@ -307,6 +336,9 @@ router.patch('/:id', requireProductsManage, async (req, res, next) => {
     const barcode = asStr(req.body.barcode);
     const datamatrix = asStr(req.body.datamatrix_code);
     const is_marked = typeof req.body.is_marked === 'boolean' ? req.body.is_marked : null;
+    const marking_type = req.body.marking_type !== undefined
+      ? (req.body.marking_type === null ? null : asInt(req.body.marking_type))
+      : undefined;
     const cost_price = asDecimal(req.body.cost_price);
     const sale_price = asDecimal(req.body.sale_price);
     const category_id = req.body.category_id !== undefined ? asInt(req.body.category_id) : undefined;
@@ -326,6 +358,7 @@ router.patch('/:id', requireProductsManage, async (req, res, next) => {
         category_id     = COALESCE($9, category_id),
         min_stock       = COALESCE($10, min_stock),
         product_type_id = COALESCE($11, product_type_id),
+        marking_type    = CASE WHEN $12 THEN $13 ELSE marking_type END,
         updated_at      = NOW()
       WHERE id = $1
       RETURNING id
@@ -342,6 +375,8 @@ router.patch('/:id', requireProductsManage, async (req, res, next) => {
         category_id !== undefined ? category_id : null,
         min_stock,
         product_type_id,
+        marking_type !== undefined,               // $12: был ли передан
+        marking_type !== undefined ? marking_type : null, // $13: значение
       ]
     );
 

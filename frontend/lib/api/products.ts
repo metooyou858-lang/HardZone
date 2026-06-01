@@ -37,6 +37,7 @@ export type ProductUpdatePayload = {
   barcode?: string | null;
   datamatrix_code?: string | null;
   is_marked?: boolean;
+  marking_type?: number | null;
   is_archived?: boolean;
   cost_price?: number | null;
   sale_price?: number | null;
