@@ -5,6 +5,7 @@
 ## Читать перед работой
 
 - Карта проекта: `docs/PROJECT_MAP.md`.
+- Команды для пользователя: `docs/COMMANDS.md`.
 - Workflow, Git, проверки, кодировки: `docs/WORKFLOW.md`.
 - Production, деплой, SSH, PM2, логи: `docs/OPERATIONS.md`.
 - Бизнес-правила: `docs/BUSINESS_RULES.md`.

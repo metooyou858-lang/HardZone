@@ -13,6 +13,7 @@ HardZone - monorepo CRM для CrossFit-клуба:
 - `deploy.sh` - деплой на production `79.137.162.55:/srv/HardZone`.
 - `swagger (3).json` - каноничная локальная Swagger-документация AQSI по кассе и кассовым операциям.
 - `docs/STABILIZATION_PLAN.md` - план стабилизации проекта.
+- `docs/COMMANDS.md` - короткая шпаргалка команд для человека.
 - `HardZone_CRM_Документ_v4.1.md` - каноничный проектный документ. Копии из `frontend/` и `backend/` удалены, чтобы агенты не читали устаревшие дубли.
 
 ## Production

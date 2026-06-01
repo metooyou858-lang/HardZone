@@ -5,6 +5,7 @@ CRM для CrossFit-клуба HardZone: `frontend/` (Next.js) + `backend/` (Exp
 ## Быстрый вход
 
 - Карта проекта: `docs/PROJECT_MAP.md`.
+- Шпаргалка команд: `docs/COMMANDS.md`.
 - Рабочий процесс: `docs/WORKFLOW.md`.
 - Production, деплой, логи: `docs/OPERATIONS.md`.
 - Бизнес-правила: `docs/BUSINESS_RULES.md`.

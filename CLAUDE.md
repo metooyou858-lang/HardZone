@@ -5,6 +5,7 @@ This file is intentionally short. Long-lived project knowledge must live in `doc
 ## Read First
 
 - Project map: `docs/PROJECT_MAP.md`.
+- Human command cheat sheet: `docs/COMMANDS.md`.
 - Workflow, Git, checks, encodings: `docs/WORKFLOW.md`.
 - Production, deploy, SSH, PM2, logs: `docs/OPERATIONS.md`.
 - Business rules: `docs/BUSINESS_RULES.md`.
