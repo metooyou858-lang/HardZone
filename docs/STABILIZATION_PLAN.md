@@ -14,21 +14,20 @@
 | 6. UTF-8/editor rules | Done | `.editorconfig`, mojibake checks in docs |
 | 7. Удаление дублей docs | Done | `DEPLOYMENT.md`, копии проектного документа в `frontend/` и `backend/`; `AGENTS.md`/`CLAUDE.md` стали указателями |
 | 8. Smoke-check automation | Done | `scripts/smoke-local.ps1`, `scripts/smoke-production.ps1` |
-| 9. Git remote/upstream | Todo | `main` сейчас показывает `origin/main [gone]` |
+| 9. Git remote/upstream | Done | `main` отслеживает `origin/main` на GitHub |
 | 10. Staging contour | Todo | Отдельный тестовый сервер или хотя бы staging env на production |
 | 11. Backup/restore procedure | Todo | Документированная проверка бэкапа PostgreSQL |
 
 ## Ближайшие практические шаги
 
-1. Настроить живой Git remote и upstream для `main`.
-2. Зафиксировать инфраструктурный слой отдельным коммитом: docs, env examples, deploy notes, `.editorconfig`.
-3. Документировать backup/restore:
+1. Решить, добавляем ли в Git локальный `swagger (3).json`, потому что docs и AQSI workflow на него ссылаются.
+2. Документировать backup/restore:
 
 ```text
 docs/BACKUP_RESTORE.md
 ```
 
-4. После этого переходить к стабилизации конкретных зон: оплаты, расписание, права доступа.
+3. После этого переходить к стабилизации конкретных зон: оплаты, расписание, права доступа.
 
 ## Правило остановки
 
