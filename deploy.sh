@@ -40,6 +40,10 @@ ssh_cmd() {
   ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$SSH_TARGET" "$@"
 }
 
+restart_frontend() {
+  ssh_cmd "su - app -c 'cd $REMOTE_BASE/frontend && pm2 delete hardzone-frontend >/dev/null 2>&1 || true; cd $REMOTE_BASE/frontend && pm2 start npm --name hardzone-frontend -- start -- -p 3001 -H 127.0.0.1; pm2 save'"
+}
+
 preflight_ssh() {
   echo "=== SSH preflight: $SSH_TARGET ==="
   if ! ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$SSH_TARGET" "echo ok" >/dev/null; then
@@ -128,7 +132,7 @@ fi
 if [ "$DO_RESTART_FRONTEND" = true ]; then
   preflight_ssh
   echo "=== Рестарт фронтенда ==="
-  ssh_cmd "su - app -c 'pm2 restart hardzone-frontend'"
+  restart_frontend
 fi
 
 echo "=== Готово ==="

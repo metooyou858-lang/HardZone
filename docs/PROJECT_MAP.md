@@ -25,6 +25,9 @@ HardZone - monorepo CRM для CrossFit-клуба:
 - Путь: `/srv/HardZone`.
 - Backend PM2: `inventory-backend`.
 - Frontend PM2: `hardzone-frontend`.
+- SSH password login отключен; доступ только по ключу.
+- Внешние порты: `22`, `80`, `443`; app-порты `3001`, `3000`, `5432` наружу не открывать.
+- Временный HTTPS-сертификат на IP истекает `2026-06-06`; после появления домена перевыпустить сертификат на домен.
 
 Старый адрес `80.66.87.178` не использовать без прямой просьбы.
 
@@ -56,4 +59,4 @@ HardZone - monorepo CRM для CrossFit-клуба:
 4. После фронтенд-правок проверять `rg "Рџ|Ð|Ñ|�" frontend`.
 5. Если нужно деплоить с Windows, запускать `deploy.ps1`, а не ручные `npm`/`pm2` под root.
 6. Долгосрочные улучшения вести через `docs/STABILIZATION_PLAN.md`.
-7. Push в GitHub `origin` не деплоит production. Push в remote `server` запускает production hook, поэтому не использовать его случайно.
+7. Push в GitHub `origin` не деплоит production. Push в remote `server` запускает production hook, поэтому не использовать его случайно; обычный production deploy - через `deploy.ps1`.

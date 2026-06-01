@@ -18,7 +18,7 @@ git status --short --branch
 
 ## Сохранить код в GitHub
 
-Безопасно: это не деплой.
+Безопасно: это не деплой. Обычный commit flow идет через GitHub `origin`, а production меняется отдельным запуском `deploy.ps1`.
 
 ```powershell
 git add .
@@ -61,6 +61,8 @@ Get-ChildItem backend\src -Recurse -Filter *.js | ForEach-Object { node --check 
 ```
 
 ## Деплой
+
+Основной production-деплой:
 
 Frontend:
 
@@ -120,6 +122,8 @@ ssh -i "$HOME\.ssh\hardzone_deploy" -o StrictHostKeyChecking=no root@79.137.162.
 
 ## SSH
 
+После hardening доступ по паролю отключен. Подключение только по ключу `~/.ssh/hardzone_deploy`.
+
 Проверить доступ:
 
 ```powershell
@@ -147,3 +151,17 @@ git push server main
 ```
 
 Обычно не использовать `git push server main`. Для production использовать `deploy.ps1`.
+
+## Сеть production
+
+Должны быть открыты снаружи только:
+
+```text
+22/tcp  SSH
+80/tcp  HTTP redirect
+443/tcp HTTPS
+```
+
+Порты `3001`, `3000`, `5432` должны быть закрыты снаружи. Frontend PM2 должен стартовать как `next start -p 3001 -H 127.0.0.1`.
+
+Текущий временный HTTPS-сертификат на IP `79.137.162.55` истекает `2026-06-06`. После покупки домена перевыпустить сертификат на домен и обновить nginx `server_name`.
