@@ -1,28 +1,63 @@
 @import "tailwindcss";
 
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes fade-up {
+  from { transform: translateY(12px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(20px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
 :root {
-  --bg-app: #0d1117;
-  --bg-panel: #161b22;
-  --bg-panel-soft: #161b22;
-  --bg-card: #1c2333;
-  --bg-card-soft: #222b3d;
-  --text-main: #f0f6ff;
-  --text-muted: #a2afbd;
-  --text-inverse: #f0f6ff;
-  --line-soft: #30363d;
-  --accent: #00bfa5;
-  --accent-soft: rgba(0, 191, 165, 0.16);
-  --success: #3fb950;
-  --danger: #f85149;
-  --warning: #d29922;
-  --font-heading: "Space Grotesk", sans-serif;
-  --font-mono: "IBM Plex Mono", monospace;
+  /* === Surfaces (tonal layers, no borders) === */
+  --bg-app:        #0B0E14;   /* Layer 0 — the void */
+  --bg-panel:      #111520;   /* Layer 1 — main sections */
+  --bg-card:       #161B27;   /* Layer 2 — feature cards */
+  --bg-card-soft:  #1E2535;   /* Layer 3 — modals / floating */
+
+  /* === Brand palette === */
+  --accent:        #5EF4D8;   /* Primary / Action */
+  --accent-soft:   rgba(94, 244, 216, 0.12);
+  --accent-grad:   linear-gradient(135deg, #5EF4D8 0%, #08C4A9 100%);
+
+  --energy:        #FF7439;   /* Secondary / Energy (cancelled, urgent) */
+  --energy-soft:   rgba(255, 116, 57, 0.12);
+
+  --atmos:         #9093FF;   /* Tertiary / Atmosphere (recovery, info) */
+  --atmos-soft:    rgba(144, 147, 255, 0.12);
+
+  /* === Text === */
+  --text-main:     #ECEDF6;   /* on-surface — never pure white */
+  --text-muted:    #7B8496;
+  --text-inverse:  #0B0E14;
+
+  /* === Status === */
+  --success:       #3fb950;
+  --danger:        #FF7439;   /* aligned with --energy */
+  --warning:       #F5C542;
+
+  /* === Ghost border fallback (15% opacity) === */
+  --line-soft:     rgba(236, 237, 246, 0.08);
+
+  /* === Typography === */
+  --font-heading:  "Plus Jakarta Sans", sans-serif;
+  --font-body:     "Inter", sans-serif;
+  --font-mono:     "IBM Plex Mono", monospace;
 }
 
 @theme inline {
   --color-background: var(--bg-app);
   --color-foreground: var(--text-main);
-  --font-sans: var(--font-heading);
+  --font-sans: var(--font-body);
   --font-mono: var(--font-mono);
 }
 
@@ -38,12 +73,11 @@ body {
   min-height: 100vh;
   margin: 0;
   background:
-    radial-gradient(circle at top left, rgba(0, 191, 165, 0.16), transparent 22%),
-    radial-gradient(circle at bottom right, rgba(63, 185, 80, 0.07), transparent 20%),
-    linear-gradient(180deg, rgba(13, 17, 23, 0.98), rgba(13, 17, 23, 1)),
+    radial-gradient(circle at top left,  rgba(94, 244, 216, 0.07), transparent 25%),
+    radial-gradient(circle at bottom right, rgba(144, 147, 255, 0.05), transparent 25%),
     var(--bg-app);
   color: var(--text-main);
-  font-family: var(--font-heading), sans-serif;
+  font-family: var(--font-body), sans-serif;
 }
 
 a {
@@ -61,12 +95,12 @@ select {
 .app-grid {
   display: grid;
   min-height: 100vh;
-  grid-template-columns: var(--sidebar-width, 264px) minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 200px) minmax(0, 1fr);
 }
 
 .sidebar-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: rgba(139, 148, 158, 0.35) transparent;
+  scrollbar-color: rgba(139, 148, 158, 0.2) transparent;
 }
 
 @media (max-width: 960px) {

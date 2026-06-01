@@ -7,6 +7,7 @@ import {
   getDefaultRoleTitle,
   moduleLabels,
   roleLabels,
+  SCHEDULE_SUB_PERMISSIONS,
   type AuthModulePermission,
   type AuthUserRole,
 } from "@/lib/access";
@@ -183,6 +184,21 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
 
     setForm((state) => {
       const hasModule = state.modules.includes(module);
+
+      if (module === "schedule") {
+        if (hasModule) {
+          return {
+            ...state,
+            modules: state.modules.filter((m) => m !== "schedule" && !SCHEDULE_SUB_PERMISSIONS.includes(m)),
+          };
+        } else {
+          const toAdd = (["schedule", ...SCHEDULE_SUB_PERMISSIONS] as AuthModulePermission[]).filter(
+            (m) => !state.modules.includes(m)
+          );
+          return { ...state, modules: [...state.modules, ...toAdd] };
+        }
+      }
+
       return {
         ...state,
         modules: hasModule ? state.modules.filter((item) => item !== module) : [...state.modules, module],
@@ -412,6 +428,57 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {moduleOrder.map((module) => {
                 const enabled = form.modules.includes(module);
+
+                if (module === "schedule") {
+                  return (
+                    <div key="schedule" className="col-span-full space-y-2">
+                      <label
+                        className={`flex items-center justify-between rounded-2xl border px-4 py-3 text-sm ${
+                          enabled
+                            ? "border-[rgba(0,191,165,0.22)] bg-[rgba(0,191,165,0.08)]"
+                            : "border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)]"
+                        } ${isEditingOwner ? "opacity-70" : ""}`}
+                      >
+                        <span className="text-[var(--text-main)]">Расписание</span>
+                        <input
+                          type="checkbox"
+                          checked={enabled}
+                          disabled={isEditingOwner}
+                          onChange={() => toggleModule("schedule")}
+                          className="h-4 w-4 rounded border-[var(--line-soft)] bg-transparent accent-[var(--accent)]"
+                        />
+                      </label>
+
+                      {enabled ? (
+                        <div className="ml-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                          {SCHEDULE_SUB_PERMISSIONS.map((sub) => {
+                            const subEnabled = form.modules.includes(sub);
+                            return (
+                              <label
+                                key={sub}
+                                className={`flex items-center justify-between rounded-2xl border px-4 py-2.5 text-xs ${
+                                  subEnabled
+                                    ? "border-[rgba(0,191,165,0.18)] bg-[rgba(0,191,165,0.05)]"
+                                    : "border-[var(--line-soft)] bg-[rgba(255,255,255,0.02)]"
+                                } ${isEditingOwner ? "opacity-70" : ""}`}
+                              >
+                                <span className="text-[var(--text-muted)]">{moduleLabels[sub]}</span>
+                                <input
+                                  type="checkbox"
+                                  checked={subEnabled}
+                                  disabled={isEditingOwner}
+                                  onChange={() => toggleModule(sub)}
+                                  className="h-4 w-4 rounded border-[var(--line-soft)] bg-transparent accent-[var(--accent)]"
+                                />
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                }
+
                 return (
                   <label
                     key={module}

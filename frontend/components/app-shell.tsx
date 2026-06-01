@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -85,6 +84,27 @@ function AnalyticsIcon() {
   );
 }
 
+function SettingsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true">
+      <path
+        d="M10.343 3.94c.09-.542.56-.94 1.11-.94h1.094c.55 0 1.02.398 1.11.94l.149.894c.07.424.384.764.78.93.398.164.855.142 1.205-.108l.737-.527a1.125 1.125 0 0 1 1.45.12l.773.774c.39.389.44 1.002.12 1.45l-.527.737c-.25.35-.272.806-.107 1.204.165.397.505.71.93.78l.893.15c.543.09.94.559.94 1.109v1.094c0 .55-.397 1.02-.94 1.11l-.894.149c-.424.07-.764.383-.929.78-.165.398-.143.854.107 1.204l.527.738c.32.447.269 1.06-.12 1.45l-.774.773a1.125 1.125 0 0 1-1.449.12l-.738-.527c-.35-.25-.806-.272-1.203-.107-.398.165-.71.505-.781.929l-.149.894c-.09.542-.56.94-1.11.94h-1.094c-.55 0-1.019-.398-1.11-.94l-.148-.894c-.071-.424-.384-.764-.781-.93-.398-.164-.854-.142-1.204.108l-.738.527c-.447.32-1.06.269-1.45-.12l-.773-.774a1.125 1.125 0 0 1-.12-1.45l.527-.737c.25-.35.272-.806.108-1.204-.165-.397-.506-.71-.93-.78l-.894-.15c-.542-.09-.94-.56-.94-1.109v-1.094c0-.55.398-1.02.94-1.11l.894-.149c.424-.07.765-.383.93-.78.165-.398.143-.854-.108-1.204l-.526-.738a1.125 1.125 0 0 1 .12-1.45l.773-.773a1.125 1.125 0 0 1 1.45-.12l.737.527c.35.25.807.272 1.204.107.397-.165.71-.505.78-.929l.15-.894Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function CollapseIcon({ collapsed }: { collapsed: boolean }) {
   return (
     <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
@@ -93,6 +113,28 @@ function CollapseIcon({ collapsed }: { collapsed: boolean }) {
       ) : (
         <path d="m12 5-5 5 5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
       )}
+    </svg>
+  );
+}
+
+function ZapIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0B0E14" strokeWidth="2" aria-hidden="true">
+      <polygon points="13,2 3,14 12,14 11,22 21,10 12,10 13,2" fill="#0B0E14" stroke="none" />
+    </svg>
+  );
+}
+
+function LogoutIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
+      <path
+        d="M7.5 3.75H4.167A.833.833 0 0 0 3.333 4.583v10.834a.833.833 0 0 0 .834.833H7.5M13.333 14.167 16.667 10l-3.334-4.167M16.667 10H7.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -106,6 +148,24 @@ const navItems: Array<{ href: string; label: string; icon: React.ReactNode; perm
   { href: "/analytics", label: "Аналитика", icon: <AnalyticsIcon />, permission: "analytics" },
 ];
 
+function UserAvatar({ name }: { name: string }) {
+  const initials = name
+    .split(" ")
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase();
+
+  return (
+    <div
+      className="flex h-[34px] w-[34px] shrink-0 items-center justify-center text-xs font-bold text-[#0B0E14]"
+      style={{ background: "linear-gradient(135deg, #5EF4D8, #08C4A9)", borderRadius: 12 }}
+    >
+      {initials || "?"}
+    </div>
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -114,9 +174,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const stored = window.localStorage.getItem("hardzone.sidebar-collapsed");
-    if (stored === "true") {
-      setCollapsed(true);
-    }
+    if (stored === "true") setCollapsed(true);
   }, []);
 
   useEffect(() => {
@@ -124,43 +182,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [collapsed]);
 
   useEffect(() => {
-    if (isAuthScreen) {
-      return;
-    }
+    if (isAuthScreen) return;
 
     let cancelled = false;
 
     fetch("/auth-api/me", { credentials: "same-origin" })
       .then(async (response) => {
-        if (!response.ok) {
-          return null;
-        }
-
+        if (!response.ok) return null;
         const data = (await response.json()) as { data?: { user?: SessionUser } };
         return data.data?.user ?? null;
       })
       .then((value) => {
-        if (!cancelled) {
-          setUser(value);
-        }
+        if (!cancelled) setUser(value);
       })
       .catch(() => {
-        if (!cancelled) {
-          setUser(null);
-        }
+        if (!cancelled) setUser(null);
       });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [isAuthScreen]);
 
   async function handleLogout() {
-    await fetch("/auth-api/logout", {
-      method: "POST",
-      credentials: "same-origin",
-    });
-
+    await fetch("/auth-api/logout", { method: "POST", credentials: "same-origin" });
     window.location.href = "/login";
   }
 
@@ -173,127 +216,154 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
+  const canAccessSettings =
+    hasModuleAccess(user?.modules, "schedule") ||
+    hasModuleAccess(user?.modules, "schedule_gym") ||
+    hasModuleAccess(user?.modules, "schedule_clients") ||
+    hasModuleAccess(user?.modules, "schedule_attendance");
+
   return (
     <div
       className="app-grid bg-[var(--bg-app)]"
-      style={{ ["--sidebar-width" as string]: collapsed ? "92px" : "264px" }}
+      style={{ ["--sidebar-width" as string]: collapsed ? "64px" : "200px" }}
       data-sidebar-collapsed={collapsed ? "true" : "false"}
     >
-      <aside className="sidebar-scrollbar sticky top-0 z-[70] h-screen overflow-y-auto overflow-x-hidden border-r border-[var(--line-soft)] bg-[var(--bg-app)] text-[var(--text-inverse)]">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(0,191,165,0.18),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(63,185,80,0.08),_transparent_24%)]" />
-        <div className="relative flex min-h-full flex-col gap-7 p-5">
-          <div className="space-y-4">
-            <div className={`flex items-center ${collapsed ? "justify-center" : "justify-between"} gap-3`}>
-              <Link
-                href="/"
-                title="Открыть главную страницу"
-                className="inline-flex items-center rounded-full border border-[var(--line-soft)] bg-white/5 px-3 py-1 font-[family:var(--font-mono)] text-xs uppercase tracking-[0.3em] text-[var(--text-muted)] transition hover:border-[rgba(0,191,165,0.28)] hover:text-[var(--text-main)]"
-              >
-                {collapsed ? "HZ" : "hardzone"}
-              </Link>
-              <button
-                type="button"
-                onClick={() => setCollapsed((value) => !value)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[var(--line-soft)] bg-[rgba(255,255,255,0.04)] text-[var(--text-muted)] transition-colors hover:text-[var(--text-main)]"
-                aria-label={collapsed ? "Развернуть меню" : "Свернуть меню"}
-                title={collapsed ? "Развернуть меню" : "Свернуть меню"}
-              >
-                <CollapseIcon collapsed={collapsed} />
-              </button>
-            </div>
+      {/* Сайдбар */}
+      <aside className="sidebar-scrollbar sticky top-0 z-[70] h-screen overflow-y-auto overflow-x-hidden bg-[#131720] text-[var(--text-main)]">
+        <div className="relative flex min-h-full flex-col">
 
-            <div className={collapsed ? "text-center" : ""}>
-              <Link href="/" className="inline-block" title="Открыть главную страницу">
-                <p className="font-[family:var(--font-heading)] text-3xl font-semibold tracking-tight text-[var(--text-main)] transition hover:text-[var(--accent)]">
-                  {collapsed ? "HZ" : "CRM"}
-                </p>
-              </Link>
-            </div>
+          {/* Логотип */}
+          <div
+            className={`flex h-[60px] shrink-0 items-center gap-[10px] overflow-hidden ${
+              collapsed ? "justify-center px-0" : "px-5"
+            }`}
+          >
+            <a
+              href="/"
+              title="HardZone CRM"
+              className="inline-flex shrink-0 items-center justify-center rounded-[10px]"
+              style={{
+                width: 32, height: 32,
+                background: "linear-gradient(135deg, #5EF4D8, #08C4A9)",
+              }}
+            >
+              <ZapIcon />
+            </a>
+            {!collapsed && (
+              <span
+                className="whitespace-nowrap text-[13px] font-extrabold tracking-[0.08em] text-[var(--text-main)]"
+                style={{ fontFamily: "var(--font-heading)" }}
+              >
+                HARDZONE
+              </span>
+            )}
           </div>
 
-          <nav className="flex flex-col gap-3">
+          {/* Навигация */}
+          <nav className="flex flex-1 flex-col py-2">
             {visibleNavItems.map((item) => {
               const active = pathname.startsWith(item.href);
 
               return (
-                <Link
+                <a
                   key={item.href}
                   href={item.href}
                   title={item.label}
-                  className={`group relative flex items-center ${
-                    collapsed ? "justify-center" : "justify-start"
-                  } overflow-hidden rounded-[20px] border px-4 py-4 transition-all ${
+                  className={`group relative flex items-center transition-all ${
+                    collapsed ? "justify-center px-0 py-3" : "gap-3 px-5 py-3"
+                  } ${
                     active
-                      ? "border-[#1E2733] bg-[#1C2333] text-[var(--text-main)] shadow-[0_12px_28px_rgba(0,0,0,0.16)]"
-                      : "border-transparent bg-transparent text-[var(--text-muted)] hover:border-[rgba(0,191,165,0.16)] hover:bg-[linear-gradient(135deg,rgba(0,191,165,0.12),rgba(255,255,255,0.03))] hover:text-[var(--text-main)] hover:shadow-[0_14px_30px_rgba(0,0,0,0.18)]"
+                      ? "text-[var(--accent)]"
+                      : "text-[rgba(236,237,246,0.6)] hover:bg-[rgba(255,255,255,0.04)] hover:text-[var(--text-main)]"
                   }`}
+                  style={active ? { background: "rgba(94,244,216,0.08)" } : {}}
                 >
-                  <span
-                    className={`absolute inset-y-0 left-0 w-[3px] bg-[var(--accent)] transition-opacity ${
-                      active ? "opacity-100" : "opacity-0 group-hover:opacity-60"
-                    }`}
-                  />
-                  <span className={`relative flex items-center ${collapsed ? "justify-center" : "gap-3"} font-medium`}>
+                  {/* левое лезвие */}
+                  {active && (
                     <span
-                      className={
-                        active ? "text-[var(--accent)]" : "text-[var(--text-muted)] transition-colors group-hover:text-[var(--accent)]"
-                      }
-                    >
-                      {item.icon}
-                    </span>
-                    {!collapsed ? <span>{item.label}</span> : null}
+                      className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 rounded-r-[4px] bg-[var(--accent)]"
+                      style={{ width: 3, height: 20 }}
+                    />
+                  )}
+                  <span
+                    className={
+                      active
+                        ? "text-[var(--accent)]"
+                        : "text-[rgba(236,237,246,0.6)] transition-colors group-hover:text-[var(--text-main)]"
+                    }
+                  >
+                    {item.icon}
                   </span>
-                </Link>
+                  {!collapsed && (
+                    <span className="text-[13px] font-medium">{item.label}</span>
+                  )}
+                </a>
               );
             })}
           </nav>
 
-          <div className="mt-auto border-t border-[var(--line-soft)] pt-5">
-            <div
-              className={`rounded-[22px] border border-[var(--line-soft)] bg-[linear-gradient(135deg,rgba(35,46,71,0.95),rgba(28,35,51,0.98))] ${
-                collapsed ? "px-3 py-4 text-center" : "p-4"
-              }`}
+          {/* Кнопка сворачивания — внизу */}
+          <div className="flex shrink-0 items-center justify-center py-3">
+            <button
+              type="button"
+              onClick={() => setCollapsed((v) => !v)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-[10px] text-[rgba(236,237,246,0.35)] transition-colors hover:bg-[rgba(255,255,255,0.07)] hover:text-[var(--text-main)]"
+              aria-label={collapsed ? "Развернуть меню" : "Свернуть меню"}
+              title={collapsed ? "Развернуть меню" : "Свернуть меню"}
             >
-              {collapsed ? (
-                <>
-                  <p className="font-[family:var(--font-heading)] text-lg font-semibold text-[var(--text-main)]">HZ</p>
-                  <p className="mt-1 text-[10px] uppercase tracking-[0.22em] text-[var(--text-muted)]">CRM</p>
-                </>
-              ) : (
-                <>
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--text-muted)]">HardZone • Хабаровск</p>
-                  <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.03)] px-3 py-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-[var(--text-main)]">{user?.name || "Загрузка..."}</p>
-                      <p className="mt-1 truncate text-xs text-[var(--text-muted)]">
-                        {user ? user.role_title || roleLabels[user.role] : "Проверяем права доступа"}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleLogout}
-                      className="inline-flex shrink-0 items-center rounded-2xl border border-[rgba(255,255,255,0.08)] px-3 py-2 text-xs font-medium text-[var(--text-main)] transition hover:border-[rgba(0,191,165,0.28)] hover:text-[var(--accent)]"
-                    >
-                      Выйти
-                    </button>
-                  </div>
-                  {user && hasModuleAccess(user.modules, "users_manage") ? (
-                    <Link
-                      href="/admin/users"
-                      className="mt-3 inline-flex items-center rounded-2xl border border-[rgba(0,191,165,0.22)] bg-[rgba(0,191,165,0.08)] px-3 py-2 text-xs font-medium text-[var(--accent)] transition hover:border-[rgba(0,191,165,0.38)] hover:bg-[rgba(0,191,165,0.12)]"
-                    >
-                      Сотрудники и доступы
-                    </Link>
-                  ) : null}
-                </>
-              )}
-            </div>
+              <CollapseIcon collapsed={collapsed} />
+            </button>
           </div>
         </div>
       </aside>
 
-      <div className="relative z-0 min-w-0 overflow-x-hidden bg-[var(--bg-app)]">
-        <main className="mx-auto max-w-[1680px] px-6 py-6 sm:px-8 sm:py-8 lg:px-10">{children}</main>
+      {/* Правая колонка: хедер + контент */}
+      <div className="relative z-0 flex min-w-0 flex-col overflow-x-hidden bg-[var(--bg-app)]">
+
+        {/* Хедер */}
+        <header className="sticky top-0 z-[60] flex items-center justify-end gap-3 border-b border-[var(--line-soft)] bg-[var(--bg-app)] px-6 py-3 sm:px-8 lg:px-10">
+          <div className="flex items-center gap-3">
+            {user ? (
+              <>
+                <UserAvatar name={user.name || ""} />
+                <div className="hidden min-w-0 sm:block">
+                  <p className="truncate text-sm font-medium text-[var(--text-main)]">{user.name}</p>
+                  <p className="truncate text-xs text-[var(--text-muted)]">
+                    {user.role_title || roleLabels[user.role]}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div className="h-8 w-8 animate-pulse rounded-full bg-[rgba(255,255,255,0.06)]" />
+            )}
+
+            {canAccessSettings && (
+              <a
+                href="/settings"
+                title="Настройки"
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-xl border transition ${
+                  pathname.startsWith("/settings")
+                    ? "border-[rgba(94,244,216,0.36)] bg-[rgba(94,244,216,0.10)] text-[var(--accent)]"
+                    : "border-[var(--line-soft)] text-[var(--text-muted)] hover:border-[rgba(94,244,216,0.28)] hover:text-[var(--accent)]"
+                }`}
+              >
+                <SettingsIcon />
+              </a>
+            )}
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--line-soft)] px-3 py-2 text-xs font-medium text-[var(--text-muted)] transition hover:border-[rgba(94,244,216,0.28)] hover:text-[var(--accent)]"
+              title="Выйти"
+            >
+              <LogoutIcon />
+              <span className="hidden sm:inline">Выйти</span>
+            </button>
+          </div>
+        </header>
+
+        <main className="mx-auto w-full max-w-[1680px] px-6 py-6 sm:px-8 sm:py-8 lg:px-10">{children}</main>
       </div>
     </div>
   );

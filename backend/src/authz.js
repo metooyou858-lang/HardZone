@@ -1,4 +1,18 @@
-const ALL_MODULES = ['warehouse', 'services', 'sales', 'clients', 'schedule', 'analytics', 'users_manage'];
+const ALL_MODULES = [
+  'warehouse',
+  'services',
+  'sales',
+  'clients',
+  'schedule',
+  'schedule_edit_groups',
+  'schedule_edit_personal',
+  'schedule_cancel',
+  'schedule_clients',
+  'schedule_attendance',
+  'schedule_gym',
+  'analytics',
+  'users_manage',
+];
 
 const ROLE_DEFAULT_MODULES = {
   owner: ALL_MODULES,

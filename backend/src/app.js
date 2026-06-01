@@ -21,9 +21,11 @@ const trainersRouter = require('./routes/trainers');
 const scheduleRouter = require('./routes/schedule');
 const bookingsRouter = require('./routes/bookings');
 const webhooksRouter = require('./routes/webhooks');
+const systemRouter = require('./routes/system');
 const { startDelayedAqsiSyncScheduler } = require('./services/order-sync');
 const { markMissedBookings } = require('./jobs/schedule-cleanup');
 const { ensureBootstrapUser } = require('./services/user-auth');
+const logger = require('./services/logger');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -31,6 +33,22 @@ const host = process.env.HOST || '127.0.0.1';
 const requireModule = authMiddleware.requireModule;
 
 app.use(express.json());
+
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
+    logger[level]('http', {
+      method: req.method,
+      url: req.originalUrl,
+      status: res.statusCode,
+      ms,
+      user: req.user?.username ?? null,
+    });
+  });
+  next();
+});
 
 app.get('/health', async (req, res, next) => {
   try {
@@ -62,6 +80,7 @@ app.use('/api/trainers', authMiddleware, requireModule('schedule', 'services'), 
 app.use('/api/schedule', authMiddleware, requireModule('schedule'), scheduleRouter);
 app.use('/api/bookings', authMiddleware, requireModule('schedule'), bookingsRouter);
 app.use('/api/webhooks', webhooksRouter);
+app.use('/api/system', authMiddleware, systemRouter);
 
 app.use((req, res) => {
   res.status(404).json({
@@ -70,9 +89,15 @@ app.use((req, res) => {
 });
 
 app.use((error, req, res, next) => {
-  console.error(error);
-
   const statusCode = error.statusCode || 500;
+  logger.error('unhandled', {
+    method: req.method,
+    url: req.originalUrl,
+    user: req.user?.username ?? null,
+    status: statusCode,
+    message: error.message,
+    stack: error.stack,
+  });
 
   res.status(statusCode).json({
     error: error.message || 'Internal server error',

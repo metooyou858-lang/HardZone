@@ -7,8 +7,7 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "node --watch src/app.js",
-    "migrate": "node src/db/migrate.js",
-    "aqsi:debug": "node src/scripts/aqsi-debug.js"
+    "migrate": "node src/db/migrate.js"
   },
   "engines": {
     "node": ">=24"

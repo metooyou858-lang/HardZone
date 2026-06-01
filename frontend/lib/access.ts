@@ -6,6 +6,12 @@ export type AuthModulePermission =
   | "sales"
   | "clients"
   | "schedule"
+  | "schedule_edit_groups"
+  | "schedule_edit_personal"
+  | "schedule_cancel"
+  | "schedule_clients"
+  | "schedule_attendance"
+  | "schedule_gym"
   | "analytics"
   | "users_manage";
 
@@ -15,8 +21,23 @@ export const ALL_MODULE_PERMISSIONS: AuthModulePermission[] = [
   "sales",
   "clients",
   "schedule",
+  "schedule_edit_groups",
+  "schedule_edit_personal",
+  "schedule_cancel",
+  "schedule_clients",
+  "schedule_attendance",
+  "schedule_gym",
   "analytics",
   "users_manage",
+];
+
+export const SCHEDULE_SUB_PERMISSIONS: AuthModulePermission[] = [
+  "schedule_edit_groups",
+  "schedule_edit_personal",
+  "schedule_cancel",
+  "schedule_clients",
+  "schedule_attendance",
+  "schedule_gym",
 ];
 
 export const roleLabels: Record<AuthUserRole, string> = {
@@ -30,6 +51,12 @@ export const moduleLabels: Record<AuthModulePermission, string> = {
   sales: "Продажи",
   clients: "Клиенты",
   schedule: "Расписание",
+  schedule_edit_groups: "Групповые: создание/редактирование",
+  schedule_edit_personal: "Персоналки: создание/редактирование",
+  schedule_cancel: "Отмена тренировок",
+  schedule_clients: "Запись/отписка клиентов",
+  schedule_attendance: "Отметка посещаемости",
+  schedule_gym: "Зал (open_gym)",
   analytics: "Аналитика",
   users_manage: "Сотрудники и доступы",
 };
