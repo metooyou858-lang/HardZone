@@ -45,6 +45,14 @@ Frontend после правок нужно собрать и перезапус
 su - app -c '...'
 ```
 
+## Git remotes and production risk
+
+`origin` - GitHub repository. Push to `origin/main` only updates GitHub and does not deploy by itself.
+
+`server` points to `/srv/HardZone.git` on production. That bare repository has a `post-receive` hook which checks out `main` into `/srv/HardZone`, runs backend migrations, installs dependencies, builds frontend, and restarts PM2.
+
+Do not push to `server` unless the intent is a production deploy. Prefer `deploy.ps1` / `deploy.sh`, because they are explicit and easier to reason about from Windows.
+
 ## Логи
 
 ```powershell

@@ -55,3 +55,4 @@ HardZone - monorepo CRM для CrossFit-клуба:
 4. После фронтенд-правок проверять `rg "Рџ|Ð|Ñ|�" frontend`.
 5. Если нужно деплоить с Windows, запускать `deploy.ps1`, а не ручные `npm`/`pm2` под root.
 6. Долгосрочные улучшения вести через `docs/STABILIZATION_PLAN.md`.
+7. Push в GitHub `origin` не деплоит production. Push в remote `server` запускает production hook, поэтому не использовать его случайно.
