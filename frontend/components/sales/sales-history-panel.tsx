@@ -13,6 +13,8 @@ import {
   getStatusLabel,
   historyFilters,
   HistoryIcon,
+  isOrderWithReceiptError,
+  resolveDiscountMoney,
   type HistoryFilter,
 } from "@/components/sales/sales-shared";
 
@@ -52,25 +54,22 @@ export function SalesHistoryPanel({
   handleRefundOrder,
 }: SalesHistoryPanelProps) {
   return (
-    <section className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p className="font-[family:var(--font-heading)] text-xl font-semibold text-[var(--text-main)]">
-            История продаж
-          </p>
-          <p className="mt-1 text-sm text-[var(--text-muted)]">Последние чеки и текущий статус оплаты или возврата</p>
-        </div>
+    <section className="rounded-[28px] bg-[var(--bg-card)] p-5 shadow-[0_4px_32px_rgba(0,0,0,0.22)]">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <p className="font-[family:var(--font-heading)] text-xl font-semibold text-[var(--text-main)]">
+          История продаж
+        </p>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="inline-flex flex-wrap gap-1 rounded-full border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-1">
           {historyFilters.map((filter) => (
             <button
               key={filter.value}
               type="button"
               onClick={() => setHistoryFilter(filter.value)}
-              className={`rounded-full border px-4 py-2 text-sm transition-colors ${
+              className={`rounded-full px-3 py-1.5 text-xs transition-colors ${
                 historyFilter === filter.value
-                  ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
-                  : "border-[var(--line-soft)] text-[var(--text-muted)] hover:text-[var(--text-main)]"
+                  ? "bg-[var(--accent)] font-medium text-[var(--text-inverse)]"
+                  : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
               }`}
             >
               {filter.label}
@@ -80,13 +79,13 @@ export function SalesHistoryPanel({
       </div>
 
       {historyError && (
-        <div className="mt-4 rounded-2xl border border-[rgba(248,81,73,0.35)] bg-[rgba(248,81,73,0.12)] px-4 py-3 text-sm text-[var(--danger)]">
+        <div className="mt-4 rounded-2xl border border-[rgba(255,116,57,0.3)] bg-[rgba(255,116,57,0.1)] px-4 py-3 text-sm text-[var(--danger)]">
           {historyError}
         </div>
       )}
 
-      <div className="mt-5 overflow-hidden rounded-[24px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)]">
-        <div className="hidden grid-cols-[1.4fr_110px_140px_140px_170px_140px] gap-4 border-b border-[var(--line-soft)] px-5 py-4 text-[13px] font-medium uppercase tracking-[0.14em] text-slate-300 lg:grid">
+      <div className="mt-4 overflow-hidden rounded-[24px] bg-[var(--bg-card-soft)]">
+        <div className="hidden grid-cols-[1.4fr_90px_130px_120px_160px_130px] gap-4 border-b border-[var(--line-soft)] px-5 py-3 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400 lg:grid">
           <span>Дата и время</span>
           <span>Позиций</span>
           <span>Сумма</span>
@@ -109,7 +108,9 @@ export function SalesHistoryPanel({
               const refunding = refundingId === historyOrder.id;
               const syncingHistoryOrder = syncingOrderId === historyOrder.id;
               const canCheckPayment =
-                historyOrder.status === "open" && historyOrder.items_count > 0 && historyOrder.aqsi_receipt_id;
+                historyOrder.status === "open" && historyOrder.items_count > 0 && !!historyOrder.aqsi_receipt_id;
+              // cancel only if not yet sent to AQSI (backend requires aqsi_sent_at IS NULL)
+              const canCancel = historyOrder.status === "open" && !historyOrder.aqsi_sent_at;
               const canRefund =
                 historyOrder.status === "confirmed" || historyOrder.status === "partially_refunded";
 
@@ -125,25 +126,25 @@ export function SalesHistoryPanel({
                         void handleToggleOrder(historyOrder.id);
                       }
                     }}
-                    className={`cursor-pointer px-5 py-4 transition-colors ${
+                    className={`cursor-pointer px-5 py-2.5 transition-colors ${
                       index % 2 === 0
                         ? "bg-[rgba(255,255,255,0.02)] hover:bg-[rgba(255,255,255,0.05)]"
                         : "hover:bg-[rgba(255,255,255,0.04)]"
                     }`}
                   >
-                    <div className="grid gap-3 lg:grid-cols-[1.4fr_110px_140px_140px_170px_140px] lg:items-center">
+                    <div className="grid gap-3 lg:grid-cols-[1.4fr_90px_130px_120px_160px_130px] lg:items-center">
                       <div>
-                        <p className="text-sm font-semibold text-[var(--text-main)]">
+                        <p className="text-sm font-medium text-[var(--text-main)]">
                           {formatSalesDate(historyOrder.created_at)}
                         </p>
-                        <p className="mt-1 text-xs text-[var(--text-muted)]">#{historyOrder.id.slice(0, 8)}</p>
+                        <p className="mt-0.5 text-xs text-[var(--text-muted)]">#{historyOrder.id.slice(0, 8)}</p>
                       </div>
 
-                      <div className="text-sm text-[var(--text-main)]">{historyOrder.items_count}</div>
-                      <div className="text-sm font-medium text-[var(--text-main)]">
+                      <div className="text-sm text-[var(--text-muted)]">{historyOrder.items_count}</div>
+                      <div className="text-sm font-semibold text-[var(--text-main)]">
                         {formatMoney(historyOrder.total_amount)}
                       </div>
-                      <div className="text-sm text-[var(--text-main)]">{getPaymentLabel(historyOrder.payment_type)}</div>
+                      <div className="text-sm text-[var(--text-muted)]">{getPaymentLabel(historyOrder.payment_type)}</div>
 
                       <div>
                         {canCheckPayment ? (
@@ -159,14 +160,27 @@ export function SalesHistoryPanel({
                             {syncingHistoryOrder ? "Проверяем..." : "Проверить оплату"}
                           </button>
                         ) : (
-                          <span className={`inline-flex rounded-full border px-3 py-1 text-xs ${getStatusBadgeClass(historyOrder.status)}`}>
-                            {getStatusLabel(historyOrder.status)}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {isOrderWithReceiptError(historyOrder) ? (
+                              <span className="inline-flex rounded-full border border-[rgba(255,116,57,0.4)] bg-[rgba(255,116,57,0.1)] px-3 py-1 text-xs text-[var(--danger)]">
+                                Ошибка чека
+                              </span>
+                            ) : (
+                              <span className={`inline-flex rounded-full border px-3 py-1 text-xs ${getStatusBadgeClass(historyOrder.status)}`}>
+                                {getStatusLabel(historyOrder.status)}
+                              </span>
+                            )}
+                            {historyOrder.aqsi_receipt_status === "marking_error" && (
+                              <span className="inline-flex rounded-full border border-[rgba(255,116,57,0.4)] bg-[rgba(255,116,57,0.1)] px-2 py-1 text-[10px] text-[var(--danger)]">
+                                ГИС МТ
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
 
                       <div className="flex items-center justify-end gap-2">
-                        {canCheckPayment && (
+                        {canCancel && (
                           <button
                             type="button"
                             onClick={(event) => {
@@ -188,9 +202,9 @@ export function SalesHistoryPanel({
                               void handleRefundOrder(historyOrder.id);
                             }}
                             disabled={refunding}
-                            className={getHistoryActionButtonClass("warning")}
+                            className="rounded-full border border-[var(--line-soft)] px-3 py-1 text-xs text-[var(--text-muted)] transition-colors hover:border-[rgba(210,153,34,0.4)] hover:text-[var(--warning)] disabled:opacity-50"
                           >
-                            {refunding ? "Возвращаем..." : "Возврат всего"}
+                            {refunding ? "Возвращаем..." : "Вернуть всё"}
                           </button>
                         )}
 
@@ -202,11 +216,11 @@ export function SalesHistoryPanel({
                   </div>
 
                   {isExpanded && (
-                    <div className="border-t border-[var(--line-soft)] bg-[rgba(13,17,23,0.34)] px-5 py-4">
+                    <div className="border-t border-[var(--line-soft)] bg-[var(--bg-panel)] px-5 py-4">
                       {detailLoading ? (
                         <div className="py-6 text-sm text-[var(--text-muted)]">Загружаем состав заказа...</div>
                       ) : detail ? (
-                        <div className="space-y-3">
+                        <div className="space-y-2">
                           {detail.items.map((item) => {
                             const summary = getItemNetTotal(item);
                             const refundedQuantity = Number(item.refunded_quantity || 0);
@@ -216,39 +230,46 @@ export function SalesHistoryPanel({
                             return (
                               <div
                                 key={item.id}
-                                className={`grid gap-3 rounded-2xl border px-4 py-3 lg:grid-cols-[1fr_110px_140px_160px_140px] ${
+                                className={`grid gap-x-4 gap-y-1 rounded-2xl border px-4 py-2.5 lg:grid-cols-[1.4fr_90px_130px_120px_160px_130px] lg:items-center ${
                                   itemFullyRefunded
                                     ? "border-[rgba(210,153,34,0.24)] bg-[rgba(210,153,34,0.08)]"
                                     : "border-[var(--line-soft)] bg-[rgba(255,255,255,0.02)]"
                                 }`}
                               >
+                                {/* Col 1: название */}
                                 <div className="min-w-0">
                                   <p className="truncate text-sm font-medium text-[var(--text-main)]">{item.name}</p>
-                                  {item.sku && <p className="mt-1 text-xs text-[var(--text-muted)]">{item.sku}</p>}
+                                  {item.sku && <p className="mt-0.5 text-xs text-[var(--text-muted)]">{item.sku}</p>}
                                   {refundedQuantity > 0 && (
-                                    <p className="mt-2 text-xs text-[var(--warning)]">
-                                      Возвращено: {refundedQuantity} из {item.quantity}
+                                    <p className="mt-1 text-xs text-[var(--warning)]">
+                                      Возвращено {refundedQuantity} из {item.quantity}
                                     </p>
                                   )}
                                 </div>
 
+                                {/* Col 2: количество */}
                                 <div className="text-sm text-[var(--text-main)]">{item.quantity} шт.</div>
+
+                                {/* Col 3: цена за ед. */}
                                 <div className="text-sm text-[var(--text-main)]">{formatMoney(item.sale_price)}</div>
 
-                                <div className="text-sm text-[var(--text-muted)]">
-                                  {itemFullyRefunded ? "Возврат завершён" : `Доступно к возврату: ${refundableQuantity}`}
+                                {/* Col 4: доступно к возврату */}
+                                <div className="text-xs text-[var(--text-muted)]">
+                                  {itemFullyRefunded ? "Возврат завершён" : `К возврату: ${refundableQuantity}`}
                                 </div>
 
-                                <div className="flex items-center justify-end gap-2">
-                                  <div className="text-right text-sm font-medium text-[var(--text-main)]">
-                                    {summary.discountTotal > 0 && (
-                                      <p className="text-xs text-[var(--text-muted)] line-through">
-                                        {formatMoney(summary.grossTotal)}
-                                      </p>
-                                    )}
-                                    <p>{formatMoney(summary.total)}</p>
-                                  </div>
+                                {/* Col 5: итог строки */}
+                                <div className="text-right text-sm font-medium text-[var(--text-main)]">
+                                  {summary.discountTotal > 0 && (
+                                    <p className="text-xs text-[var(--text-muted)] line-through">
+                                      {formatMoney(summary.grossTotal)}
+                                    </p>
+                                  )}
+                                  <p>{formatMoney(summary.total)}</p>
+                                </div>
 
+                                {/* Col 6: кнопка возврата */}
+                                <div className="flex justify-end">
                                   {!itemFullyRefunded && canRefund && (
                                     <button
                                       type="button"
@@ -266,6 +287,23 @@ export function SalesHistoryPanel({
                               </div>
                             );
                           })}
+                          {(() => {
+                            const itemsGross = detail.items.reduce((sum, it) => sum + Number(getItemNetTotal(it).total), 0);
+                            const orderDiscount = resolveDiscountMoney(itemsGross, detail.discount_percent, detail.discount_money);
+                            if (orderDiscount <= 0) return null;
+                            return (
+                              <div className="mt-2 border-t border-[var(--line-soft)] pt-2 space-y-1 text-sm text-right">
+                                <div className="flex justify-between text-[var(--text-muted)]">
+                                  <span>Скидка на чек</span>
+                                  <span>−{formatMoney(orderDiscount)}</span>
+                                </div>
+                                <div className="flex justify-between font-semibold text-[var(--text-main)]">
+                                  <span>Итого</span>
+                                  <span>{formatMoney(Number(detail.total_amount))}</span>
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                       ) : (
                         <div className="py-6 text-sm text-[var(--text-muted)]">Не удалось загрузить состав заказа</div>
@@ -279,12 +317,6 @@ export function SalesHistoryPanel({
         )}
       </div>
 
-      <div className="mt-4 inline-flex items-center gap-2 text-xs text-[var(--text-muted)]">
-        <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
-          <HistoryIcon />
-        </span>
-        <span>Клик по строке открывает состав заказа. Товар вернётся на склад, а услуга вернётся только если доступ ещё не использовали.</span>
-      </div>
     </section>
   );
 }

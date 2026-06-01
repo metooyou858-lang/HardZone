@@ -1,98 +1,140 @@
 "use client";
 
-import {
-  useEffect,
-  useRef,
-  useState,
-  type Dispatch,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type SetStateAction,
-} from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
 import {
-  asAmount,
-  detectDiscountMode,
-  formatDiscountValue,
   getClientSubscriptionLabel,
-  groupOrderItems,
   isSellableInCash,
-  parseDiscountInput,
   resolveDiscountMoney,
-  resolveOrderItemKind,
   type BannerState,
-  type BasketLine,
-  type DiscountMode,
 } from "@/components/sales/sales-shared";
-import { type ClientListItem, fetchClients, findClientByBarcode } from "@/lib/api/clients";
+import { extractBarcodeFromGs1, normalizeMarkingInput } from "@/components/sales/sales-marking-utils";
+import { useOrderBasket } from "@/components/sales/use-order-basket";
+import { useOrderClient } from "@/components/sales/use-order-client";
+import { useOrderDiscounts } from "@/components/sales/use-order-discounts";
+import { useOrderScanner } from "@/components/sales/use-order-scanner";
 import {
-  addOrderItem,
   createOrder,
-  fetchOrder,
-  removeOrderItem,
+  initiatePayment,
+  syncSlip,
+  syncAqsiV4,
+  cancelPayment,
+  checkPaymentCancelStatus,
+  recoverTerminalBlocker,
   sendOrderToAqsi,
-  updateOrder,
   updateOrderItem,
   type OrderDetail,
 } from "@/lib/api/orders";
-import { findByBarcode, type Product } from "@/lib/api/products";
+import { findByBarcode } from "@/lib/api/products";
 
 type UseSalesOrderOptions = {
   cashViewActive: boolean;
   setBanner: Dispatch<SetStateAction<BannerState>>;
   onHistoryChanged?: () => void;
+  onBarcodeScanComplete?: () => void;
 };
 
 export function useSalesOrder({
   cashViewActive,
   setBanner,
   onHistoryChanged,
+  onBarcodeScanComplete,
 }: UseSalesOrderOptions) {
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [orderLoading, setOrderLoading] = useState(false);
-  const [lineBusyKey, setLineBusyKey] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<ClientListItem | null>(null);
-  const [clientPickerOpen, setClientPickerOpen] = useState(false);
-  const [clientQuery, setClientQuery] = useState("");
-  const [clientResults, setClientResults] = useState<ClientListItem[]>([]);
-  const [clientLoading, setClientLoading] = useState(false);
-  const [clientSaving, setClientSaving] = useState(false);
-  const [clientError, setClientError] = useState<string | null>(null);
-  const [receiptDiscountMode, setReceiptDiscountMode] = useState<DiscountMode>("percent");
-  const [receiptDiscountValue, setReceiptDiscountValue] = useState("");
-  const [receiptDiscountSaving, setReceiptDiscountSaving] = useState(false);
-  const [editingLineDiscountKey, setEditingLineDiscountKey] = useState<string | null>(null);
-  const [lineDiscountMode, setLineDiscountMode] = useState<DiscountMode>("percent");
-  const [lineDiscountValue, setLineDiscountValue] = useState("");
-  const [lineDiscountSavingKey, setLineDiscountSavingKey] = useState<string | null>(null);
-  const [markingSavingKey, setMarkingSavingKey] = useState<string | null>(null);
-  const [markingDrafts, setMarkingDrafts] = useState<Record<string, string>>({});
+  const [slipPending, setSlipPending] = useState(false);
+  const [cancellingPayment, setCancellingPayment] = useState(false);
+  const [conflictingOperationId, setConflictingOperationId] = useState<string | null>(null);
 
-  const receiptDiscountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scannerBufferRef = useRef("");
-  const scannerLastTsRef = useRef(0);
-  const clientScannerBufferRef = useRef("");
-  const clientScannerLastTsRef = useRef(0);
   const orderPromiseRef = useRef<Promise<OrderDetail> | null>(null);
+  const confirmingRef = useRef(false);
+  const slipPollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cancelPollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const slipSyncInFlightRef = useRef(false);
+  const cancelSyncInFlightRef = useRef(false);
 
-  const orderAwaitingPayment = Boolean(order && order.status === "open" && order.aqsi_receipt_id);
-  const orderLocked = confirming || orderAwaitingPayment;
-  const clientSelectionLocked = orderLocked || clientSaving;
+  // ── Sub-hooks ────────────────────────────────────────────────────────────────
+
+  const clientApi = useOrderClient({
+    order,
+    orderAwaitingPayment: Boolean(order?.status === "open" && (order?.aqsi_receipt_id || order?.aqsi_sent_at || order?.aqsi_payment_operation_id || order?.aqsi_slip_id || order?.aqsi_receipt_operation_id)),
+    setBanner,
+    onOrderUpdate: (updater) => setOrder(updater),
+  });
+
+  const basketApi = useOrderBasket({
+    order,
+    orderAwaitingPayment: Boolean(order?.status === "open" && (order?.aqsi_receipt_id || order?.aqsi_sent_at || order?.aqsi_payment_operation_id || order?.aqsi_slip_id || order?.aqsi_receipt_operation_id)),
+    setBanner,
+    setOrder,
+  });
+
+  const discountApi = useOrderDiscounts({
+    order,
+    orderAwaitingPayment: Boolean(order?.status === "open" && (order?.aqsi_receipt_id || order?.aqsi_sent_at || order?.aqsi_payment_operation_id || order?.aqsi_slip_id || order?.aqsi_receipt_operation_id)),
+    orderLoading,
+    setBanner,
+    refreshOrder: basketApi.refreshOrder,
+  });
+
+  const scannerApi = useOrderScanner({
+    enabled: cashViewActive && !clientApi.clientPickerOpen,
+    onScan: (barcode) => void handleBarcodeScan(barcode),
+  });
+
+  // ── Derived state ─────────────────────────────────────────────────────────────
+
+  const orderAwaitingPayment = Boolean(
+    order?.status === "open" && (
+      order?.aqsi_receipt_id ||
+      order?.aqsi_sent_at ||
+      order?.aqsi_payment_operation_id ||
+      order?.aqsi_slip_id ||
+      order?.aqsi_receipt_operation_id
+    )
+  );
+  const receiptError = Boolean(
+    order?.status === "open" &&
+    order?.aqsi_receipt_status === "error" &&
+    order?.aqsi_slip_id
+  );
+  const paymentBusy = slipPending || cancellingPayment || orderAwaitingPayment;
+  const orderLocked = confirming || slipPending || orderAwaitingPayment;
+  const clientSelectionLocked = orderLocked || clientApi.clientSaving;
+  const orderClientId = clientApi.selectedClient?.id ?? order?.client_id ?? null;
+  const serviceRequiresClient = basketApi.basketLines.some(
+    (line) => line.kind === "service" || line.kind === "subscription"
+  );
+  const sendBlockedByClient = serviceRequiresClient && !orderClientId;
+  const sendBlockedByMarking = basketApi.basketLines.some((line) => {
+    if (!line.markingRequired) return false;
+    return (basketApi.markingDrafts[line.key] ?? line.markingCode ?? "").trim().length === 0;
+  });
+
+  const basketGrossTotal = basketApi.basketLines.reduce((sum, line) => sum + line.grossTotal, 0);
+  const basketLineDiscountTotal = basketApi.basketLines.reduce(
+    (sum, line) => sum + line.discountTotal,
+    0
+  );
+  const basketSubtotal = Math.max(0, basketGrossTotal - basketLineDiscountTotal);
+  const orderLevelDiscount = resolveDiscountMoney(
+    basketSubtotal,
+    order?.discount_percent,
+    order?.discount_money
+  );
+  const hasAnyDiscount = basketLineDiscountTotal > 0 || orderLevelDiscount > 0;
+
+  // ── Order lifecycle ───────────────────────────────────────────────────────────
 
   async function ensureOrder() {
-    if (order) {
-      return order;
-    }
+    if (order) return order;
+    if (orderPromiseRef.current) return orderPromiseRef.current;
 
-    if (orderPromiseRef.current) {
-      return orderPromiseRef.current;
-    }
-
-    const pendingOrder = (async () => {
+    const pending = (async () => {
       setOrderLoading(true);
-
       try {
-        const freshOrder = await createOrder(undefined, selectedClient?.id ?? null);
+        const freshOrder = await createOrder(undefined, clientApi.selectedClient?.id ?? null);
         const nextOrder = { ...freshOrder, items: [] };
         setOrder(nextOrder);
         return nextOrder;
@@ -108,394 +150,86 @@ export function useSalesOrder({
       }
     })();
 
-    orderPromiseRef.current = pendingOrder;
-    return pendingOrder;
+    orderPromiseRef.current = pending;
+    return pending;
   }
 
-  async function refreshOrder(orderId: string) {
-    const freshOrder = await fetchOrder(orderId);
-    setOrder(freshOrder);
-  }
-
-  function setMarkingDraftValue(lineKey: string, value: string) {
-    setMarkingDrafts((current) => ({
-      ...current,
-      [lineKey]: value,
-    }));
-  }
-
-  async function applyClientSelection(nextClient: ClientListItem | null) {
-    setClientError(null);
-
-    if (!order || orderAwaitingPayment) {
-      setSelectedClient(nextClient);
-      setClientPickerOpen(false);
-      setClientQuery("");
-      return;
-    }
-
-    setClientSaving(true);
-
-    try {
-      const updatedOrder = await updateOrder(order.id, {
-        client_id: nextClient?.id ?? null,
-      });
-      setOrder((prev) => (prev ? { ...prev, ...updatedOrder } : prev));
-      setSelectedClient(nextClient);
-      setClientPickerOpen(false);
-      setClientQuery("");
-    } catch (error) {
-      setClientError(error instanceof Error ? error.message : "Не удалось сохранить клиента в чеке");
-    } finally {
-      setClientSaving(false);
-    }
-  }
-
-  async function handleClientBarcodeScan(barcode: string) {
-    setClientError(null);
-    setClientLoading(true);
-
-    try {
-      const client = await findClientByBarcode(barcode);
-      await applyClientSelection(client);
-    } catch (error) {
-      setClientError(
-        error instanceof Error ? error.message : `Клиент по штрихкоду ${barcode} не найден`
-      );
-    } finally {
-      setClientLoading(false);
-    }
-  }
-
-  function handleClientSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
-    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
-      return;
-    }
-
-    const now = Date.now();
-
-    if (event.key === "Enter") {
-      const barcode = clientScannerBufferRef.current.trim();
-      const isScannerInput = barcode.length >= 6 && now - clientScannerLastTsRef.current <= 100;
-      clientScannerBufferRef.current = "";
-      clientScannerLastTsRef.current = 0;
-
-      if (isScannerInput) {
-        event.preventDefault();
-        void handleClientBarcodeScan(barcode);
-      }
-      return;
-    }
-
-    if (event.key.length === 1) {
-      if (now - clientScannerLastTsRef.current > 100) {
-        clientScannerBufferRef.current = "";
-      }
-
-      clientScannerBufferRef.current += event.key;
-      clientScannerLastTsRef.current = now;
-    }
-  }
-
-  async function persistReceiptDiscount(orderId: string, mode: DiscountMode, value: string) {
-    setReceiptDiscountSaving(true);
-
-    try {
-      await updateOrder(orderId, {
-        discount_percent: mode === "percent" ? parseDiscountInput(value) : 0,
-        discount_money: mode === "money" ? parseDiscountInput(value) : 0,
-      });
-      await refreshOrder(orderId);
-    } catch (error) {
-      setBanner({
-        tone: "error",
-        text: error instanceof Error ? error.message : "Не удалось обновить скидку на чек",
-      });
-    } finally {
-      setReceiptDiscountSaving(false);
-    }
-  }
-
-  function scheduleReceiptDiscount(nextMode: DiscountMode, nextValue: string) {
-    setReceiptDiscountMode(nextMode);
-    setReceiptDiscountValue(nextValue);
-
-    if (receiptDiscountTimerRef.current) {
-      clearTimeout(receiptDiscountTimerRef.current);
-    }
-
-    if (!order || orderLoading || orderAwaitingPayment) {
-      return;
-    }
-
-    receiptDiscountTimerRef.current = setTimeout(() => {
-      void persistReceiptDiscount(order.id, nextMode, nextValue);
-    }, 350);
-  }
-
-  function openLineDiscountEditor(line: BasketLine) {
-    const nextMode = detectDiscountMode(line.discountPercent, line.discountMoney);
-    setEditingLineDiscountKey((current) => (current === line.key ? null : line.key));
-    setLineDiscountMode(nextMode);
-    setLineDiscountValue(
-      formatDiscountValue(nextMode, line.discountPercent, line.discountMoney)
-    );
-  }
-
-  async function saveLineDiscount(line: BasketLine) {
-    if (!order || orderAwaitingPayment) {
-      return;
-    }
-
-    const payload =
-      lineDiscountMode === "percent"
-        ? { discount_percent: parseDiscountInput(lineDiscountValue), discount_money: 0 }
-        : { discount_percent: 0, discount_money: parseDiscountInput(lineDiscountValue) };
-
-    setLineDiscountSavingKey(line.key);
+  function handleStartNewOrder() {
+    setOrder(null);
+    setConfirming(false);
+    setConflictingOperationId(null);
     setBanner(null);
-
-    try {
-      if (line.itemIds.length === 1) {
-        await updateOrderItem(order.id, line.itemIds[0], {
-          quantity: line.quantity,
-          ...payload,
-        });
-      } else {
-        for (const itemId of line.itemIds) {
-          await removeOrderItem(order.id, itemId);
-        }
-
-        await addOrderItem(order.id, {
-          kind: line.kind,
-          product_id: line.productId,
-          name: line.name,
-          sku: line.sku,
-          sale_price: Number.parseFloat(line.salePrice),
-          cost_price: line.costPrice ? Number.parseFloat(line.costPrice) : null,
-          quantity: line.quantity,
-          ...payload,
-        });
-      }
-
-      await refreshOrder(order.id);
-      setEditingLineDiscountKey(null);
-    } catch (error) {
-      setBanner({
-        tone: "error",
-        text: error instanceof Error ? error.message : "Не удалось сохранить скидку по позиции",
-      });
-    } finally {
-      setLineDiscountSavingKey(null);
-    }
+    orderPromiseRef.current = null;
+    clientApi.reset();
+    basketApi.resetBasket();
+    discountApi.resetDiscounts();
   }
 
-  async function addCatalogProduct(
-    product: Product,
-    options?: {
-      markingCode?: string | null;
-    }
-  ) {
-    if (orderAwaitingPayment) {
-      setBanner({
-        tone: "info",
-        text: "Этот чек уже отправлен на кассу. Сначала проверьте оплату или откройте новый чек.",
-      });
-      return;
-    }
-
-    if (!isSellableInCash(product)) {
-      setBanner({
-        tone: "error",
-        text: `Позиция "${product.name}" недоступна: остаток 0`,
-      });
-      return;
-    }
-
-    if (!product.sale_price) {
-      setBanner({
-        tone: "error",
-        text: `У позиции "${product.name}" не указана цена продажи`,
-      });
-      return;
-    }
-
-    setLineBusyKey(product.id);
-    setBanner(null);
-
-    try {
-      const activeOrder = order ?? (await ensureOrder());
-
-      const created = await addOrderItem(activeOrder.id, {
-        kind: resolveOrderItemKind(product),
-        product_id: product.id,
-        name: product.name,
-        sku: product.sku,
-        sale_price: Number.parseFloat(product.sale_price),
-        cost_price: product.cost_price ? Number.parseFloat(product.cost_price) : null,
-        quantity: 1,
-      });
-
-      const initialMarkingCode = options?.markingCode?.trim();
-
-      if (initialMarkingCode) {
-        setMarkingDrafts((current) => ({
-          ...current,
-          [`marked:${created.item.id}`]: initialMarkingCode,
-        }));
-      }
-
-      await refreshOrder(activeOrder.id);
-    } catch (error) {
-      setBanner({
-        tone: "error",
-        text: error instanceof Error ? error.message : "Не удалось добавить позицию",
-      });
-    } finally {
-      setLineBusyKey(null);
-    }
-  }
-
-  async function decrementLine(line: BasketLine) {
-    if (!order || line.itemIds.length === 0 || orderAwaitingPayment) {
-      return;
-    }
-
-    setLineBusyKey(line.key);
-    setBanner(null);
-
-    try {
-      if (line.markingRequired) {
-        await removeOrderItem(order.id, line.itemIds[0]);
-      } else if (line.itemIds.length === 1 && line.quantity > 1) {
-        await updateOrderItem(order.id, line.itemIds[0], {
-          quantity: line.quantity - 1,
-          discount_percent: line.discountPercent,
-          discount_money: line.discountMoney,
-        });
-      } else {
-        await removeOrderItem(order.id, line.itemIds[line.itemIds.length - 1]);
-      }
-      await refreshOrder(order.id);
-    } catch (error) {
-      setBanner({
-        tone: "error",
-        text: error instanceof Error ? error.message : "Не удалось изменить количество",
-      });
-    } finally {
-      setLineBusyKey(null);
-    }
-  }
-
-  async function incrementLine(line: BasketLine) {
-    if (!order || orderAwaitingPayment) {
-      return;
-    }
-
-    setLineBusyKey(line.key);
-    setBanner(null);
-
-    try {
-      if (line.markingRequired) {
-        await addOrderItem(order.id, {
-          kind: line.kind,
-          product_id: line.productId,
-          name: line.name,
-          sku: line.sku,
-          sale_price: Number.parseFloat(line.salePrice),
-          cost_price: line.costPrice ? Number.parseFloat(line.costPrice) : null,
-          quantity: 1,
-          discount_percent: line.discountPercent,
-          discount_money: line.discountMoney,
-        });
-      } else if (line.itemIds.length === 1) {
-        await updateOrderItem(order.id, line.itemIds[0], {
-          quantity: line.quantity + 1,
-          discount_percent: line.discountPercent,
-          discount_money: line.discountMoney,
-        });
-      } else {
-        await addOrderItem(order.id, {
-          kind: line.kind,
-          product_id: line.productId,
-          name: line.name,
-          sku: line.sku,
-          sale_price: Number.parseFloat(line.salePrice),
-          cost_price: line.costPrice ? Number.parseFloat(line.costPrice) : null,
-          quantity: 1,
-          discount_percent: line.discountPercent,
-          discount_money: line.discountMoney,
-        });
-      }
-
-      await refreshOrder(order.id);
-    } catch (error) {
-      setBanner({
-        tone: "error",
-        text: error instanceof Error ? error.message : "Не удалось изменить количество",
-      });
-    } finally {
-      setLineBusyKey(null);
-    }
-  }
-
-  async function removeLine(line: BasketLine) {
-    if (!order || orderAwaitingPayment) {
-      return;
-    }
-
-    setLineBusyKey(line.key);
-    setBanner(null);
-
-    try {
-      for (const itemId of line.itemIds) {
-        await removeOrderItem(order.id, itemId);
-      }
-
-      await refreshOrder(order.id);
-    } catch (error) {
-      setBanner({
-        tone: "error",
-        text: error instanceof Error ? error.message : "Не удалось удалить позицию",
-      });
-    } finally {
-      setLineBusyKey(null);
-    }
-  }
+  // ── Barcode scan handler ──────────────────────────────────────────────────────
 
   async function handleBarcodeScan(barcode: string) {
-    if (confirming || orderAwaitingPayment) {
-      return;
-    }
+    if (confirming || orderAwaitingPayment) return;
 
     setBanner({ tone: "info", text: `Сканер: ${barcode}` });
 
     try {
-      const scannedValue = barcode.trim();
-      const product = await findByBarcode(scannedValue);
+      let product;
+      try {
+        product = await findByBarcode(barcode);
+      } catch {
+        throw new Error("Штрихкод не найден в базе");
+      }
+
       if (!isSellableInCash(product)) {
-        setBanner({
-          tone: "error",
-          text: `Позиция "${product.name}" недоступна: остаток 0`,
-        });
+        setBanner({ tone: "error", text: `Позиция "${product.name}" недоступна: остаток 0` });
         return;
       }
 
-      const normalizedBarcode = product.barcode?.trim() ?? "";
-      const shouldCaptureMarking =
-        Boolean(product.is_marked) &&
-        scannedValue.length > 0 &&
-        scannedValue !== normalizedBarcode;
+      // For non-marked products: repeated scan increments quantity instead of adding a new line
+      if (!product.is_marked && !extractBarcodeFromGs1(barcode)) {
+        const existingLine = basketApi.basketLinesRef.current.find(
+          (line) => line.productId === product.id
+        );
+        if (existingLine) {
+          await basketApi.incrementLine(existingLine);
+          onBarcodeScanComplete?.();
+          setBanner({
+            tone: "success",
+            text: `${product.name} — ×${existingLine.quantity + 1}`,
+          });
+          return;
+        }
+      }
 
-      await addCatalogProduct(product, {
-        markingCode: shouldCaptureMarking ? scannedValue : null,
+      // If the scanned value looks like GS1 DataMatrix, capture it as marking code
+      const capturedMarkingCode = extractBarcodeFromGs1(barcode)
+        ? normalizeMarkingInput(barcode)
+        : null;
+
+      const normalizedBarcode = product.barcode?.trim() ?? "";
+      const isMarkingScan =
+        Boolean(product.is_marked) && barcode.length > 0 && barcode !== normalizedBarcode;
+      const finalMarkingCode = capturedMarkingCode ?? (isMarkingScan ? barcode : null);
+
+      const addResult = await basketApi.addCatalogProduct(product, ensureOrder, {
+        markingCode: finalMarkingCode,
       });
-      setBanner({
-        tone: "success",
-        text: shouldCaptureMarking
-          ? `Добавлено: ${product.name} — код маркировки считан`
-          : `Добавлено: ${product.name}`,
-      });
+
+      if (addResult === false) return;
+
+      onBarcodeScanComplete?.();
+
+      if (product.is_marked && !finalMarkingCode && typeof addResult === "string") {
+        basketApi.setPendingMarkingLineKey(addResult);
+        setBanner({ tone: "info", text: `${product.name} — отсканируйте код маркировки` });
+      } else {
+        setBanner({
+          tone: "success",
+          text: finalMarkingCode
+            ? `Добавлено: ${product.name} — код маркировки считан`
+            : `Добавлено: ${product.name}`,
+        });
+      }
     } catch (error) {
       setBanner({
         tone: "error",
@@ -504,27 +238,20 @@ export function useSalesOrder({
     }
   }
 
-  async function handleConfirm() {
-    if (!order || order.items.length === 0) {
-      return;
-    }
+  // ── Наличные: отправить в AQSI v2 ────────────────────────────────────────────
 
-    const serviceRequiresClient = order.items.some(
-      (item) => item.kind === "service" || item.kind === "subscription"
-    );
+  async function handleConfirmCash() {
+    if (confirmingRef.current) return;
+    if (!order || order.items.length === 0) return;
 
-    if (serviceRequiresClient && !selectedClient?.id && !order.client_id) {
+    if (serviceRequiresClient && !clientApi.selectedClient?.id && !order.client_id) {
       setBanner({ tone: "error", text: "Выберите клиента для услуги" });
       return;
     }
 
-    const missingMarkingLine = basketLines.find((line) => {
-      if (!line.markingRequired) {
-        return false;
-      }
-
-      const draftCode = (markingDrafts[line.key] ?? line.markingCode ?? "").trim();
-      return draftCode.length === 0;
+    const missingMarkingLine = basketApi.basketLines.find((line) => {
+      if (!line.markingRequired) return false;
+      return (basketApi.markingDrafts[line.key] ?? line.markingCode ?? "").trim().length === 0;
     });
     if (missingMarkingLine) {
       setBanner({
@@ -534,249 +261,390 @@ export function useSalesOrder({
       return;
     }
 
+    confirmingRef.current = true;
     setConfirming(true);
     setBanner(null);
 
     try {
-      if (receiptDiscountTimerRef.current) {
-        clearTimeout(receiptDiscountTimerRef.current);
-        receiptDiscountTimerRef.current = null;
-        await persistReceiptDiscount(order.id, receiptDiscountMode, receiptDiscountValue);
+      // Flush pending receipt discount before sending
+      const flushPromise = discountApi.flushReceiptDiscount();
+      if (flushPromise) await flushPromise;
+
+      // Save all unsaved marking codes
+      for (const line of basketApi.basketLines) {
+        if (!line.markingRequired || line.itemIds.length !== 1) continue;
+
+        const nextCode = (basketApi.markingDrafts[line.key] ?? line.markingCode ?? "").trim();
+        const savedCode = (line.markingCode ?? "").trim();
+        if (nextCode === savedCode) continue;
+
+        basketApi.setMarkingSavingKey(line.key);
+        await updateOrderItem(order.id, line.itemIds[0], { marking_code: nextCode || null });
       }
 
-      for (const line of basketLines) {
-        if (!line.markingRequired || line.itemIds.length !== 1) {
-          continue;
-        }
+      await basketApi.refreshOrder(order.id);
+      await sendOrderToAqsi(order.id, clientApi.selectedClient?.id ?? order.client_id ?? null);
 
-        const nextMarkingCode = (markingDrafts[line.key] ?? line.markingCode ?? "").trim();
-        const savedMarkingCode = (line.markingCode ?? "").trim();
-
-        if (nextMarkingCode === savedMarkingCode) {
-          continue;
-        }
-
-        setMarkingSavingKey(line.key);
-        await updateOrderItem(order.id, line.itemIds[0], {
-          marking_code: nextMarkingCode || null,
-        });
-      }
-
-      await refreshOrder(order.id);
-
-      await sendOrderToAqsi(order.id, selectedClient?.id ?? order.client_id ?? null);
-      await refreshOrder(order.id);
-      setBanner({ tone: "success", text: "Отправлено ✓" });
       onHistoryChanged?.();
+      handleStartNewOrder();
+      setBanner({ tone: "success", text: "Чек отправлен на кассу ✓" });
     } catch (error) {
+      // Reload order so UI immediately reflects aqsi_sent_at if backend set it during a network failure
+      if (order) {
+        await basketApi.refreshOrder(order.id).catch(() => {});
+      }
       setBanner({
         tone: "error",
         text: error instanceof Error ? error.message : "Не удалось отправить чек",
       });
     } finally {
-      setMarkingSavingKey(null);
+      basketApi.setMarkingSavingKey(null);
+      confirmingRef.current = false;
       setConfirming(false);
     }
   }
 
-  function handleStartNewOrder() {
-    setOrder(null);
-    setSelectedClient(null);
-    setClientPickerOpen(false);
-    setClientQuery("");
-    setClientResults([]);
-    setClientError(null);
-    setBanner(null);
-    setReceiptDiscountMode("percent");
-    setReceiptDiscountValue("");
-    setEditingLineDiscountKey(null);
-    setLineDiscountValue("");
-    setMarkingDrafts({});
-    orderPromiseRef.current = null;
+  // ── Acquiring flow (slip → receipt): карта ────────────────────────────────────
+
+  function stopSlipPolling() {
+    if (slipPollIntervalRef.current) {
+      clearInterval(slipPollIntervalRef.current);
+      slipPollIntervalRef.current = null;
+    }
   }
+
+  function stopCancelPolling() {
+    if (cancelPollIntervalRef.current) {
+      clearInterval(cancelPollIntervalRef.current);
+      cancelPollIntervalRef.current = null;
+    }
+  }
+
+  function startSlipPolling(orderId: string, intervalMs = 10000) {
+    stopSlipPolling();
+    slipPollIntervalRef.current = setInterval(() => {
+      void handleSlipSync(orderId);
+    }, intervalMs);
+  }
+
+  function startCancelPolling(orderId: string, intervalMs = 3000) {
+    stopCancelPolling();
+    cancelPollIntervalRef.current = setInterval(() => {
+      void handleCancelStatusSync(orderId);
+    }, intervalMs);
+  }
+
+  const handleSlipSync = useCallback(async (orderId: string) => {
+    if (slipSyncInFlightRef.current) return;
+    slipSyncInFlightRef.current = true;
+    try {
+      const result = await syncSlip(orderId);
+
+      if (result.status === "pending") return;
+
+      // Операция была сброшена сторонним процессом (watchdog или ручной reset) —
+      // polling нужно остановить, заказ обновить чтобы отразить новое состояние.
+      if (result.status === "no_payment_operation") {
+        stopSlipPolling();
+        setSlipPending(false);
+        if (order) await basketApi.refreshOrder(order.id).catch(() => {});
+        return;
+      }
+
+      stopSlipPolling();
+      setSlipPending(false);
+
+      if (result.status === "confirmed") {
+        onHistoryChanged?.();
+        handleStartNewOrder();
+        const msg = result.has_marking_errors
+          ? "Оплачено ✓ (предупреждение: ошибка маркировки в ГИС МТ)"
+          : "Оплачено и фискализировано ✓";
+        setBanner({ tone: result.has_marking_errors ? "error" : "success", text: msg });
+      } else if (result.status === "receipt_error") {
+        // Деньги списаны, чек не напечатан — оставляем заказ открытым, показываем кнопку восстановления
+        setBanner({ tone: "error", text: result.message ?? "Ошибка фискализации чека" });
+        if (order) await basketApi.refreshOrder(order.id).catch(() => {});
+      } else if (result.status === "cancelled") {
+        setBanner({ tone: "info", text: "Оплата отменена" });
+        if (order) await basketApi.refreshOrder(order.id).catch(() => {});
+      } else {
+        setBanner({ tone: "error", text: result.message ?? "Оплата не прошла" });
+        if (order) await basketApi.refreshOrder(order.id).catch(() => {});
+      }
+    } catch {
+      // network error during poll — keep polling
+    } finally {
+      slipSyncInFlightRef.current = false;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.id]);
+
+  const handleCancelStatusSync = useCallback(async (orderId: string) => {
+    if (cancelSyncInFlightRef.current) return;
+    cancelSyncInFlightRef.current = true;
+    try {
+      const result = await checkPaymentCancelStatus(orderId);
+
+      if (result.status === "cancel_pending") {
+        setBanner({ tone: "info", text: result.message ?? "Отмена отправлена на терминал. Подтвердите отмену на кассе." });
+        return;
+      }
+
+      stopCancelPolling();
+
+      if (result.status === "cancelled" || result.status === "no_payment_operation") {
+        setSlipPending(false);
+        setCancellingPayment(false);
+        setBanner({ tone: "info", text: "Оплата отменена. Чек можно изменить." });
+        if (order) await basketApi.refreshOrder(order.id).catch(() => {});
+        return;
+      }
+
+      if (result.status === "completed" || result.status === "finishing") {
+        setBanner({ tone: "info", text: result.message ?? "Операция уже завершается — ожидаем результат оплаты." });
+        startSlipPolling(orderId);
+      }
+    } catch {
+      // network error during poll — keep polling
+    } finally {
+      cancelSyncInFlightRef.current = false;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.id]);
 
   useEffect(() => {
     return () => {
-      if (receiptDiscountTimerRef.current) {
-        clearTimeout(receiptDiscountTimerRef.current);
-      }
+      stopSlipPolling();
+      stopCancelPolling();
     };
   }, []);
 
+  // Auto-resume polling after page reload if payment was in progress
   useEffect(() => {
-    const money = asAmount(order?.discount_money);
-    const percent = asAmount(order?.discount_percent);
-    const nextMode = detectDiscountMode(percent, money);
+    if (!order?.id || !order.aqsi_payment_operation_id || order.status !== "open") return;
+    if (slipPollIntervalRef.current || cancelPollIntervalRef.current) return;
 
-    setReceiptDiscountMode(nextMode);
-    setReceiptDiscountValue(formatDiscountValue(nextMode, percent, money));
-  }, [order?.id, order?.discount_money, order?.discount_percent]);
-
-  useEffect(() => {
-    if (!clientPickerOpen) {
-      return;
+    setSlipPending(true);
+    const orderId = order.id;
+    if (order.aqsi_payment_status === "cancelling") {
+      setBanner({ tone: "info", text: "Отмена отправлена на терминал. Подтвердите отмену на кассе." });
+      startCancelPolling(orderId);
+    } else {
+      setBanner({ tone: "info", text: "Ожидаем оплату от клиента..." });
+      startSlipPolling(orderId);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.id, order?.aqsi_payment_operation_id, order?.aqsi_payment_status]);
 
-    let cancelled = false;
-    const trimmedQuery = clientQuery.trim();
-
-    const timer = window.setTimeout(async () => {
-      setClientLoading(true);
-      setClientError(null);
-
+  // Auto-poll when conflicting operation detected — clears automatically once AQSI resolves it
+  useEffect(() => {
+    if (!conflictingOperationId) return;
+    const opId = conflictingOperationId;
+    const checkId = setInterval(async () => {
       try {
-        const nextClients = await fetchClients({
-          search: trimmedQuery || undefined,
-          limit: 20,
-        });
-
-        if (!cancelled) {
-          setClientResults(nextClients);
+        const result = await recoverTerminalBlocker(opId);
+        if (result.resolved) {
+          setConflictingOperationId(null);
+          setBanner({ tone: "info", text: "Касса свободна. Можно повторить оплату." });
         }
-      } catch (error) {
-        if (!cancelled) {
-          setClientError(error instanceof Error ? error.message : "Не удалось загрузить клиентов");
-        }
-      } finally {
-        if (!cancelled) {
-          setClientLoading(false);
-        }
-      }
-    }, 350);
+      } catch (_) {}
+    }, 30000);
+    return () => clearInterval(checkId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conflictingOperationId]);
 
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [clientPickerOpen, clientQuery]);
+  async function handleInitiatePayment() {
+    if (confirmingRef.current || slipPending || cancellingPayment || orderAwaitingPayment) return;
+    if (!order || order.items.length === 0) return;
 
-  useEffect(() => {
-    if (!cashViewActive || clientPickerOpen) {
+    if (serviceRequiresClient && !clientApi.selectedClient?.id && !order.client_id) {
+      setBanner({ tone: "error", text: "Выберите клиента для услуги" });
       return;
     }
 
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
-        return;
-      }
-
-      const now = Date.now();
-
-      if (event.key === "Enter") {
-        const barcode = scannerBufferRef.current.trim();
-        const isScannerInput = barcode.length >= 6 && now - scannerLastTsRef.current <= 100;
-        scannerBufferRef.current = "";
-        scannerLastTsRef.current = 0;
-
-        if (isScannerInput) {
-          event.preventDefault();
-          void handleBarcodeScan(barcode);
-        }
-        return;
-      }
-
-      if (event.key.length === 1) {
-        if (now - scannerLastTsRef.current > 100) {
-          scannerBufferRef.current = "";
-        }
-
-        scannerBufferRef.current += event.key;
-        scannerLastTsRef.current = now;
-      }
+    const missingMarkingLine = basketApi.basketLines.find((line) => {
+      if (!line.markingRequired) return false;
+      return (basketApi.markingDrafts[line.key] ?? line.markingCode ?? "").trim().length === 0;
+    });
+    if (missingMarkingLine) {
+      setBanner({ tone: "error", text: `Для товара "${missingMarkingLine.name}" нужно отсканировать код маркировки` });
+      return;
     }
 
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [cashViewActive, clientPickerOpen, confirming, orderAwaitingPayment]);
+    confirmingRef.current = true;
+    setBanner(null);
 
-  const basketLines = groupOrderItems(order?.items ?? []);
-  const basketGrossTotal = basketLines.reduce((sum, line) => sum + line.grossTotal, 0);
-  const basketLineDiscountTotal = basketLines.reduce((sum, line) => sum + line.discountTotal, 0);
-  const basketSubtotal = Math.max(0, basketGrossTotal - basketLineDiscountTotal);
-  const orderLevelDiscount = resolveDiscountMoney(
-    basketSubtotal,
-    order?.discount_percent,
-    order?.discount_money
-  );
-  const hasAnyDiscount = basketLineDiscountTotal > 0 || orderLevelDiscount > 0;
-  const orderClientId = selectedClient?.id ?? order?.client_id ?? null;
-  const serviceRequiresClient = basketLines.some(
-    (line) => line.kind === "service" || line.kind === "subscription"
-  );
-  const sendBlockedByClient = serviceRequiresClient && !orderClientId;
-  const sendBlockedByMarking = basketLines.some((line) => line.markingRequired && !line.markingCode);
+    try {
+      const flushPromise = discountApi.flushReceiptDiscount();
+      if (flushPromise) await flushPromise;
 
-  useEffect(() => {
-    setMarkingDrafts((current) => {
-      const next: Record<string, string> = {};
-
-      for (const line of basketLines) {
-        if (line.markingRequired) {
-          next[line.key] = current[line.key] ?? line.markingCode ?? "";
-        }
+      for (const line of basketApi.basketLines) {
+        if (!line.markingRequired || line.itemIds.length !== 1) continue;
+        const nextCode = (basketApi.markingDrafts[line.key] ?? line.markingCode ?? "").trim();
+        const savedCode = (line.markingCode ?? "").trim();
+        if (nextCode === savedCode) continue;
+        basketApi.setMarkingSavingKey(line.key);
+        await updateOrderItem(order.id, line.itemIds[0], { marking_code: nextCode || null });
       }
 
-      return next;
-    });
-  }, [basketLines]);
+      await basketApi.refreshOrder(order.id);
+      const result = await initiatePayment(order.id);
+
+      if (result.status === "operation_in_progress") {
+        setConflictingOperationId(result.conflicting_operation_id);
+        setBanner({ tone: "error", text: "На кассе выполняется другая операция. Отмените её и повторите оплату." });
+        return;
+      }
+
+      setSlipPending(true);
+      setBanner({ tone: "info", text: "Ожидаем оплату от клиента..." });
+
+      startSlipPolling(order.id);
+    } catch (error) {
+      setBanner({ tone: "error", text: error instanceof Error ? error.message : "Не удалось инициировать оплату" });
+    } finally {
+      basketApi.setMarkingSavingKey(null);
+      confirmingRef.current = false;
+    }
+  }
+
+  async function handleCancelPayment() {
+    if (!order) return;
+    stopSlipPolling();
+    stopCancelPolling();
+    // slipPending остаётся true — UI не должен показывать «Оплата картой» пока отмена не подтверждена
+    setCancellingPayment(true);
+    try {
+      const result = await cancelPayment(order.id);
+      if (result.status === "completed") {
+        // Клиент успел оплатить до отмены — продолжаем фискализацию
+        setBanner({ tone: "info", text: "Оплата прошла до отмены — фискализируем..." });
+        startSlipPolling(order.id);
+      } else if (result.status === "finishing") {
+        setBanner({ tone: "info", text: result.message ?? "Операция уже завершается — ожидаем результат оплаты." });
+        startSlipPolling(order.id);
+      } else if (result.status === "cancel_pending") {
+        setBanner({ tone: "info", text: result.message ?? "Отмена отправлена на терминал. Подтвердите отмену на кассе." });
+        startCancelPolling(order.id);
+      } else {
+        // Реальная отмена подтверждена — теперь разрешаем новую оплату
+        setSlipPending(false);
+        stopCancelPolling();
+        setBanner({ tone: "info", text: result.message ?? "Оплата отменена. Можно изменить чек и отправить оплату заново." });
+        if (order) await basketApi.refreshOrder(order.id).catch(() => {});
+      }
+    } catch (error) {
+      setBanner({ tone: "error", text: error instanceof Error ? error.message : "Ошибка отмены" });
+      // Статус неизвестен — возобновляем polling чтобы не оставлять UI завешенным
+      startCancelPolling(order.id);
+    } finally {
+      setCancellingPayment(false);
+    }
+  }
+
+
+  // ── Восстановление фискализации после ошибки чека ────────────────────────────
+
+  async function handleSyncV4() {
+    if (!order) return;
+    setBanner({ tone: "info", text: "Проверяем статус фискализации..." });
+    try {
+      const result = await syncAqsiV4(order.id);
+      if (result.status === "confirmed") {
+        onHistoryChanged?.();
+        handleStartNewOrder();
+        setBanner({ tone: "success", text: result.has_marking_errors ? "Восстановлено ✓ (предупреждение: ошибка маркировки)" : "Восстановлено и фискализировано ✓" });
+      } else if (result.status === "receipt_pending" || result.status === "payment_pending") {
+        setBanner({ tone: "info", text: "Операция в процессе, попробуйте через несколько секунд" });
+        await basketApi.refreshOrder(order.id).catch(() => {});
+      } else if (result.status === "receipt_error") {
+        setBanner({ tone: "error", text: result.message ?? "Ошибка фискализации" });
+        await basketApi.refreshOrder(order.id).catch(() => {});
+      } else {
+        setBanner({ tone: "error", text: result.message ?? `Статус: ${result.status}` });
+        await basketApi.refreshOrder(order.id).catch(() => {});
+      }
+    } catch (error) {
+      setBanner({ tone: "error", text: error instanceof Error ? error.message : "Ошибка синхронизации" });
+    }
+  }
+
+  // ── Public API ────────────────────────────────────────────────────────────────
 
   return {
+    // Order
     order,
     setOrder,
     orderLoading,
-    lineBusyKey,
-    confirming,
-    selectedClient,
-    setSelectedClient,
-    clientPickerOpen,
-    setClientPickerOpen,
-    clientQuery,
-    clientResults,
-    clientLoading,
-    clientSaving,
-    clientError,
-    setClientError,
-    receiptDiscountMode,
-    setReceiptDiscountMode,
-    receiptDiscountValue,
-    receiptDiscountSaving,
-    editingLineDiscountKey,
-    setEditingLineDiscountKey,
-    lineDiscountMode,
-    setLineDiscountMode,
-    lineDiscountValue,
-    setLineDiscountValue,
-    lineDiscountSavingKey,
-    markingSavingKey,
     orderAwaitingPayment,
     orderLocked,
+    confirming,
+    receiptError,
+    // Client
+    selectedClient: clientApi.selectedClient,
+    setSelectedClient: clientApi.setSelectedClient,
+    clientPickerOpen: clientApi.clientPickerOpen,
+    setClientPickerOpen: clientApi.setClientPickerOpen,
+    clientQuery: clientApi.clientQuery,
+    setClientQuery: clientApi.setClientQuery,
+    clientResults: clientApi.clientResults,
+    clientLoading: clientApi.clientLoading,
+    clientSaving: clientApi.clientSaving,
+    clientError: clientApi.clientError,
+    setClientError: clientApi.setClientError,
     clientSelectionLocked,
-    basketLines,
+    applyClientSelection: clientApi.applyClientSelection,
+    handleClientSearchKeyDown: clientApi.handleClientSearchKeyDown,
+    // Basket
+    basketLines: basketApi.basketLines,
+    lineBusyKey: basketApi.lineBusyKey,
+    markingSavingKey: basketApi.markingSavingKey,
+    markingDrafts: basketApi.markingDrafts,
+    pendingMarkingLineKey: basketApi.pendingMarkingLineKey,
+    setMarkingDraftValue: basketApi.setMarkingDraftValue,
+    clearPendingMarkingLineKey: basketApi.clearPendingMarkingLineKey,
+    addCatalogProduct: (product: Parameters<typeof basketApi.addCatalogProduct>[0], options?: Parameters<typeof basketApi.addCatalogProduct>[2]) =>
+      basketApi.addCatalogProduct(product, ensureOrder, options),
+    decrementLine: basketApi.decrementLine,
+    incrementLine: basketApi.incrementLine,
+    removeLine: basketApi.removeLine,
+    // Discounts
+    receiptDiscountMode: discountApi.receiptDiscountMode,
+    setReceiptDiscountMode: discountApi.setReceiptDiscountMode,
+    receiptDiscountValue: discountApi.receiptDiscountValue,
+    receiptDiscountSaving: discountApi.receiptDiscountSaving,
+    editingLineDiscountKey: discountApi.editingLineDiscountKey,
+    setEditingLineDiscountKey: discountApi.setEditingLineDiscountKey,
+    lineDiscountMode: discountApi.lineDiscountMode,
+    setLineDiscountMode: discountApi.setLineDiscountMode,
+    lineDiscountValue: discountApi.lineDiscountValue,
+    setLineDiscountValue: discountApi.setLineDiscountValue,
+    lineDiscountSavingKey: discountApi.lineDiscountSavingKey,
+    scheduleReceiptDiscount: discountApi.scheduleReceiptDiscount,
+    openLineDiscountEditor: discountApi.openLineDiscountEditor,
+    saveLineDiscount: discountApi.saveLineDiscount,
+    // Scanner
+    setMarkingFieldActive: scannerApi.setMarkingFieldActive,
+    // Derived totals
     basketGrossTotal,
     basketLineDiscountTotal,
     orderLevelDiscount,
     hasAnyDiscount,
-    markingDrafts,
     orderClientId,
     serviceRequiresClient,
     sendBlockedByClient,
     sendBlockedByMarking,
-    setMarkingDraftValue,
-    applyClientSelection,
-    handleClientSearchKeyDown,
-    setClientQuery: (value: string) => {
-      setClientError(null);
-      setClientQuery(value);
-    },
-    addCatalogProduct,
-    decrementLine,
-    incrementLine,
-    removeLine,
-    openLineDiscountEditor,
-    saveLineDiscount,
-    scheduleReceiptDiscount,
-    handleConfirm,
+    // Actions
+    handleConfirmCash,
+    handleInitiatePayment,
+    handleCancelPayment,
+    handleSyncV4,
     handleStartNewOrder,
+    conflictingOperationId,
     getClientSubscriptionLabel,
+    slipPending,
+    cancellingPayment,
+    paymentBusy,
   };
 }

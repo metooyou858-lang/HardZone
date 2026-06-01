@@ -6,7 +6,7 @@ import type { Product } from "@/lib/api/products";
 
 export type BannerTone = "info" | "success" | "error";
 export type SalesTab = "cash" | "history";
-export type HistoryFilter = "all" | OrderStatus;
+export type HistoryFilter = "all" | "error" | OrderStatus;
 export type DiscountMode = "percent" | "money";
 
 export type CatalogGroup = {
@@ -43,17 +43,16 @@ export type BasketLine = {
 export { formatMoney };
 
 export const searchInputCls =
-  "w-full rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)] transition focus:border-[var(--accent)] focus:ring-4 focus:ring-[rgba(0,191,165,0.12)]";
+  "w-full rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)] transition focus:border-[var(--accent)] focus:ring-4 focus:ring-[rgba(94,244,216,0.1)]";
 
 export const SERVICES_GROUP_ID = "__services__";
 
 export const historyFilters: { value: HistoryFilter; label: string }[] = [
   { value: "all", label: "Все" },
-  { value: "open", label: "Ожидает" },
   { value: "confirmed", label: "Оплачен" },
+  { value: "error", label: "Ошибка" },
   { value: "partially_refunded", label: "Частичный возврат" },
   { value: "refunded", label: "Возврат" },
-  { value: "cancelled", label: "Отменён" },
 ];
 
 export function SearchIcon() {
@@ -190,8 +189,8 @@ export function getCatalogAccentMeta(product: Product) {
   if (kind === "service") {
     return {
       label: "Услуга",
-      chipClass: "border-[rgba(0,191,165,0.22)] bg-[var(--accent-soft)] text-[var(--accent)]",
-      lineClass: "bg-[rgba(0,191,165,0.92)]",
+      chipClass: "border-[rgba(94,244,216,0.18)] bg-[var(--accent-soft)] text-[var(--accent)]",
+      lineClass: "bg-[var(--accent)]",
     };
   }
 
@@ -234,7 +233,7 @@ export function getBannerClass(tone: BannerTone) {
   }
 
   if (tone === "error") {
-    return "border-[rgba(248,81,73,0.35)] bg-[rgba(248,81,73,0.12)] text-[var(--danger)]";
+    return "border-[rgba(255,116,57,0.3)] bg-[rgba(255,116,57,0.1)] text-[var(--danger)]";
   }
 
   return "border-[rgba(0,191,165,0.28)] bg-[rgba(0,191,165,0.1)] text-[var(--accent)]";
@@ -274,7 +273,7 @@ export function getStatusBadgeClass(status: OrderStatus) {
   }
 
   if (status === "cancelled") {
-    return "border-[rgba(248,81,73,0.24)] bg-[rgba(248,81,73,0.12)] text-[var(--danger)]";
+    return "border-[rgba(255,116,57,0.24)] bg-[rgba(255,116,57,0.1)] text-[var(--danger)]";
   }
 
   return "border-[rgba(210,153,34,0.28)] bg-[rgba(210,153,34,0.12)] text-[var(--warning)]";
@@ -294,7 +293,7 @@ export function getPaymentLabel(paymentType: Order["payment_type"]) {
 
 export function getHistoryActionButtonClass(tone: "accent" | "danger" | "warning") {
   if (tone === "danger") {
-    return "rounded-full border border-[rgba(248,81,73,0.24)] bg-[rgba(248,81,73,0.12)] px-3 py-1.5 text-xs font-medium text-[var(--danger)] transition-colors hover:bg-[rgba(248,81,73,0.18)] disabled:opacity-50";
+    return "rounded-full border border-[rgba(255,116,57,0.24)] bg-[rgba(255,116,57,0.1)] px-3 py-1.5 text-xs font-medium text-[var(--danger)] transition-colors hover:bg-[rgba(255,116,57,0.18)] disabled:opacity-50";
   }
 
   if (tone === "warning") {
@@ -344,15 +343,13 @@ export function getClientSubscriptionLabel(client: ClientListItem) {
   return getSubscriptionTypeLabel(client.subscription_type);
 }
 
+export function isOrderWithReceiptError(order: Order) {
+  return order.status === "open" && order.aqsi_payment_status === "completed";
+}
+
 export function shouldDisplayInHistory(order: Order, filter: HistoryFilter) {
-  if (filter !== "all" && order.status !== filter) {
-    return false;
-  }
-
-  if (order.status === "open") {
-    return Boolean(order.aqsi_receipt_id);
-  }
-
+  if (filter === "error") return isOrderWithReceiptError(order);
+  if (filter !== "all" && order.status !== filter) return false;
   return true;
 }
 

@@ -14,6 +14,7 @@ const importRouter = require('./routes/import');
 const inventoriesRouter = require('./routes/inventories');
 const productTypesRouter = require('./routes/product-types');
 const ordersRouter = require('./routes/orders');
+const aqsiV4Router = require('./routes/aqsi-v4');
 const clientsRouter = require('./routes/clients');
 const subscriptionsRouter = require('./routes/subscriptions');
 const trainingTypesRouter = require('./routes/training-types');
@@ -72,6 +73,7 @@ app.use('/api/inventories', authMiddleware, requireModule('warehouse'), inventor
 app.use('/api/categories', authMiddleware, requireModule('warehouse'), categoriesRouter);
 app.use('/api/import', authMiddleware, requireModule('warehouse'), importRouter);
 app.use('/api/sales', authMiddleware, requireModule('sales'), salesRouter);
+app.use('/api/orders', authMiddleware, requireModule('sales'), aqsiV4Router);
 app.use('/api/orders', authMiddleware, requireModule('sales'), ordersRouter);
 app.use('/api/clients', authMiddleware, requireModule('clients', 'sales', 'schedule'), clientsRouter);
 app.use('/api/subscriptions', authMiddleware, requireModule('clients'), subscriptionsRouter);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
 import {
   buildCatalogGroups,
@@ -25,6 +25,8 @@ export function useSalesCatalog({ enabled, setBanner }: UseSalesCatalogOptions) 
   const [catalog, setCatalog] = useState<Product[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [reloadToken, setReloadToken] = useState(0);
+  // Track which reloadToken was last successfully fetched to avoid reloading on tab switch
+  const groupsTokenRef = useRef(-1);
 
   function reloadCatalog() {
     setReloadToken((value) => value + 1);
@@ -32,6 +34,11 @@ export function useSalesCatalog({ enabled, setBanner }: UseSalesCatalogOptions) 
 
   useEffect(() => {
     if (!enabled) {
+      return;
+    }
+
+    // Groups are already loaded for this token — skip (e.g. switching tabs back)
+    if (groupsTokenRef.current === reloadToken) {
       return;
     }
 
@@ -47,6 +54,7 @@ export function useSalesCatalog({ enabled, setBanner }: UseSalesCatalogOptions) 
         ]);
 
         if (!cancelled) {
+          groupsTokenRef.current = reloadToken;
           setCatalogGroups(buildCatalogGroups(categories, services.filter(isSellableInCash).length));
         }
       } catch (error) {
@@ -69,6 +77,13 @@ export function useSalesCatalog({ enabled, setBanner }: UseSalesCatalogOptions) 
       cancelled = true;
     };
   }, [enabled, reloadToken, setBanner]);
+
+  // Auto-select the first group when catalog loads and nothing is selected yet
+  useEffect(() => {
+    if (catalogGroups.length > 0 && !selectedCatalogGroup && !query.trim()) {
+      setSelectedCatalogGroup(catalogGroups[0].id);
+    }
+  }, [catalogGroups, selectedCatalogGroup, query]);
 
   useEffect(() => {
     if (!enabled) {

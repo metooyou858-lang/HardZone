@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
 import {
   formatMoney,
@@ -18,6 +18,7 @@ import {
   syncOrderWithAqsi,
   type Order,
   type OrderDetail,
+  type OrderStatus,
   type OrderItem,
 } from "@/lib/api/orders";
 
@@ -270,28 +271,37 @@ export function useSalesHistory({
     }
   }
 
+  const hasLoadedOnceRef = useRef(false);
+
   useEffect(() => {
     if (!enabled) {
       return;
     }
 
+    // Reset on explicit reload (filter change, manual refresh) so loader shows again
+    hasLoadedOnceRef.current = false;
+
     let cancelled = false;
 
-    async function loadHistory() {
-      setHistoryLoading(true);
+    async function loadHistory({ silent = false }: { silent?: boolean } = {}) {
+      if (!silent) {
+        setHistoryLoading(true);
+      }
       setHistoryError(null);
 
       try {
-        const nextOrders = await fetchOrders(historyFilter === "all" ? undefined : historyFilter, 50);
+        const statusParam = (historyFilter === "all" || historyFilter === "error") ? undefined : historyFilter as OrderStatus;
+        const nextOrders = await fetchOrders(statusParam, 50, true);
         if (!cancelled) {
           setOrders(nextOrders.filter((item) => shouldDisplayInHistory(item, historyFilter)));
+          hasLoadedOnceRef.current = true;
         }
       } catch (error) {
         if (!cancelled) {
           setHistoryError(error instanceof Error ? error.message : "Не удалось загрузить историю продаж");
         }
       } finally {
-        if (!cancelled) {
+        if (!cancelled && !silent) {
           setHistoryLoading(false);
         }
       }
@@ -299,7 +309,7 @@ export function useSalesHistory({
 
     void loadHistory();
     const intervalId = window.setInterval(() => {
-      void loadHistory();
+      void loadHistory({ silent: hasLoadedOnceRef.current });
     }, 10000);
 
     return () => {

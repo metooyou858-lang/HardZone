@@ -14,6 +14,12 @@ export type Order = {
   aqsi_receipt_id: string | null;
   aqsi_sent_at?: string | null;
   aqsi_sync_attempted_at?: string | null;
+  aqsi_payment_operation_id?: string | null;
+  aqsi_payment_status?: string | null;
+  aqsi_slip_id?: string | null;
+  aqsi_receipt_operation_id?: string | null;
+  aqsi_receipt_status?: string | null;
+  aqsi_error?: string | null;
   discount_percent: string | null;
   discount_money: string | null;
   comment: string | null;
@@ -66,11 +72,10 @@ export async function fetchOrder(id: string): Promise<OrderDetail> {
   return response.data;
 }
 
-export async function fetchOrders(status?: OrderStatus, limit = 50): Promise<Order[]> {
+export async function fetchOrders(status?: OrderStatus, limit = 50, paid?: boolean): Promise<Order[]> {
   const params = new URLSearchParams();
-  if (status) {
-    params.set("status", status);
-  }
+  if (status) params.set("status", status);
+  if (paid) params.set("paid", "true");
   params.set("limit", String(limit));
 
   const response = await apiFetch<ApiEnvelope<Order[]>>(`/orders?${params.toString()}`);
@@ -163,6 +168,84 @@ export async function sendOrderToAqsi(
   return response.data;
 }
 
+export type InitiatePaymentResult =
+  | { status: "started"; operation_id: string }
+  | { status: "operation_in_progress"; conflicting_operation_id: string | null };
+
+export async function initiatePayment(orderId: string): Promise<InitiatePaymentResult> {
+  const response = await apiFetch<ApiEnvelope<{ operation_id?: string; status?: string; conflicting_operation_id?: string | null }>>(
+    `/orders/${orderId}/initiate-payment`,
+    { method: "POST" }
+  );
+  const d = response.data;
+  if (d.status === "operation_in_progress") {
+    return { status: "operation_in_progress", conflicting_operation_id: d.conflicting_operation_id ?? null };
+  }
+  return { status: "started", operation_id: d.operation_id! };
+}
+
+export async function cancelAqsiOperation(orderId: string, operationId: string): Promise<{ cancelled: boolean; paid?: boolean; status?: string }> {
+  const response = await apiFetch<ApiEnvelope<{ cancelled: boolean; paid?: boolean; status?: string }>>(`/orders/${orderId}/cancel-aqsi-operation`, {
+    method: "POST",
+    body: JSON.stringify({ operation_id: operationId }),
+  });
+  return response.data ?? { cancelled: false };
+}
+
+export type SlipSyncStatus = "pending" | "confirmed" | "cancelled" | "failed" | "declined" | "confirmed_no_fiscal" | "receipt_error" | "no_payment_operation";
+
+export async function syncSlip(orderId: string): Promise<{
+  status: SlipSyncStatus;
+  operation_status?: string;
+  message?: string;
+  has_marking_errors?: boolean | null;
+}> {
+  const response = await apiFetch<ApiEnvelope<{
+    status: SlipSyncStatus;
+    operation_status?: string;
+    message?: string;
+    has_marking_errors?: boolean | null;
+  }>>(`/orders/${orderId}/sync-slip`, { method: "POST" });
+  return response.data;
+}
+
+export async function cancelPayment(orderId: string): Promise<{ status: string; operation_status?: string; message?: string }> {
+  const response = await apiFetch<ApiEnvelope<{ status: string; operation_status?: string; message?: string }>>(`/orders/${orderId}/cancel-payment`, {
+    method: "POST",
+  });
+  return response.data;
+}
+
+export async function checkPaymentCancelStatus(orderId: string): Promise<{
+  status: string;
+  operation_status?: string;
+  cancellation_requested?: boolean;
+  message?: string;
+}> {
+  const response = await apiFetch<ApiEnvelope<{
+    status: string;
+    operation_status?: string;
+    cancellation_requested?: boolean;
+    message?: string;
+  }>>(`/orders/${orderId}/payment-cancel-status`, { method: "POST" });
+  return response.data;
+}
+
+export async function syncAqsiV4(orderId: string): Promise<{
+  status: string;
+  operation_status?: string;
+  message?: string;
+  has_marking_errors?: boolean | null;
+}> {
+  const response = await apiFetch<ApiEnvelope<{
+    status: string;
+    operation_status?: string;
+    message?: string;
+    has_marking_errors?: boolean | null;
+  }>>(`/orders/${orderId}/sync-aqsi-v4`, { method: "POST" });
+  return response.data;
+}
+
 export async function syncOrderWithAqsi(orderId: string): Promise<{
   paid: boolean;
   payment_type: PaymentType | null;
@@ -185,6 +268,42 @@ export async function syncOrderWithAqsi(orderId: string): Promise<{
 export async function cancelOrder(orderId: string): Promise<Order> {
   const response = await apiFetch<ApiEnvelope<Order>>(`/orders/${orderId}/cancel`, {
     method: "POST",
+  });
+  return response.data;
+}
+
+export async function recoverTerminalBlocker(operationId: string): Promise<{
+  resolved: boolean;
+  status: string | null;
+  paid?: boolean;
+  slip_id?: string | null;
+  message?: string;
+}> {
+  const response = await apiFetch<ApiEnvelope<{
+    resolved: boolean;
+    status: string | null;
+    paid?: boolean;
+    slip_id?: string | null;
+    message?: string;
+  }>>("/orders/recover-terminal-blocker", {
+    method: "POST",
+    body: JSON.stringify({ operation_id: operationId }),
+  });
+  return response.data;
+}
+
+export async function forceClearBlocker(operationId: string): Promise<{
+  resolved: boolean;
+  was_status: string | null;
+  message?: string;
+}> {
+  const response = await apiFetch<ApiEnvelope<{
+    resolved: boolean;
+    was_status: string | null;
+    message?: string;
+  }>>("/orders/force-clear-blocker", {
+    method: "POST",
+    body: JSON.stringify({ operation_id: operationId }),
   });
   return response.data;
 }

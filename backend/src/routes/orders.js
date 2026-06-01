@@ -1,8 +1,15 @@
 ﻿const express = require('express');
 
 const { pool } = require('../db');
-const { sendOrderToAqsi, sendRefundToAqsi } = require('../services/aqsi');
+const {
+  sendOrderToAqsi,
+  sendOrderToAqsiV4,
+  pollOperation,
+  extractReceiptFiscalData,
+  sendRefundToAqsi,
+} = require('../services/aqsi');
 const { confirmOpenOrderPayment, syncOrderWithAqsi } = require('../services/order-sync');
+const logger = require('../services/logger');
 
 const router = express.Router();
 
@@ -48,6 +55,167 @@ function parseClientId(value) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : Number.NaN;
 }
 
+const GS1_GROUP_SEPARATOR = String.fromCharCode(29);
+const SCANNER_LAYOUT_MAP = {
+  ё: '`',
+  Ё: '~',
+  й: 'q',
+  Й: 'Q',
+  ц: 'w',
+  Ц: 'W',
+  у: 'e',
+  У: 'E',
+  к: 'r',
+  К: 'R',
+  е: 't',
+  Е: 'T',
+  н: 'y',
+  Н: 'Y',
+  г: 'u',
+  Г: 'U',
+  ш: 'i',
+  Ш: 'I',
+  щ: 'o',
+  Щ: 'O',
+  з: 'p',
+  З: 'P',
+  х: '[',
+  Х: '{',
+  ъ: ']',
+  Ъ: '}',
+  ф: 'a',
+  Ф: 'A',
+  ы: 's',
+  Ы: 'S',
+  в: 'd',
+  В: 'D',
+  а: 'f',
+  А: 'F',
+  п: 'g',
+  П: 'G',
+  р: 'h',
+  Р: 'H',
+  о: 'j',
+  О: 'J',
+  л: 'k',
+  Л: 'K',
+  д: 'l',
+  Д: 'L',
+  ж: ';',
+  Ж: ':',
+  э: "'",
+  Э: '"',
+  я: 'z',
+  Я: 'Z',
+  ч: 'x',
+  Ч: 'X',
+  с: 'c',
+  С: 'C',
+  м: 'v',
+  М: 'V',
+  и: 'b',
+  И: 'B',
+  т: 'n',
+  Т: 'N',
+  ь: 'm',
+  Ь: 'M',
+  б: ',',
+  Б: '<',
+  ю: '.',
+  Ю: '>',
+};
+
+function normalizeScannerLayout(value) {
+  // When keyboard is in Russian mode, the '/' key sends '.'.
+  // The '.' key sends 'ю' (map converts it back to '.').
+  // So if any Cyrillic chars present — full scan was in Russian mode, convert '.' → '/'.
+  const hasCyrillic = /[а-яёА-ЯЁ]/u.test(String(value));
+  return Array.from(String(value), (char) => {
+    if (SCANNER_LAYOUT_MAP[char]) return SCANNER_LAYOUT_MAP[char];
+    if (hasCyrillic && char === '.') return '/';
+    if (hasCyrillic && char === ',') return '?';
+    return char;
+  }).join('');
+}
+
+function splitMarkingTailWithAis(tail) {
+  if (!tail) {
+    return null;
+  }
+
+  // Try AI 93 with CRC lengths 4, 3, 2 (most common is 4)
+  for (const crcLen of [4, 3, 2]) {
+    const suffixLen = 2 + crcLen;
+    if (tail.length > suffixLen && tail.slice(-suffixLen, -crcLen) === '93') {
+      return {
+        serial: tail.slice(0, -suffixLen),
+        parts: [`93${tail.slice(-crcLen)}`],
+      };
+    }
+  }
+
+  if (tail.length > 52 && tail.slice(-52, -50) === '91' && tail.slice(-46, -44) === '92') {
+    return {
+      serial: tail.slice(0, -52),
+      parts: [`91${tail.slice(-50, -46)}`, `92${tail.slice(-44)}`],
+    };
+  }
+
+  if (tail.length > 46 && tail.slice(-46, -44) === '92') {
+    return {
+      serial: tail.slice(0, -46),
+      parts: [`92${tail.slice(-44)}`],
+    };
+  }
+
+  return null;
+}
+
+function restoreImplicitGs1Separators(value) {
+  if (!value || value.includes(GS1_GROUP_SEPARATOR) || !/^01\d{14}21/.test(value)) {
+    return value;
+  }
+
+  const prefix = value.slice(0, 18);
+  const tail = value.slice(18);
+  const parsedTail = splitMarkingTailWithAis(tail);
+
+  if (!parsedTail || !parsedTail.serial) {
+    return value;
+  }
+
+  return `${prefix}${parsedTail.serial}${GS1_GROUP_SEPARATOR}${parsedTail.parts.join(GS1_GROUP_SEPARATOR)}`;
+}
+
+function normalizeMarkingCode(rawValue) {
+  let normalized = String(rawValue);
+
+  normalized = normalized
+    .replace(/\\u001d/gi, GS1_GROUP_SEPARATOR)
+    .replace(/\\x1d/gi, GS1_GROUP_SEPARATOR)
+    .replace(/<\s*(?:GS|FNC1)\s*>/gi, GS1_GROUP_SEPARATOR)
+    .replace(/\[\s*(?:GS|FNC1)\s*\]/gi, GS1_GROUP_SEPARATOR)
+    .replace(/\(\s*(?:GS|FNC1)\s*\)/gi, GS1_GROUP_SEPARATOR)
+    .replace(/\u00a0/g, ' ')
+    .replace(/[\r\n\t]+/g, ' ');
+
+  normalized = normalizeScannerLayout(normalized).trim();
+  normalized = normalized.replace(/^\]d2/i, '');
+
+  if (!normalized) {
+    return null;
+  }
+
+  // Keyboard scanners often turn GS separators into visible spaces in browser inputs.
+  // Only replace spaces if there is no real GS yet — otherwise accidental spaces corrupt the serial.
+  if (!normalized.includes(GS1_GROUP_SEPARATOR)) {
+    normalized = normalized.replace(/ +/g, GS1_GROUP_SEPARATOR);
+  }
+
+  // ChZ requires GS between AIs (tag 2000). Reinsert if scanner dropped FNC1.
+  return restoreImplicitGs1Separators(normalized);
+}
+
 function parseMarkingCode(value) {
   if (value === undefined) {
     return undefined;
@@ -57,8 +225,7 @@ function parseMarkingCode(value) {
     return null;
   }
 
-  const normalized = String(value).trim();
-  return normalized.length > 0 ? normalized : null;
+  return normalizeMarkingCode(value);
 }
 
 function normalizeDiscounts(discountPercent, discountMoney) {
@@ -468,11 +635,22 @@ async function getOpenOrder(client, orderId) {
   const order = rows[0];
 
   if (!order) {
-    return { error: { code: 404, message: 'Р—Р°РєР°Р· РЅРµ РЅР°Р№РґРµРЅ' } };
+    return { error: { code: 404, message: 'Заказ не найден' } };
   }
 
   if (order.status !== 'open') {
-    return { error: { code: 409, message: 'Р—Р°РєР°Р· СѓР¶Рµ Р·Р°РєСЂС‹С‚' } };
+    return { error: { code: 409, message: 'Заказ уже закрыт' } };
+  }
+
+  if (
+    order.aqsi_sent_at ||
+    order.aqsi_payment_operation_id ||
+    order.aqsi_slip_id ||
+    order.aqsi_receipt_operation_id ||
+    order.aqsi_receipt_status === 'pending' ||
+    order.aqsi_receipt_status === 'error'
+  ) {
+    return { error: { code: 409, message: 'Заказ уже передан на кассу' } };
   }
 
   return { order };
@@ -489,12 +667,12 @@ async function validateProductAvailability(client, productId, quantity) {
   const product = productRows[0];
 
   if (!product) {
-    return { error: { code: 404, message: 'РўРѕРІР°СЂ РЅРµ РЅР°Р№РґРµРЅ' } };
+    return { error: { code: 404, message: 'Товар не найден' } };
   }
 
   if (product.has_stock && Number(product.stock) < quantity) {
     return {
-      error: { code: 409, message: `РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ С‚РѕРІР°СЂР°: РІ РЅР°Р»РёС‡РёРё ${product.stock}` },
+      error: { code: 409, message: `Недостаточно товара: в наличии ${product.stock}` },
     };
   }
 
@@ -503,7 +681,7 @@ async function validateProductAvailability(client, productId, quantity) {
 
 router.get('/', async (req, res) => {
   try {
-    const { status, limit = 20, offset = 0 } = req.query;
+    const { status, paid, limit = 20, offset = 0 } = req.query;
 
     let sql = `
       SELECT o.*, COUNT(oi.id)::int AS items_count_actual
@@ -512,7 +690,13 @@ router.get('/', async (req, res) => {
     `;
     const params = [];
 
-    if (status) {
+    if (paid === 'true') {
+      sql += ` WHERE (o.aqsi_payment_status = 'completed' OR o.status IN ('confirmed', 'partially_refunded', 'refunded'))`;
+      if (status) {
+        params.push(status);
+        sql += ` AND o.status = $${params.length}`;
+      }
+    } else if (status) {
       params.push(status);
       sql += ` WHERE o.status = $${params.length}`;
     }
@@ -533,7 +717,7 @@ router.get('/:id', async (req, res) => {
     const order = orderRows[0];
 
     if (!order) {
-      return res.status(404).json({ success: false, error: 'Р—Р°РєР°Р· РЅРµ РЅР°Р№РґРµРЅ' });
+      return res.status(404).json({ success: false, error: 'Заказ не найден' });
     }
 
     const { rows: items } = await pool.query(
@@ -553,13 +737,13 @@ router.post('/', async (req, res) => {
     const clientId = parseClientId(req.body?.client_id);
 
     if (Number.isNaN(clientId)) {
-      return res.status(422).json({ success: false, error: 'РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ client_id' });
+      return res.status(422).json({ success: false, error: 'Некорректный client_id' });
     }
 
     if (clientId !== null && clientId !== undefined) {
       const { rows: clientRows } = await pool.query('SELECT id FROM clients WHERE id = $1', [clientId]);
       if (!clientRows[0]) {
-        return res.status(404).json({ success: false, error: 'РљР»РёРµРЅС‚ РЅРµ РЅР°Р№РґРµРЅ' });
+        return res.status(404).json({ success: false, error: 'Клиент не найден' });
       }
     }
 
@@ -589,7 +773,7 @@ router.patch('/:id', async (req, res) => {
       req.body.discount_money === undefined &&
       req.body.client_id === undefined
     ) {
-      return res.status(422).json({ success: false, error: 'РќРµС‚ РґР°РЅРЅС‹С… РґР»СЏ РѕР±РЅРѕРІР»РµРЅРёСЏ' });
+      return res.status(422).json({ success: false, error: 'Нет данных для обновления' });
     }
     const rawDiscountPercent =
       req.body.discount_percent !== undefined
@@ -603,17 +787,17 @@ router.patch('/:id', async (req, res) => {
       req.body.client_id !== undefined ? parseClientId(req.body.client_id) : order.client_id;
 
     if (rawDiscountPercent === null) {
-      return res.status(422).json({ success: false, error: 'РќРµРєРѕСЂСЂРµРєС‚РЅР°СЏ СЃРєРёРґРєР° РІ РїСЂРѕС†РµРЅС‚Р°С…' });
+      return res.status(422).json({ success: false, error: 'Некорректная скидка в процентах' });
     }
     if (rawDiscountMoney === null) {
-      return res.status(422).json({ success: false, error: 'РќРµРєРѕСЂСЂРµРєС‚РЅР°СЏ СЃСѓРјРјР° СЃРєРёРґРєРё' });
+      return res.status(422).json({ success: false, error: 'Некорректная сумма скидки' });
     }
 
     if (Number.isNaN(clientId)) {
-      return res.status(422).json({ success: false, error: 'РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ client_id' });
+      return res.status(422).json({ success: false, error: 'Некорректный client_id' });
     }
     if (!(await clientExists(client, clientId))) {
-      return res.status(404).json({ success: false, error: 'РљР»РёРµРЅС‚ РЅРµ РЅР°Р№РґРµРЅ' });
+      return res.status(404).json({ success: false, error: 'Клиент не найден' });
     }
 
     const normalizedDiscounts = normalizeDiscounts(rawDiscountPercent, rawDiscountMoney);
@@ -678,14 +862,14 @@ router.post('/:id/items', async (req, res) => {
     if (!qty || qty <= 0) {
       return res.status(422).json({
         success: false,
-        error: 'РљРѕР»РёС‡РµСЃС‚РІРѕ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ Р±РѕР»СЊС€Рµ РЅСѓР»СЏ',
+        error: 'Количество должно быть больше нуля',
       });
     }
     if (parsedDiscountPercent === null) {
-      return res.status(422).json({ success: false, error: 'РќРµРєРѕСЂСЂРµРєС‚РЅР°СЏ СЃРєРёРґРєР° РІ РїСЂРѕС†РµРЅС‚Р°С…' });
+      return res.status(422).json({ success: false, error: 'Некорректная скидка в процентах' });
     }
     if (parsedDiscountMoney === null) {
-      return res.status(422).json({ success: false, error: 'РќРµРєРѕСЂСЂРµРєС‚РЅР°СЏ СЃСѓРјРјР° СЃРєРёРґРєРё' });
+      return res.status(422).json({ success: false, error: 'Некорректная сумма скидки' });
     }
 
     const normalizedDiscounts = normalizeDiscounts(parsedDiscountPercent, parsedDiscountMoney);
@@ -720,10 +904,10 @@ router.post('/:id/items', async (req, res) => {
     }
 
     if (!resolvedName) {
-      return res.status(422).json({ success: false, error: 'РЈРєР°Р¶РёС‚Рµ РЅР°Р·РІР°РЅРёРµ РїРѕР·РёС†РёРё' });
+      return res.status(422).json({ success: false, error: 'Укажите название позиции' });
     }
     if (!resolvedSalePrice) {
-      return res.status(422).json({ success: false, error: 'РЈРєР°Р¶РёС‚Рµ С†РµРЅСѓ' });
+      return res.status(422).json({ success: false, error: 'Укажите цену' });
     }
 
     await client.query('BEGIN');
@@ -815,16 +999,24 @@ router.patch('/:id/items/:itemId', async (req, res) => {
     const item = itemRows[0];
 
     if (!item) {
-      return res.status(404).json({ success: false, error: 'РџРѕР·РёС†РёСЏ РЅРµ РЅР°Р№РґРµРЅР°' });
+      return res.status(404).json({ success: false, error: 'Позиция не найдена' });
     }
 
     const nextQuantity = req.body.quantity !== undefined ? parseInt(req.body.quantity, 10) : item.quantity;
+    if (req.body.marking_code !== undefined && req.body.marking_code !== null) {
+      const raw = req.body.marking_code;
+      logger.info('marking_raw', {
+        raw,
+        raw_hex: Buffer.from(String(raw)).toString('hex'),
+        has_gs: String(raw).includes('\x1d'),
+      });
+    }
     const nextMarkingCode =
       req.body.marking_code !== undefined ? parseMarkingCode(req.body.marking_code) : item.marking_code;
     if (!nextQuantity || nextQuantity <= 0) {
       return res.status(422).json({
         success: false,
-        error: 'РљРѕР»РёС‡РµСЃС‚РІРѕ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ Р±РѕР»СЊС€Рµ РЅСѓР»СЏ',
+        error: 'Количество должно быть больше нуля',
       });
     }
 
@@ -838,10 +1030,10 @@ router.patch('/:id/items/:itemId', async (req, res) => {
         : Number.parseFloat(String(item.discount_money || 0)) || 0;
 
     if (rawDiscountPercent === null) {
-      return res.status(422).json({ success: false, error: 'РќРµРєРѕСЂСЂРµРєС‚РЅР°СЏ СЃРєРёРґРєР° РІ РїСЂРѕС†РµРЅС‚Р°С…' });
+      return res.status(422).json({ success: false, error: 'Некорректная скидка в процентах' });
     }
     if (rawDiscountMoney === null) {
-      return res.status(422).json({ success: false, error: 'РќРµРєРѕСЂСЂРµРєС‚РЅР°СЏ СЃСѓРјРјР° СЃРєРёРґРєРё' });
+      return res.status(422).json({ success: false, error: 'Некорректная сумма скидки' });
     }
 
     if (item.kind === 'product' && item.product_id) {
@@ -946,7 +1138,7 @@ router.delete('/:id/items/:itemId', async (req, res) => {
 
     if (!deleted[0]) {
       await client.query('ROLLBACK');
-      return res.status(404).json({ success: false, error: 'РџРѕР·РёС†РёСЏ РЅРµ РЅР°Р№РґРµРЅР°' });
+      return res.status(404).json({ success: false, error: 'Позиция не найдена' });
     }
 
     const updatedOrder = await recalcOrderSummary(client, req.params.id);
@@ -966,85 +1158,176 @@ router.delete('/:id/items/:itemId', async (req, res) => {
 });
 
 router.post('/:id/send-to-aqsi', async (req, res) => {
+  const clientId = parseClientId(req.body?.client_id);
+  if (Number.isNaN(clientId)) {
+    return res.status(422).json({ success: false, error: 'Некорректный client_id' });
+  }
+
+  // Phase 1: validate + lock order atomically to prevent concurrent or duplicate sends
+  let preparedOrder;
+  let preparedItems;
+  let validationError = null;
+
+  const pgClient = await pool.connect();
   try {
-    const { rows: orderRows } = await pool.query('SELECT * FROM orders WHERE id = $1', [req.params.id]);
-    const order = orderRows[0];
-    const clientId = parseClientId(req.body?.client_id);
+    await pgClient.query('BEGIN');
 
-    if (!order) {
-      return res.status(404).json({ success: false, error: 'Заказ не найден' });
-    }
-    if (Number.isNaN(clientId)) {
-      return res.status(422).json({ success: false, error: 'Некорректный client_id' });
-    }
-    if (order.status !== 'open') {
-      return res.status(409).json({ success: false, error: 'Заказ уже закрыт' });
-    }
-    if (order.items_count === 0) {
-      return res.status(422).json({ success: false, error: 'Чек пустой' });
-    }
-
-    const { rows: items } = await pool.query(
-      'SELECT * FROM order_items WHERE order_id = $1 ORDER BY created_at',
+    const { rows: orderRows } = await pgClient.query(
+      'SELECT * FROM orders WHERE id = $1 FOR UPDATE',
       [req.params.id]
     );
+    const order = orderRows[0];
 
-    const nextClientId = clientId === undefined ? order.client_id : clientId;
-    if (nextClientId !== null && nextClientId !== undefined) {
-      const { rows: clientRows } = await pool.query('SELECT id FROM clients WHERE id = $1', [nextClientId]);
-      if (!clientRows[0]) {
-        return res.status(404).json({ success: false, error: 'Клиент не найден' });
+    if (!order) {
+      validationError = { code: 404, message: 'Заказ не найден' };
+    } else if (order.status !== 'open') {
+      validationError = { code: 409, message: 'Заказ уже закрыт' };
+    } else if (order.aqsi_sent_at) {
+      validationError = { code: 409, message: 'Заказ уже передан на кассу' };
+    } else if (order.items_count === 0) {
+      validationError = { code: 422, message: 'Чек пустой' };
+    }
+
+    if (!validationError) {
+      const { rows: itemRows } = await pgClient.query(
+        `SELECT oi.*, p.marking_type
+         FROM order_items oi
+         LEFT JOIN products p ON p.id = oi.product_id
+         WHERE oi.order_id = $1
+         ORDER BY oi.created_at`,
+        [req.params.id]
+      );
+
+      const nextClientId = clientId === undefined ? order.client_id : clientId;
+
+      if (nextClientId != null) {
+        const { rows: clientRows } = await pgClient.query(
+          'SELECT id FROM clients WHERE id = $1',
+          [nextClientId]
+        );
+        if (!clientRows[0]) {
+          validationError = { code: 404, message: 'Клиент не найден' };
+        }
+      }
+
+      if (!validationError && orderRequiresClient(itemRows) && !nextClientId) {
+        validationError = { code: 422, message: 'Выберите клиента для услуги' };
+      }
+
+      if (!validationError) {
+        const missingMarkedItem = itemRows.find((item) => item.marking_required && !item.marking_code);
+        if (missingMarkedItem) {
+          validationError = {
+            code: 422,
+            message: `Для товара "${missingMarkedItem.name}" нужно отсканировать код маркировки`,
+          };
+        }
+      }
+
+      if (!validationError) {
+        const itemWithoutMarkingType = itemRows.find((item) => item.marking_code && !item.marking_type);
+        if (itemWithoutMarkingType) {
+          validationError = {
+            code: 422,
+            message: `Для товара "${itemWithoutMarkingType.name}" не задан тип маркировки`,
+          };
+        }
+      }
+
+      if (!validationError) {
+        const { rows: preparedRows } = await pgClient.query(
+          `UPDATE orders SET client_id = $2, aqsi_sent_at = NOW() WHERE id = $1 RETURNING *`,
+          [req.params.id, nextClientId ?? null]
+        );
+        preparedOrder = preparedRows[0];
+        preparedItems = itemRows;
       }
     }
 
-    if (orderRequiresClient(items) && !nextClientId) {
-      return res.status(422).json({ success: false, error: 'Выберите клиента для услуги' });
+    if (validationError) {
+      await pgClient.query('ROLLBACK');
+    } else {
+      await pgClient.query('COMMIT');
     }
+  } catch (err) {
+    try { await pgClient.query('ROLLBACK'); } catch (_) {}
+    pgClient.release();
+    return res.status(500).json({ success: false, error: err.message });
+  }
+  pgClient.release();
 
-    const missingMarkedItem = items.find((item) => item.marking_required && !item.marking_code);
-    if (missingMarkedItem) {
-      return res.status(422).json({
-        success: false,
-        error: `Для товара "${missingMarkedItem.name}" нужно отсканировать код маркировки`,
-      });
-    }
+  if (validationError) {
+    return res.status(validationError.code).json({ success: false, error: validationError.message });
+  }
 
-    const { rows: preparedRows } = await pool.query(
-      `UPDATE orders SET
-         client_id = $2
-       WHERE id = $1
-       RETURNING *`,
-      [req.params.id, nextClientId ?? null]
-    );
-    const preparedOrder = preparedRows[0];
+  // Phase 2: send to AQSI v4 (cash) — no marking check on terminal side, no itemCode
+  const orderId = req.params.id;
+  let receiptOpId;
+  try {
+    const aqsiResult = await sendOrderToAqsiV4({ ...preparedOrder, items: preparedItems }, 'cash');
+    receiptOpId = aqsiResult?.operationId ?? aqsiResult?.id ?? aqsiResult?.guid;
+  } catch (err) {
+    // Any AQSI error — safe to reset lock, order was never created on terminal
+    await pool.query('UPDATE orders SET aqsi_sent_at = NULL WHERE id = $1', [orderId]).catch(() => {});
+    return res.status(500).json({ success: false, error: err.message });
+  }
 
-    const aqsiResult = await sendOrderToAqsi({ ...preparedOrder, items });
+  if (!receiptOpId) {
+    return res.status(500).json({ success: false, error: 'AQSI не вернул operationId' });
+  }
 
-    await pool.query(
-      `UPDATE orders SET
-         aqsi_receipt_id = $1,
-         aqsi_sent_at = NOW(),
-         aqsi_sync_attempted_at = NULL
-       WHERE id = $2`,
-      [String(aqsiResult?.guid || aqsiResult?.id || req.params.id), req.params.id]
-    );
-
-    return res.json({ success: true, data: aqsiResult });
+  // Poll until terminal completes receipt (usually 2-5 seconds for cash)
+  let finalOp;
+  try {
+    finalOp = await pollOperation(receiptOpId, 2000, 30000);
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
+
+  if (finalOp.status !== 'Completed') {
+    await pool.query('UPDATE orders SET aqsi_sent_at = NULL WHERE id = $1', [orderId]).catch(() => {});
+    return res.status(500).json({ success: false, error: `Касса не подтвердила чек: ${finalOp.status}` });
+  }
+
+  // Save receipt + fiscal data
+  const fiscal = extractReceiptFiscalData(finalOp);
+  await pool.query(
+    `UPDATE orders SET
+       aqsi_receipt_id   = COALESCE($2, aqsi_receipt_id),
+       aqsi_receipt_status = 'completed',
+       fiscal_fd         = COALESCE($3, fiscal_fd),
+       fiscal_fn         = COALESCE($4, fiscal_fn),
+       fiscal_fp         = COALESCE($5, fiscal_fp),
+       fiscal_kkt_reg    = COALESCE($6, fiscal_kkt_reg),
+       fiscal_date       = COALESCE($7, fiscal_date)
+     WHERE id = $1`,
+    [
+      orderId,
+      fiscal?.receipt_id ?? null,
+      fiscal?.fiscal_fd ?? null,
+      fiscal?.fiscal_fn ?? null,
+      fiscal?.fiscal_fp ?? null,
+      fiscal?.fiscal_kkt_reg ?? null,
+      fiscal?.fiscal_date ?? null,
+    ]
+  ).catch((dbErr) => logger.error('orders', { action: 'save_cash_receipt_failed', order_id: orderId, message: dbErr.message }));
+
+  // Confirm order and deduct stock
+  const confirmed = await confirmOpenOrderPayment(orderId, 'cash');
+  return res.json({ success: true, data: confirmed.order });
 });
+
 
 router.post('/:id/sync-aqsi', async (req, res) => {
   try {
     const result = await syncOrderWithAqsi(req.params.id);
 
     if (!result.order) {
-      return res.status(404).json({ success: false, error: 'Р—Р°РєР°Р· РЅРµ РЅР°Р№РґРµРЅ' });
+      return res.status(404).json({ success: false, error: 'Заказ не найден' });
     }
 
     if (result.reason === 'not_sent') {
-      return res.status(409).json({ success: false, error: 'Р—Р°РєР°Р· РµС‰С‘ РЅРµ РѕС‚РїСЂР°РІР»РµРЅ РЅР° РєР°СЃСЃСѓ' });
+      return res.status(409).json({ success: false, error: 'Заказ ещё не отправлен на кассу' });
     }
 
     return res.json({
@@ -1068,7 +1351,7 @@ router.post('/:id/confirm', async (req, res) => {
     if (!payment_type || !['cash', 'card'].includes(payment_type)) {
       return res.status(422).json({
         success: false,
-        error: 'РЈРєР°Р¶РёС‚Рµ СЃРїРѕСЃРѕР± РѕРїР»Р°С‚С‹: cash РёР»Рё card',
+        error: 'Укажите способ оплаты: cash или card',
       });
     }
 
@@ -1076,13 +1359,16 @@ router.post('/:id/confirm', async (req, res) => {
     const order = orderRows[0];
 
     if (!order) {
-      return res.status(404).json({ success: false, error: 'Р—Р°РєР°Р· РЅРµ РЅР°Р№РґРµРЅ' });
+      return res.status(404).json({ success: false, error: 'Заказ не найден' });
     }
     if (order.status !== 'open') {
-      return res.status(409).json({ success: false, error: 'Р—Р°РєР°Р· СѓР¶Рµ Р·Р°РєСЂС‹С‚' });
+      return res.status(409).json({ success: false, error: 'Заказ уже закрыт' });
+    }
+    if (order.aqsi_sent_at) {
+      return res.status(409).json({ success: false, error: "Заказ передан на кассу, подтверждение придёт автоматически" });
     }
     if (order.items_count === 0) {
-      return res.status(422).json({ success: false, error: 'РќРµР»СЊР·СЏ РїРѕРґС‚РІРµСЂРґРёС‚СЊ РїСѓСЃС‚РѕР№ Р·Р°РєР°Р·' });
+      return res.status(422).json({ success: false, error: 'Нельзя подтвердить пустой заказ' });
     }
 
     const finalized = await confirmOpenOrderPayment(req.params.id, payment_type);
@@ -1096,7 +1382,7 @@ router.post('/:id/cancel', async (req, res) => {
   try {
     const { rows } = await pool.query(
       `UPDATE orders SET status = 'cancelled', cancelled_at = NOW()
-       WHERE id = $1 AND status = 'open'
+       WHERE id = $1 AND status = 'open' AND aqsi_sent_at IS NULL
        RETURNING *`,
       [req.params.id]
     );
@@ -1104,7 +1390,7 @@ router.post('/:id/cancel', async (req, res) => {
     if (!rows[0]) {
       return res.status(409).json({
         success: false,
-        error: 'Р—Р°РєР°Р· РЅРµ РЅР°Р№РґРµРЅ РёР»Рё СѓР¶Рµ Р·Р°РєСЂС‹С‚',
+        error: 'Заказ не найден или уже закрыт',
       });
     }
 
@@ -1238,4 +1524,3 @@ router.post('/:id/refund', async (req, res) => {
 });
 
 module.exports = router;
-

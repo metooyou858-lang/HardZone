@@ -1,16 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+import { useSearchParams } from "next/navigation";
+
+import { fetchClient } from "@/lib/api/clients";
+import type { ClientListItem } from "@/lib/api/clients";
 
 import { CatalogPanel } from "@/components/sales/catalog-panel";
 import { CheckoutPanel } from "@/components/sales/checkout-panel";
-import { ClientPickerModal } from "@/components/sales/client-picker-modal";
 import { SalesHistoryPanel } from "@/components/sales/sales-history-panel";
 import {
   getBannerClass,
-  getClientName,
-  getClientSubscriptionLabel,
-  searchInputCls,
   type BannerState,
   type SalesTab,
 } from "@/components/sales/sales-shared";
@@ -19,9 +20,11 @@ import { useSalesHistory } from "@/components/sales/use-sales-history";
 import { useSalesOrder } from "@/components/sales/use-sales-order";
 
 export default function SalesPage() {
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<SalesTab>("cash");
   const [banner, setBanner] = useState<BannerState>(null);
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const catalogApi = useSalesCatalog({
     enabled: tab === "cash",
@@ -32,7 +35,27 @@ export default function SalesPage() {
     cashViewActive: tab === "cash",
     setBanner,
     onHistoryChanged: () => setHistoryRefreshToken((value) => value + 1),
+    onBarcodeScanComplete: () => catalogApi.setQuery(""),
   });
+
+  // Return focus to search after marking code is scanned
+  useEffect(() => {
+    if (orderApi.pendingMarkingLineKey === null) {
+      setTimeout(() => searchInputRef.current?.focus(), 80);
+    }
+  }, [orderApi.pendingMarkingLineKey]);
+
+  useEffect(() => {
+    const clientId = searchParams.get("client_id");
+    if (!clientId) return;
+
+    fetchClient(clientId)
+      .then((client) => {
+        orderApi.setSelectedClient(client as unknown as ClientListItem);
+      })
+      .catch(() => undefined);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const historyApi = useSalesHistory({
     enabled: tab === "history",
@@ -60,7 +83,7 @@ export default function SalesPage() {
               onClick={() => setTab("cash")}
               className={`rounded-full px-4 py-2 text-sm transition-colors ${
                 tab === "cash"
-                  ? "bg-[var(--accent)] text-[#062b26]"
+                  ? "bg-[var(--accent)] text-[var(--text-inverse)]"
                   : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
               }`}
             >
@@ -71,7 +94,7 @@ export default function SalesPage() {
               onClick={() => setTab("history")}
               className={`rounded-full px-4 py-2 text-sm transition-colors ${
                 tab === "history"
-                  ? "bg-[var(--accent)] text-[#062b26]"
+                  ? "bg-[var(--accent)] text-[var(--text-inverse)]"
                   : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
               }`}
             >
@@ -96,6 +119,7 @@ export default function SalesPage() {
       {tab === "cash" ? (
         <div className="grid min-h-[calc(100vh-11rem)] gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,1fr)]">
           <CatalogPanel
+            searchInputRef={searchInputRef}
             query={catalogApi.query}
             setQuery={catalogApi.setQuery}
             catalogGroups={catalogApi.catalogGroups}
@@ -116,12 +140,19 @@ export default function SalesPage() {
             basketLines={orderApi.basketLines}
             selectedClient={orderApi.selectedClient}
             clientSelectionLocked={orderApi.clientSelectionLocked}
-            setClientError={orderApi.setClientError}
-            setClientPickerOpen={orderApi.setClientPickerOpen}
-            applyClientSelection={orderApi.applyClientSelection}
             clientSaving={orderApi.clientSaving}
             serviceRequiresClient={orderApi.serviceRequiresClient}
             orderClientId={orderApi.orderClientId}
+            clientPickerOpen={orderApi.clientPickerOpen}
+            setClientPickerOpen={orderApi.setClientPickerOpen}
+            clientQuery={orderApi.clientQuery}
+            setClientQuery={orderApi.setClientQuery}
+            clientResults={orderApi.clientResults}
+            clientLoading={orderApi.clientLoading}
+            clientError={orderApi.clientError}
+            setClientError={orderApi.setClientError}
+            handleClientSearchKeyDown={orderApi.handleClientSearchKeyDown}
+            applyClientSelection={orderApi.applyClientSelection}
             lineBusyKey={orderApi.lineBusyKey}
             orderLocked={orderApi.orderLocked}
             editingLineDiscountKey={orderApi.editingLineDiscountKey}
@@ -147,12 +178,21 @@ export default function SalesPage() {
             orderLevelDiscount={orderApi.orderLevelDiscount}
             markingDrafts={orderApi.markingDrafts}
             confirming={orderApi.confirming}
-            orderAwaitingPayment={orderApi.orderAwaitingPayment}
             sendBlockedByClient={orderApi.sendBlockedByClient}
             sendBlockedByMarking={orderApi.sendBlockedByMarking}
             setMarkingDraftValue={orderApi.setMarkingDraftValue}
-            handleConfirm={orderApi.handleConfirm}
-            handleStartNewOrder={orderApi.handleStartNewOrder}
+            handleConfirmCash={orderApi.handleConfirmCash}
+            handleInitiatePayment={orderApi.handleInitiatePayment}
+            handleCancelPayment={orderApi.handleCancelPayment}
+            handleSyncV4={orderApi.handleSyncV4}
+            receiptError={orderApi.receiptError}
+            conflictingOperationId={orderApi.conflictingOperationId}
+            slipPending={orderApi.slipPending}
+            cancellingPayment={orderApi.cancellingPayment}
+            paymentBusy={orderApi.paymentBusy}
+            pendingMarkingLineKey={orderApi.pendingMarkingLineKey}
+            onMarkingScanned={orderApi.clearPendingMarkingLineKey}
+            onMarkingFieldFocusChange={orderApi.setMarkingFieldActive}
           />
         </div>
       ) : (
@@ -175,24 +215,6 @@ export default function SalesPage() {
         />
       )}
 
-      <ClientPickerModal
-        open={orderApi.clientPickerOpen}
-        query={orderApi.clientQuery}
-        error={orderApi.clientError}
-        loading={orderApi.clientLoading}
-        results={orderApi.clientResults}
-        saving={orderApi.clientSaving}
-        searchInputClassName={searchInputCls}
-        onClose={() => {
-          orderApi.setClientPickerOpen(false);
-          orderApi.setClientError(null);
-        }}
-        onQueryChange={orderApi.setClientQuery}
-        onKeyDown={orderApi.handleClientSearchKeyDown}
-        onSelect={(client) => void orderApi.applyClientSelection(client)}
-        getClientName={getClientName}
-        getClientSubscriptionLabel={getClientSubscriptionLabel}
-      />
     </div>
   );
 }

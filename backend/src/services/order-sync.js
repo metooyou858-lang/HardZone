@@ -2,6 +2,8 @@ const { pool, query } = require('../db');
 const {
   extractAqsiFiscalData,
   getAqsiOrder,
+  getOperation,
+  cancelOperation,
   isAqsiOrderNotFoundError,
 } = require('./aqsi');
 
@@ -299,7 +301,8 @@ async function syncOrderWithAqsi(orderId, options = {}) {
     };
   }
 
-  if (!order.aqsi_receipt_id) {
+  // aqsi_sent_at set but receipt_id missing means send succeeded but DB write of receipt_id failed
+  if (!order.aqsi_receipt_id && !order.aqsi_sent_at) {
     return {
       order,
       aqsiOrder: null,
@@ -343,8 +346,9 @@ async function syncOrderWithAqsi(orderId, options = {}) {
   } catch (error) {
     if (isAqsiOrderNotFoundError(error)) {
       if (markAttempt) {
+        // Always update to NOW() so the order gets rechecked on the next pass
         await query(
-          'UPDATE orders SET aqsi_sync_attempted_at = COALESCE(aqsi_sync_attempted_at, NOW()) WHERE id = $1',
+          'UPDATE orders SET aqsi_sync_attempted_at = NOW() WHERE id = $1',
           [orderId]
         );
       }
@@ -359,6 +363,14 @@ async function syncOrderWithAqsi(orderId, options = {}) {
     }
 
     throw error;
+  }
+
+  // Recover missing receipt_id: aqsi_sent_at was set but DB write of receipt_id failed
+  if (!order.aqsi_receipt_id && aqsiOrder) {
+    await query(
+      `UPDATE orders SET aqsi_receipt_id = $1 WHERE id = $2`,
+      [String(aqsiOrder.guid || aqsiOrder.id || orderId), orderId]
+    );
   }
 
   const paid = isPaidAqsiOrder(aqsiOrder);
@@ -378,8 +390,9 @@ async function syncOrderWithAqsi(orderId, options = {}) {
   }
 
   if (markAttempt) {
+    // Always update to NOW() so the order gets rechecked on the next pass
     await query(
-      'UPDATE orders SET aqsi_sync_attempted_at = COALESCE(aqsi_sync_attempted_at, NOW()) WHERE id = $1',
+      'UPDATE orders SET aqsi_sync_attempted_at = NOW() WHERE id = $1',
       [orderId]
     );
   }
@@ -393,8 +406,48 @@ async function syncOrderWithAqsi(orderId, options = {}) {
   };
 }
 
+let recentSyncRunning = false;
+
+// Fast pass: checks open orders sent within the last hour.
+// Runs every 30s; skips orders checked within the last 20 seconds.
+async function runRecentAqsiSyncPass(limit = 20) {
+  if (recentSyncRunning) {
+    return 0;
+  }
+
+  recentSyncRunning = true;
+
+  try {
+    const { rows } = await query(
+      `SELECT id
+       FROM orders
+       WHERE status = 'open'
+         AND aqsi_sent_at IS NOT NULL
+         AND aqsi_sent_at >= NOW() - INTERVAL '1 hour'
+         AND (aqsi_sync_attempted_at IS NULL OR aqsi_sync_attempted_at <= NOW() - INTERVAL '20 seconds')
+       ORDER BY aqsi_sent_at ASC
+       LIMIT $1`,
+      [limit]
+    );
+
+    for (const row of rows) {
+      try {
+        await syncOrderWithAqsi(row.id, { markAttempt: true });
+      } catch (error) {
+        console.error(`AQSI recent sync failed for order ${row.id}`, error);
+      }
+    }
+
+    return rows.length;
+  } finally {
+    recentSyncRunning = false;
+  }
+}
+
 let delayedSyncRunning = false;
 
+// Slow pass: catches open orders older than 30 minutes that slipped through.
+// Runs every 5 minutes; skips orders checked within the last 5 minutes.
 async function runDelayedAqsiSyncPass(limit = 20) {
   if (delayedSyncRunning) {
     return 0;
@@ -407,10 +460,9 @@ async function runDelayedAqsiSyncPass(limit = 20) {
       `SELECT id
        FROM orders
        WHERE status = 'open'
-         AND aqsi_receipt_id IS NOT NULL
          AND aqsi_sent_at IS NOT NULL
          AND aqsi_sent_at <= NOW() - INTERVAL '30 minutes'
-         AND aqsi_sync_attempted_at IS NULL
+         AND (aqsi_sync_attempted_at IS NULL OR aqsi_sync_attempted_at <= NOW() - INTERVAL '5 minutes')
        ORDER BY aqsi_sent_at ASC
        LIMIT $1`,
       [limit]
@@ -430,6 +482,110 @@ async function runDelayedAqsiSyncPass(limit = 20) {
   }
 }
 
+const V4_TTL_MS = 300000;
+const V4_STALE_BUFFER_MS = 120000;
+const V4_FORCE_CLEAR_MS = 15 * 60 * 1000; // принудительный сброс lock если AQSI не принял cancel за 15 мин
+const V4_TERMINAL = new Set(['Completed', 'Canceled', 'Timeout', 'Error']);
+
+let v4SyncRunning = false;
+
+// Мониторит осиротевшие v4-операции: startSlipPurchase стартовал (aqsi_payment_operation_id есть),
+// но браузер закрылся до закрытия заказа (aqsi_slip_id нет).
+// Если операция в терминальном состоянии → сбрасывает наш lock.
+// Если Processing и старше TTL → отменяет у AQSI и сбрасывает lock.
+async function runV4SlipSyncPass(limit = 10) {
+  if (v4SyncRunning) return 0;
+  v4SyncRunning = true;
+  try {
+    const { rows } = await query(
+      `SELECT id, aqsi_payment_operation_id, aqsi_payment_operation_at
+       FROM orders
+       WHERE status = 'open'
+         AND aqsi_payment_operation_id IS NOT NULL
+         AND aqsi_slip_id IS NULL
+         AND (aqsi_payment_status IS NULL OR aqsi_payment_status NOT IN ('completed'))
+       ORDER BY created_at ASC
+       LIMIT $1`,
+      [limit]
+    );
+
+    for (const row of rows) {
+      try {
+        const op = await getOperation(row.aqsi_payment_operation_id);
+        const status = op?.status ?? null;
+
+        if (V4_TERMINAL.has(status) && status !== 'Completed') {
+          // Операция завершена без оплаты — сбрасываем lock, заказ снова доступен для оплаты
+          await query(
+            `UPDATE orders SET
+               aqsi_payment_operation_id = NULL,
+               aqsi_payment_operation_at = NULL,
+               aqsi_payment_status = NULL,
+               aqsi_error = NULL
+             WHERE id = $1`,
+            [row.id]
+          );
+          console.info(`[v4-sync] reset orphaned op ${row.aqsi_payment_operation_id} (${status}) for order ${row.id}`);
+        } else if (status === 'Processing' || status === 'Pending' || status === 'Finishing') {
+          // Возраст операции: берём из AQSI, fallback — время из нашей БД
+          const opCreatedAt = op?.createdAt ? new Date(op.createdAt) : null;
+          const dbCreatedAt = row.aqsi_payment_operation_at ? new Date(row.aqsi_payment_operation_at) : null;
+          const ageMs = opCreatedAt || dbCreatedAt ? Date.now() - (opCreatedAt ?? dbCreatedAt).getTime() : 0;
+
+          if (ageMs > V4_FORCE_CLEAR_MS) {
+            // Операция не отменяется 15+ минут — принудительно снимаем наш lock.
+            // При Processing деньги ещё не списаны (иначе был бы Completed), сброс безопасен.
+            await query(
+              `UPDATE orders SET
+                 aqsi_payment_operation_id = NULL,
+                 aqsi_payment_operation_at = NULL,
+                 aqsi_payment_status = NULL,
+                 aqsi_error = $2
+               WHERE id = $1`,
+              [row.id, 'Касса не ответила за 15 минут. Попробуйте оплатить снова.']
+            );
+            console.warn(`[v4-sync] force-cleared stuck op ${row.aqsi_payment_operation_id} (age ${Math.round(ageMs / 60000)}min, status=${status}) for order ${row.id}`);
+          } else if (ageMs > V4_TTL_MS + V4_STALE_BUFFER_MS) {
+            await cancelOperation(row.aqsi_payment_operation_id).catch(() => {});
+            // Проверяем реальный статус после cancel-запроса — AQSI может не принять отмену мгновенно
+            const opAfter = await getOperation(row.aqsi_payment_operation_id).catch(() => null);
+            const statusAfter = opAfter?.status ?? null;
+            if (statusAfter && V4_TERMINAL.has(statusAfter) && statusAfter !== 'Completed') {
+              // Операция реально отменена — безопасно сбросить lock
+              await query(
+                `UPDATE orders SET
+                   aqsi_payment_operation_id = NULL,
+                   aqsi_payment_operation_at = NULL,
+                   aqsi_payment_status = NULL,
+                   aqsi_error = NULL
+                 WHERE id = $1`,
+                [row.id]
+              );
+              console.info(`[v4-sync] auto-cancelled stale op ${row.aqsi_payment_operation_id} (age ${Math.round(ageMs / 60000)}min, final=${statusAfter}) for order ${row.id}`);
+            } else {
+              // AQSI принял cancel-запрос, но статус не изменился — терминал не ответил.
+              // Оставляем operation_id, помечаем stuck чтобы оператор видел проблему.
+              await query(
+                `UPDATE orders SET aqsi_payment_status = 'stuck', aqsi_error = $2 WHERE id = $1`,
+                [row.id, `Операция ${row.aqsi_payment_operation_id} зависла (статус: ${statusAfter ?? 'неизвестен'}). Перезагрузите терминал или обратитесь в поддержку AQSI.`]
+              ).catch(() => {});
+              console.warn(`[v4-sync] op ${row.aqsi_payment_operation_id} still ${statusAfter} after cancel for order ${row.id} — marked stuck`);
+            }
+          }
+        }
+        // Completed — оплата прошла, но в DB не записана. Это редкий edge-case;
+        // кассир увидит open-заказ и воспользуется кнопкой «Восстановить».
+      } catch (err) {
+        console.error(`[v4-sync] failed for order ${row.id}:`, err.message);
+      }
+    }
+
+    return rows.length;
+  } finally {
+    v4SyncRunning = false;
+  }
+}
+
 let delayedSyncTimer = null;
 
 function startDelayedAqsiSyncScheduler() {
@@ -437,24 +593,50 @@ function startDelayedAqsiSyncScheduler() {
     return;
   }
 
-  const intervalMs = Number(process.env.AQSI_SYNC_INTERVAL_MS || 5 * 60 * 1000);
+  // Fast scheduler: recent orders every 30 seconds
+  const fastIntervalMs = Number(process.env.AQSI_FAST_SYNC_INTERVAL_MS || 30 * 1000);
+  const fastTimer = setInterval(() => {
+    runRecentAqsiSyncPass().catch((error) => {
+      console.error('AQSI recent sync pass failed', error);
+    });
+  }, fastIntervalMs);
+  if (typeof fastTimer.unref === 'function') {
+    fastTimer.unref();
+  }
 
+  // Slow scheduler: old orders every 5 minutes
+  const slowIntervalMs = Number(process.env.AQSI_SYNC_INTERVAL_MS || 5 * 60 * 1000);
   delayedSyncTimer = setInterval(() => {
     runDelayedAqsiSyncPass().catch((error) => {
       console.error('AQSI delayed sync pass failed', error);
     });
-  }, intervalMs);
-
+  }, slowIntervalMs);
   if (typeof delayedSyncTimer.unref === 'function') {
     delayedSyncTimer.unref();
   }
 
+  // v4 orphan cleanup: every 2 minutes
+  const v4Timer = setInterval(() => {
+    runV4SlipSyncPass().catch((error) => {
+      console.error('AQSI v4 slip sync pass failed', error);
+    });
+  }, 2 * 60 * 1000);
+  if (typeof v4Timer.unref === 'function') {
+    v4Timer.unref();
+  }
+
+  // Initial run 15 seconds after startup
   const initialRun = setTimeout(() => {
+    runRecentAqsiSyncPass().catch((error) => {
+      console.error('AQSI initial recent sync pass failed', error);
+    });
     runDelayedAqsiSyncPass().catch((error) => {
       console.error('AQSI initial delayed sync pass failed', error);
     });
+    runV4SlipSyncPass().catch((error) => {
+      console.error('AQSI initial v4 slip sync pass failed', error);
+    });
   }, 15000);
-
   if (typeof initialRun.unref === 'function') {
     initialRun.unref();
   }
@@ -465,6 +647,8 @@ module.exports = {
   detectPaymentType,
   isPaidAqsiOrder,
   runDelayedAqsiSyncPass,
+  runRecentAqsiSyncPass,
+  runV4SlipSyncPass,
   saveOrderFiscalData,
   startDelayedAqsiSyncScheduler,
   syncOrderWithAqsi,

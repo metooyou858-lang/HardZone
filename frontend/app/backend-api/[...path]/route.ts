@@ -17,7 +17,10 @@ async function proxyRequest(request: NextRequest, context: RouteContext) {
   }
 
   const { path = [] } = await context.params;
-  const backendUrl = new URL(`${getBackendApiBase()}/${path.join("/")}`);
+  // Next.js auto-decodes [...path] segments. Re-encode so backend receives a valid URL —
+  // otherwise raw `%`, `?`, `#` etc. from DataMatrix serials break percent-decoding.
+  const encodedPath = path.map(encodeURIComponent).join("/");
+  const backendUrl = new URL(`${getBackendApiBase()}/${encodedPath}`);
 
   request.nextUrl.searchParams.forEach((value, key) => {
     backendUrl.searchParams.append(key, value);
