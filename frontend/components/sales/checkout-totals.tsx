@@ -24,12 +24,10 @@ type CheckoutTotalsProps = {
   clientSaving: boolean;
   receiptError: boolean;
   conflictingOperationId: string | null;
-  cancellingPayment: boolean;
   paymentBusy: boolean;
   scheduleReceiptDiscount: (mode: DiscountMode, value: string) => void;
   handleConfirmCash: () => void | Promise<void>;
   handleInitiatePayment: () => void | Promise<void>;
-  handleCancelPayment: () => void | Promise<void>;
   handleSyncV4: () => void | Promise<void>;
   slipPending: boolean;
 };
@@ -53,12 +51,10 @@ export function CheckoutTotals({
   clientSaving,
   receiptError,
   conflictingOperationId,
-  cancellingPayment,
   paymentBusy,
   scheduleReceiptDiscount,
   handleConfirmCash,
   handleInitiatePayment,
-  handleCancelPayment,
   handleSyncV4,
   slipPending,
 }: CheckoutTotalsProps) {
@@ -171,11 +167,9 @@ export function CheckoutTotals({
           <div className="mt-4 flex items-center justify-center gap-3 rounded-[18px] bg-[var(--bg-card-soft)] px-4 py-3.5">
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--accent)] border-t-transparent" />
             <span className="text-sm text-[var(--text-muted)]">
-              {cancellingPayment
-                ? "Отменяем операцию на кассе..."
-                : cancellationPending
-                  ? "Ждём подтверждения отмены на терминале..."
-                  : "Ожидаем оплату от клиента..."}
+              {cancellationPending
+                ? "Ждём подтверждения отмены на терминале..."
+                : "Ожидаем оплату от клиента..."}
             </span>
           </div>
         ) : (
@@ -194,19 +188,10 @@ export function CheckoutTotals({
           </button>
         )}
 
-        {/* Отменить оплату */}
-        {(slipPending || cancellingPayment) && !receiptError && (
-          <button
-            type="button"
-            onClick={() => void handleCancelPayment()}
-            disabled={cancellingPayment || cancellationPending}
-            className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-[18px] border border-[var(--warning)] px-4 py-2.5 text-xs text-[var(--warning)] transition-all hover:bg-[rgba(255,160,0,0.08)] disabled:opacity-60"
-          >
-            {cancellingPayment && (
-              <span className="h-3 w-3 animate-spin rounded-full border-2 border-[var(--warning)] border-t-transparent" />
-            )}
-            {cancellingPayment ? "Отменяем..." : cancellationPending ? "Отмена отправлена" : "Отменить оплату"}
-          </button>
+        {(slipPending || cancellationPending) && !receiptError && (
+          <p className="mt-2 rounded-[18px] border border-[var(--line-soft)] px-4 py-2.5 text-center text-xs text-[var(--text-muted)]">
+            Для отмены чека нажмите кнопку отмены на кассе.
+          </p>
         )}
 
 

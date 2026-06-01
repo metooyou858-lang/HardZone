@@ -42,35 +42,6 @@ router.post('/:id/sync-aqsi-v4', async (req, res) => {
   }
 });
 
-router.post('/:id/cancel-payment', async (req, res) => {
-  try {
-    const result = await flow.cancelPayment(req.params.id);
-    return res.json({ success: true, data: result });
-  } catch (err) {
-    return res.status(err.statusCode || 500).json({ success: false, error: err.message });
-  }
-});
-
-router.post('/:id/payment-cancel-status', async (req, res) => {
-  try {
-    const result = await flow.checkPaymentCancelStatus(req.params.id);
-    return res.json({ success: true, data: result });
-  } catch (err) {
-    return res.status(err.statusCode || 500).json({ success: false, error: err.message });
-  }
-});
-
-router.post('/:id/cancel-aqsi-operation', async (req, res) => {
-  const { operation_id } = req.body;
-  if (!operation_id) return res.status(422).json({ success: false, error: 'Укажите operation_id' });
-  try {
-    const result = await flow.cancelAqsiOperation(req.params.id, operation_id);
-    return res.json({ success: true, data: result });
-  } catch (err) {
-    return res.status(err.statusCode || 500).json({ success: false, error: err.message });
-  }
-});
-
 // Нет /:id — должен быть смонтирован раньше ordersRouter
 router.post('/recover-terminal-blocker', async (req, res) => {
   const { operation_id } = req.body;

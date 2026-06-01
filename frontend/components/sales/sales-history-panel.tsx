@@ -27,12 +27,10 @@ type SalesHistoryPanelProps = {
   expandedOrderId: string | null;
   orderDetails: Record<string, OrderDetail>;
   detailLoadingId: string | null;
-  cancellingId: string | null;
   refundingId: string | null;
   syncingOrderId: string | null;
   handleToggleOrder: (orderId: string) => void | Promise<void>;
   handleSyncPayment: (orderId: string) => void | Promise<void>;
-  handleCancelOrder: (orderId: string) => void | Promise<void>;
   handleRefundOrder: (orderId: string, item?: OrderItem) => void | Promise<void>;
 };
 
@@ -45,12 +43,10 @@ export function SalesHistoryPanel({
   expandedOrderId,
   orderDetails,
   detailLoadingId,
-  cancellingId,
   refundingId,
   syncingOrderId,
   handleToggleOrder,
   handleSyncPayment,
-  handleCancelOrder,
   handleRefundOrder,
 }: SalesHistoryPanelProps) {
   return (
@@ -104,13 +100,10 @@ export function SalesHistoryPanel({
               const isExpanded = expandedOrderId === historyOrder.id;
               const detail = orderDetails[historyOrder.id];
               const detailLoading = detailLoadingId === historyOrder.id;
-              const cancelling = cancellingId === historyOrder.id;
               const refunding = refundingId === historyOrder.id;
               const syncingHistoryOrder = syncingOrderId === historyOrder.id;
               const canCheckPayment =
                 historyOrder.status === "open" && historyOrder.items_count > 0 && !!historyOrder.aqsi_receipt_id;
-              // cancel only if not yet sent to AQSI (backend requires aqsi_sent_at IS NULL)
-              const canCancel = historyOrder.status === "open" && !historyOrder.aqsi_sent_at;
               const canRefund =
                 historyOrder.status === "confirmed" || historyOrder.status === "partially_refunded";
 
@@ -180,20 +173,6 @@ export function SalesHistoryPanel({
                       </div>
 
                       <div className="flex items-center justify-end gap-2">
-                        {canCancel && (
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void handleCancelOrder(historyOrder.id);
-                            }}
-                            disabled={cancelling}
-                            className={getHistoryActionButtonClass("danger")}
-                          >
-                            {cancelling ? "Отменяем..." : "Отменить"}
-                          </button>
-                        )}
-
                         {canRefund && (
                           <button
                             type="button"

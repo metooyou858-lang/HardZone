@@ -1378,28 +1378,6 @@ router.post('/:id/confirm', async (req, res) => {
   }
 });
 
-router.post('/:id/cancel', async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      `UPDATE orders SET status = 'cancelled', cancelled_at = NOW()
-       WHERE id = $1 AND status = 'open' AND aqsi_sent_at IS NULL
-       RETURNING *`,
-      [req.params.id]
-    );
-
-    if (!rows[0]) {
-      return res.status(409).json({
-        success: false,
-        error: 'Заказ не найден или уже закрыт',
-      });
-    }
-
-    return res.json({ success: true, data: rows[0] });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
-  }
-});
-
 router.post('/:id/refund', async (req, res) => {
   const client = await pool.connect();
 

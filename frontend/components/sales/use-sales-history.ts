@@ -11,7 +11,6 @@ import {
 } from "@/components/sales/sales-shared";
 import type { ClientListItem } from "@/lib/api/clients";
 import {
-  cancelOrder,
   fetchOrder,
   fetchOrders,
   refundOrder,
@@ -61,7 +60,6 @@ export function useSalesHistory({
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [orderDetails, setOrderDetails] = useState<Record<string, OrderDetail>>({});
   const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
-  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [refundingId, setRefundingId] = useState<string | null>(null);
   const [syncingOrderId, setSyncingOrderId] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -155,41 +153,6 @@ export function useSalesHistory({
       setHistoryError(error instanceof Error ? error.message : "Не удалось проверить оплату на кассе");
     } finally {
       setSyncingOrderId(null);
-    }
-  }
-
-  async function handleCancelOrder(orderId: string) {
-    setCancellingId(orderId);
-    setHistoryError(null);
-
-    try {
-      const updatedOrder = await cancelOrder(orderId);
-      setOrders((prev) => {
-        const nextOrders = prev.map((item) => (item.id === orderId ? { ...item, ...updatedOrder } : item));
-        return nextOrders.filter((item) => shouldDisplayInHistory(item, historyFilter));
-      });
-      setOrderDetails((prev) => {
-        if (!prev[orderId]) {
-          return prev;
-        }
-
-        return {
-          ...prev,
-          [orderId]: {
-            ...prev[orderId],
-            ...updatedOrder,
-          },
-        };
-      });
-
-      if (currentOrder?.id === orderId) {
-        setCurrentOrder(null);
-        setSelectedClient(null);
-      }
-    } catch (error) {
-      setHistoryError(error instanceof Error ? error.message : "Не удалось отменить заказ");
-    } finally {
-      setCancellingId(null);
     }
   }
 
@@ -327,12 +290,10 @@ export function useSalesHistory({
     expandedOrderId,
     orderDetails,
     detailLoadingId,
-    cancellingId,
     refundingId,
     syncingOrderId,
     handleToggleOrder,
     handleSyncPayment,
-    handleCancelOrder,
     handleRefundOrder,
     reloadHistory,
   };

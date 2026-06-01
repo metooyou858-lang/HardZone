@@ -59,12 +59,10 @@ type CheckoutPanelProps = {
   setMarkingDraftValue: (lineKey: string, value: string) => void;
   handleConfirmCash: () => void | Promise<void>;
   handleInitiatePayment: () => void | Promise<void>;
-  handleCancelPayment: () => void | Promise<void>;
   handleSyncV4: () => void | Promise<void>;
   receiptError: boolean;
   conflictingOperationId: string | null;
   slipPending: boolean;
-  cancellingPayment: boolean;
   paymentBusy: boolean;
   pendingMarkingLineKey: string | null;
   onMarkingScanned: () => void;
@@ -120,12 +118,10 @@ export function CheckoutPanel({
   setMarkingDraftValue,
   handleConfirmCash,
   handleInitiatePayment,
-  handleCancelPayment,
   handleSyncV4,
   receiptError,
   conflictingOperationId,
   slipPending,
-  cancellingPayment,
   paymentBusy,
   pendingMarkingLineKey,
   onMarkingScanned,
@@ -191,7 +187,7 @@ export function CheckoutPanel({
   }
 
   return (
-    <aside className="flex min-h-0 flex-col rounded-[28px] bg-[var(--bg-card)] shadow-[0_4px_32px_rgba(0,0,0,0.22)]">
+    <aside className="flex min-h-0 max-h-full flex-col overflow-hidden rounded-[28px] bg-[var(--bg-card)] shadow-[0_4px_32px_rgba(0,0,0,0.22)]">
       <div className="border-b border-[var(--line-soft)] p-5">
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -212,7 +208,7 @@ export function CheckoutPanel({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-5">
+      <div className="flex min-h-0 flex-1 flex-col p-5">
         <CheckoutClientCard
           selectedClient={selectedClient}
           clientSelectionLocked={clientSelectionLocked}
@@ -231,23 +227,24 @@ export function CheckoutPanel({
           applyClientSelection={applyClientSelection}
         />
 
-        {orderLoading ? (
-          <div className="py-16 text-center text-sm text-[var(--text-muted)]">
-            Подготавливаем чек...
-          </div>
-        ) : basketLines.length === 0 ? (
-          <div className="rounded-[24px] border border-dashed border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-5 py-12 text-center">
-            <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
-              <ReceiptIcon />
+        <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+          {orderLoading ? (
+            <div className="py-16 text-center text-sm text-[var(--text-muted)]">
+              Подготавливаем чек...
             </div>
-            <p className="mt-4 text-base font-medium text-[var(--text-main)]">Чек пуст</p>
-            <p className="mt-2 text-sm text-[var(--text-muted)]">
-              Выберите позицию слева или отсканируйте штрихкод
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {basketLines.map((line) => (
+          ) : basketLines.length === 0 ? (
+            <div className="rounded-[24px] border border-dashed border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-5 py-12 text-center">
+              <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
+                <ReceiptIcon />
+              </div>
+              <p className="mt-4 text-base font-medium text-[var(--text-main)]">Чек пуст</p>
+              <p className="mt-2 text-sm text-[var(--text-muted)]">
+                Выберите позицию слева или отсканируйте штрихкод
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {basketLines.map((line) => (
               <CheckoutBasketLine
                 key={line.key}
                 line={line}
@@ -276,9 +273,10 @@ export function CheckoutPanel({
                 onMarkingKeyDown={handleMarkingKeyDown}
                 onMarkingFieldFocusChange={onMarkingFieldFocusChange}
               />
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <CheckoutTotals
@@ -301,12 +299,10 @@ export function CheckoutPanel({
         scheduleReceiptDiscount={scheduleReceiptDiscount}
         handleConfirmCash={handleConfirmCash}
         handleInitiatePayment={handleInitiatePayment}
-        handleCancelPayment={handleCancelPayment}
         handleSyncV4={handleSyncV4}
         receiptError={receiptError}
         conflictingOperationId={conflictingOperationId}
         slipPending={slipPending}
-        cancellingPayment={cancellingPayment}
         paymentBusy={paymentBusy}
       />
     </aside>

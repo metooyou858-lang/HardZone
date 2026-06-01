@@ -18,8 +18,6 @@ import {
   initiatePayment,
   syncSlip,
   syncAqsiV4,
-  cancelPayment,
-  checkPaymentCancelStatus,
   recoverTerminalBlocker,
   sendOrderToAqsi,
   updateOrderItem,
@@ -44,15 +42,12 @@ export function useSalesOrder({
   const [orderLoading, setOrderLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [slipPending, setSlipPending] = useState(false);
-  const [cancellingPayment, setCancellingPayment] = useState(false);
   const [conflictingOperationId, setConflictingOperationId] = useState<string | null>(null);
 
   const orderPromiseRef = useRef<Promise<OrderDetail> | null>(null);
   const confirmingRef = useRef(false);
   const slipPollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const cancelPollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const slipSyncInFlightRef = useRef(false);
-  const cancelSyncInFlightRef = useRef(false);
 
   // ── Sub-hooks ────────────────────────────────────────────────────────────────
 
@@ -99,7 +94,7 @@ export function useSalesOrder({
     order?.aqsi_receipt_status === "error" &&
     order?.aqsi_slip_id
   );
-  const paymentBusy = slipPending || cancellingPayment || orderAwaitingPayment;
+  const paymentBusy = slipPending || orderAwaitingPayment;
   const orderLocked = confirming || slipPending || orderAwaitingPayment;
   const clientSelectionLocked = orderLocked || clientApi.clientSaving;
   const orderClientId = clientApi.selectedClient?.id ?? order?.client_id ?? null;
@@ -313,24 +308,10 @@ export function useSalesOrder({
     }
   }
 
-  function stopCancelPolling() {
-    if (cancelPollIntervalRef.current) {
-      clearInterval(cancelPollIntervalRef.current);
-      cancelPollIntervalRef.current = null;
-    }
-  }
-
   function startSlipPolling(orderId: string, intervalMs = 10000) {
     stopSlipPolling();
     slipPollIntervalRef.current = setInterval(() => {
       void handleSlipSync(orderId);
-    }, intervalMs);
-  }
-
-  function startCancelPolling(orderId: string, intervalMs = 3000) {
-    stopCancelPolling();
-    cancelPollIntervalRef.current = setInterval(() => {
-      void handleCancelStatusSync(orderId);
     }, intervalMs);
   }
 
@@ -380,60 +361,25 @@ export function useSalesOrder({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order?.id]);
 
-  const handleCancelStatusSync = useCallback(async (orderId: string) => {
-    if (cancelSyncInFlightRef.current) return;
-    cancelSyncInFlightRef.current = true;
-    try {
-      const result = await checkPaymentCancelStatus(orderId);
-
-      if (result.status === "cancel_pending") {
-        setBanner({ tone: "info", text: result.message ?? "Отмена отправлена на терминал. Подтвердите отмену на кассе." });
-        return;
-      }
-
-      stopCancelPolling();
-
-      if (result.status === "cancelled" || result.status === "no_payment_operation") {
-        setSlipPending(false);
-        setCancellingPayment(false);
-        setBanner({ tone: "info", text: "Оплата отменена. Чек можно изменить." });
-        if (order) await basketApi.refreshOrder(order.id).catch(() => {});
-        return;
-      }
-
-      if (result.status === "completed" || result.status === "finishing") {
-        setBanner({ tone: "info", text: result.message ?? "Операция уже завершается — ожидаем результат оплаты." });
-        startSlipPolling(orderId);
-      }
-    } catch {
-      // network error during poll — keep polling
-    } finally {
-      cancelSyncInFlightRef.current = false;
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [order?.id]);
-
   useEffect(() => {
     return () => {
       stopSlipPolling();
-      stopCancelPolling();
     };
   }, []);
 
   // Auto-resume polling after page reload if payment was in progress
   useEffect(() => {
     if (!order?.id || !order.aqsi_payment_operation_id || order.status !== "open") return;
-    if (slipPollIntervalRef.current || cancelPollIntervalRef.current) return;
+    if (slipPollIntervalRef.current) return;
 
     setSlipPending(true);
     const orderId = order.id;
     if (order.aqsi_payment_status === "cancelling") {
       setBanner({ tone: "info", text: "Отмена отправлена на терминал. Подтвердите отмену на кассе." });
-      startCancelPolling(orderId);
     } else {
       setBanner({ tone: "info", text: "Ожидаем оплату от клиента..." });
-      startSlipPolling(orderId);
     }
+    startSlipPolling(orderId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order?.id, order?.aqsi_payment_operation_id, order?.aqsi_payment_status]);
 
@@ -455,7 +401,7 @@ export function useSalesOrder({
   }, [conflictingOperationId]);
 
   async function handleInitiatePayment() {
-    if (confirmingRef.current || slipPending || cancellingPayment || orderAwaitingPayment) return;
+    if (confirmingRef.current || slipPending || orderAwaitingPayment) return;
     if (!order || order.items.length === 0) return;
 
     if (serviceRequiresClient && !clientApi.selectedClient?.id && !order.client_id) {
@@ -508,41 +454,6 @@ export function useSalesOrder({
       confirmingRef.current = false;
     }
   }
-
-  async function handleCancelPayment() {
-    if (!order) return;
-    stopSlipPolling();
-    stopCancelPolling();
-    // slipPending остаётся true — UI не должен показывать «Оплата картой» пока отмена не подтверждена
-    setCancellingPayment(true);
-    try {
-      const result = await cancelPayment(order.id);
-      if (result.status === "completed") {
-        // Клиент успел оплатить до отмены — продолжаем фискализацию
-        setBanner({ tone: "info", text: "Оплата прошла до отмены — фискализируем..." });
-        startSlipPolling(order.id);
-      } else if (result.status === "finishing") {
-        setBanner({ tone: "info", text: result.message ?? "Операция уже завершается — ожидаем результат оплаты." });
-        startSlipPolling(order.id);
-      } else if (result.status === "cancel_pending") {
-        setBanner({ tone: "info", text: result.message ?? "Отмена отправлена на терминал. Подтвердите отмену на кассе." });
-        startCancelPolling(order.id);
-      } else {
-        // Реальная отмена подтверждена — теперь разрешаем новую оплату
-        setSlipPending(false);
-        stopCancelPolling();
-        setBanner({ tone: "info", text: result.message ?? "Оплата отменена. Можно изменить чек и отправить оплату заново." });
-        if (order) await basketApi.refreshOrder(order.id).catch(() => {});
-      }
-    } catch (error) {
-      setBanner({ tone: "error", text: error instanceof Error ? error.message : "Ошибка отмены" });
-      // Статус неизвестен — возобновляем polling чтобы не оставлять UI завешенным
-      startCancelPolling(order.id);
-    } finally {
-      setCancellingPayment(false);
-    }
-  }
-
 
   // ── Восстановление фискализации после ошибки чека ────────────────────────────
 
@@ -638,13 +549,11 @@ export function useSalesOrder({
     // Actions
     handleConfirmCash,
     handleInitiatePayment,
-    handleCancelPayment,
     handleSyncV4,
     handleStartNewOrder,
     conflictingOperationId,
     getClientSubscriptionLabel,
     slipPending,
-    cancellingPayment,
     paymentBusy,
   };
 }

@@ -184,14 +184,6 @@ export async function initiatePayment(orderId: string): Promise<InitiatePaymentR
   return { status: "started", operation_id: d.operation_id! };
 }
 
-export async function cancelAqsiOperation(orderId: string, operationId: string): Promise<{ cancelled: boolean; paid?: boolean; status?: string }> {
-  const response = await apiFetch<ApiEnvelope<{ cancelled: boolean; paid?: boolean; status?: string }>>(`/orders/${orderId}/cancel-aqsi-operation`, {
-    method: "POST",
-    body: JSON.stringify({ operation_id: operationId }),
-  });
-  return response.data ?? { cancelled: false };
-}
-
 export type SlipSyncStatus = "pending" | "confirmed" | "cancelled" | "failed" | "declined" | "confirmed_no_fiscal" | "receipt_error" | "no_payment_operation";
 
 export async function syncSlip(orderId: string): Promise<{
@@ -206,28 +198,6 @@ export async function syncSlip(orderId: string): Promise<{
     message?: string;
     has_marking_errors?: boolean | null;
   }>>(`/orders/${orderId}/sync-slip`, { method: "POST" });
-  return response.data;
-}
-
-export async function cancelPayment(orderId: string): Promise<{ status: string; operation_status?: string; message?: string }> {
-  const response = await apiFetch<ApiEnvelope<{ status: string; operation_status?: string; message?: string }>>(`/orders/${orderId}/cancel-payment`, {
-    method: "POST",
-  });
-  return response.data;
-}
-
-export async function checkPaymentCancelStatus(orderId: string): Promise<{
-  status: string;
-  operation_status?: string;
-  cancellation_requested?: boolean;
-  message?: string;
-}> {
-  const response = await apiFetch<ApiEnvelope<{
-    status: string;
-    operation_status?: string;
-    cancellation_requested?: boolean;
-    message?: string;
-  }>>(`/orders/${orderId}/payment-cancel-status`, { method: "POST" });
   return response.data;
 }
 
@@ -260,13 +230,6 @@ export async function syncOrderWithAqsi(orderId: string): Promise<{
       order: Order;
     }>
   >(`/orders/${orderId}/sync-aqsi`, {
-    method: "POST",
-  });
-  return response.data;
-}
-
-export async function cancelOrder(orderId: string): Promise<Order> {
-  const response = await apiFetch<ApiEnvelope<Order>>(`/orders/${orderId}/cancel`, {
     method: "POST",
   });
   return response.data;

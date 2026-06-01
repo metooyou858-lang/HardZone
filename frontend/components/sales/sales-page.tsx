@@ -117,7 +117,7 @@ export default function SalesPage() {
       )}
 
       {tab === "cash" ? (
-        <div className="grid min-h-[calc(100vh-11rem)] gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,1fr)]">
+        <div className="grid gap-4 xl:h-[calc(100vh-11rem)] xl:min-h-[640px] xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,1fr)] xl:overflow-hidden">
           <CatalogPanel
             searchInputRef={searchInputRef}
             query={catalogApi.query}
@@ -183,12 +183,10 @@ export default function SalesPage() {
             setMarkingDraftValue={orderApi.setMarkingDraftValue}
             handleConfirmCash={orderApi.handleConfirmCash}
             handleInitiatePayment={orderApi.handleInitiatePayment}
-            handleCancelPayment={orderApi.handleCancelPayment}
             handleSyncV4={orderApi.handleSyncV4}
             receiptError={orderApi.receiptError}
             conflictingOperationId={orderApi.conflictingOperationId}
             slipPending={orderApi.slipPending}
-            cancellingPayment={orderApi.cancellingPayment}
             paymentBusy={orderApi.paymentBusy}
             pendingMarkingLineKey={orderApi.pendingMarkingLineKey}
             onMarkingScanned={orderApi.clearPendingMarkingLineKey}
@@ -205,12 +203,10 @@ export default function SalesPage() {
           expandedOrderId={historyApi.expandedOrderId}
           orderDetails={historyApi.orderDetails}
           detailLoadingId={historyApi.detailLoadingId}
-          cancellingId={historyApi.cancellingId}
           refundingId={historyApi.refundingId}
           syncingOrderId={historyApi.syncingOrderId}
           handleToggleOrder={historyApi.handleToggleOrder}
           handleSyncPayment={historyApi.handleSyncPayment}
-          handleCancelOrder={historyApi.handleCancelOrder}
           handleRefundOrder={historyApi.handleRefundOrder}
         />
       )}
