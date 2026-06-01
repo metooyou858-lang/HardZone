@@ -4,7 +4,7 @@ AQSI - самая рискованная часть проекта. Не мен�
 
 ## Источники
 
-- Swagger: `swagger (3).json`.
+- Swagger: `swagger (3).json` - каноничная документация AQSI по кассе и кассовым операциям.
 - Backend:
   - `backend/src/services/aqsi.js`
   - `backend/src/services/aqsi-v4-flow.js`

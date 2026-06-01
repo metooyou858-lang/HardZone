@@ -11,7 +11,7 @@ HardZone - monorepo CRM для CrossFit-клуба:
 - `backend/src/db/migrations/` - SQL-миграции, применяются через `npm run migrate`.
 - `deploy.ps1` - Windows wrapper для `deploy.sh`.
 - `deploy.sh` - деплой на production `79.137.162.55:/srv/HardZone`.
-- `swagger (3).json` - локальная копия Swagger AQSI.
+- `swagger (3).json` - каноничная локальная Swagger-документация AQSI по кассе и кассовым операциям.
 - `docs/STABILIZATION_PLAN.md` - план стабилизации проекта.
 - `HardZone_CRM_Документ_v4.1.md` - каноничный проектный документ. Копии из `frontend/` и `backend/` удалены, чтобы агенты не читали устаревшие дубли.
 
