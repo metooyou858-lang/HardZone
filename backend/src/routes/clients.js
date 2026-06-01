@@ -224,7 +224,18 @@ router.get('/:id', requireClientsRead, async (req, res) => {
     }
 
     const { rows: subscriptions } = await pool.query(
-      'SELECT * FROM client_subscriptions WHERE client_id = $1 ORDER BY created_at DESC',
+      `SELECT cs.*, p.name AS product_name,
+          COALESCE(
+            ARRAY_AGG(ptt.training_type_id ORDER BY ptt.training_type_id)
+              FILTER (WHERE ptt.training_type_id IS NOT NULL),
+            ARRAY[]::bigint[]
+          ) AS training_type_ids
+       FROM client_subscriptions cs
+       LEFT JOIN products p ON p.id = cs.product_id
+       LEFT JOIN product_training_types ptt ON ptt.product_id = cs.product_id
+       WHERE cs.client_id = $1
+       GROUP BY cs.id, p.name
+       ORDER BY cs.created_at DESC`,
       [req.params.id]
     );
     const { rows: visits } = await pool.query(

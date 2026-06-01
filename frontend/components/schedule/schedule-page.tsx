@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DayTimeline, MonthBoard, WeekBoard } from "@/components/schedule/calendar-views";
-import { GymAccessPanel } from "@/components/schedule/gym-access-panel";
+import { GymSidebarBlock } from "@/components/schedule/gym-sidebar-block";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -13,29 +13,28 @@ import {
   getRangeForView,
   getViewTitle,
   groupSlotsByDate,
-  pageTabs,
   parseIsoDate,
+  parseTimeToMinutes,
+  addMinutesToTime,
   PlusIcon,
   type CalendarView,
-  type PageTab,
   shiftDateByView,
   type SlotEditorState,
   toIsoDate,
   viewOptions,
-  withAlpha,
 } from "@/components/schedule/schedule-shared";
+import { DatePickerPopover } from "@/components/schedule/date-picker-popover";
 import { SlotDetailsModal } from "@/components/schedule/slot-details-modal";
 import { SlotEditorModal } from "@/components/schedule/slot-editor-modal";
-import { TrainerFormModal } from "@/components/schedule/trainer-form-modal";
 import { hasModuleAccess, type AuthModulePermission } from "@/lib/access";
 import { fetchProducts, type Product } from "@/lib/api/products";
 import { fetchScheduleSlots, type ScheduleSlot } from "@/lib/api/schedule";
-import { deleteTrainer, fetchTrainers, type Trainer } from "@/lib/api/trainers";
+import { fetchTrainers, type Trainer } from "@/lib/api/trainers";
 import { fetchTrainingTypes, type TrainingType } from "@/lib/api/training-types";
+
 export default function SchedulePage() {
   const [currentModules, setCurrentModules] = useState<AuthModulePermission[]>([]);
-  const [pageTab, setPageTab] = useState<PageTab>("schedule");
-  const [view, setView] = useState<CalendarView>("week");
+  const [view, setView] = useState<CalendarView>("day");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [slots, setSlots] = useState<ScheduleSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(true);
@@ -50,71 +49,57 @@ export default function SchedulePage() {
 
   const [slotEditorState, setSlotEditorState] = useState<SlotEditorState>(null);
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
-  const [trainerModalOpen, setTrainerModalOpen] = useState(false);
-  const [editingTrainer, setEditingTrainer] = useState<Trainer | null>(null);
-  const [deletingTrainerId, setDeletingTrainerId] = useState<string | null>(null);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   const range = useMemo(() => getRangeForView(view, currentDate), [currentDate, view]);
   const slotsByDate = useMemo(() => groupSlotsByDate(slots), [slots]);
   const selectedDayKey = toIsoDate(currentDate);
   const visibleDaySlots = slotsByDate.get(selectedDayKey) ?? [];
+
+  // Занятие, идущее прямо сейчас (только для сегодня)
+  const liveSlot = useMemo(() => {
+    const todayKey = toIsoDate(new Date());
+    const todaySlots = slotsByDate.get(todayKey) ?? [];
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    return todaySlots.find((s) => {
+      if (s.status === "cancelled") return false;
+      const start = parseTimeToMinutes(s.start_time);
+      const end = start + s.duration_minutes;
+      return nowMin >= start && nowMin < end;
+    }) ?? null;
+  }, [slotsByDate]);
+
   const canManageSchedule =
-    hasModuleAccess(currentModules, "schedule") &&
-    (
-      hasModuleAccess(currentModules, "clients") ||
-      hasModuleAccess(currentModules, "warehouse") ||
-      hasModuleAccess(currentModules, "services") ||
-      hasModuleAccess(currentModules, "users_manage")
-    );
-  const canManageTrainers = hasModuleAccess(currentModules, "schedule") && hasModuleAccess(currentModules, "services");
-  const canManageGymHours = canManageSchedule;
-  const availableTabs = pageTabs.filter((tab) => (tab.value === "trainers" ? canManageTrainers : true));
+    hasModuleAccess(currentModules, "schedule_edit_groups") ||
+    hasModuleAccess(currentModules, "schedule_edit_personal");
+  const canCancelSlot = hasModuleAccess(currentModules, "schedule_cancel");
+  const canManageClients = hasModuleAccess(currentModules, "schedule_clients");
+  const canManageAttendance = hasModuleAccess(currentModules, "schedule_attendance");
+  const canGymAccess = hasModuleAccess(currentModules, "schedule_gym");
 
   useEffect(() => {
     let cancelled = false;
 
     fetch("/auth-api/me", { credentials: "same-origin" })
       .then(async (response) => {
-        if (!response.ok) {
-          return [];
-        }
-
+        if (!response.ok) return [];
         const data = (await response.json()) as { data?: { user?: { modules?: AuthModulePermission[] } } };
         return data.data?.user?.modules ?? [];
       })
-      .then((modules) => {
-        if (!cancelled) {
-          setCurrentModules(modules);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setCurrentModules([]);
-        }
-      });
+      .then((modules) => { if (!cancelled) setCurrentModules(modules); })
+      .catch(() => { if (!cancelled) setCurrentModules([]); });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
-    if (pageTab === "trainers" && !canManageTrainers) {
-      setPageTab("schedule");
-    }
-  }, [canManageTrainers, pageTab]);
-
-  useEffect(() => {
     let cancelled = false;
-
     setSupportLoading(true);
 
     Promise.all([fetchTrainingTypes(), fetchTrainers(), fetchProducts({ type: "service" })])
       .then(([loadedTrainingTypes, loadedTrainers, loadedServices]) => {
-        if (cancelled) {
-          return;
-        }
-
+        if (cancelled) return;
         setTrainingTypes(loadedTrainingTypes);
         setTrainers(loadedTrainers);
         setServices(loadedServices);
@@ -127,392 +112,201 @@ export default function SchedulePage() {
           });
         }
       })
-      .finally(() => {
-        if (!cancelled) {
-          setSupportLoading(false);
-        }
-      });
+      .finally(() => { if (!cancelled) setSupportLoading(false); });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [reloadToken]);
 
   useEffect(() => {
-    if (pageTab !== "schedule") {
-      return;
-    }
-
     let cancelled = false;
     setSlotsLoading(true);
     setError(null);
 
-    fetchScheduleSlots({
-      date_from: range.from,
-      date_to: range.to,
-    })
-      .then((response) => {
-        if (!cancelled) {
-          setSlots(response);
-        }
-      })
+    fetchScheduleSlots({ date_from: range.from, date_to: range.to })
+      .then((response) => { if (!cancelled) setSlots(response); })
       .catch((loadError) => {
         if (!cancelled) {
           setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить расписание");
         }
       })
-      .finally(() => {
-        if (!cancelled) {
-          setSlotsLoading(false);
-        }
-      });
+      .finally(() => { if (!cancelled) setSlotsLoading(false); });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [pageTab, range.from, range.to, reloadToken]);
+    return () => { cancelled = true; };
+  }, [range.from, range.to, reloadToken]);
 
   function refreshPage() {
     setReloadToken((value) => value + 1);
   }
 
-  async function handleDeleteTrainer(id: string) {
-    if (!window.confirm("Удалить тренера из активного списка?")) {
-      return;
-    }
-
-    setDeletingTrainerId(id);
-
-    try {
-      await deleteTrainer(id);
-      refreshPage();
-      setBanner({ tone: "success", text: "Тренер скрыт из активного списка" });
-    } catch (deleteError) {
-      setBanner({
-        tone: "error",
-        text: deleteError instanceof Error ? deleteError.message : "Не удалось удалить тренера",
-      });
-    } finally {
-      setDeletingTrainerId(null);
-    }
-  }
-
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <h1 className="font-[family:var(--font-heading)] text-3xl font-semibold tracking-tight text-[var(--text-main)] sm:text-4xl">
-            Расписание
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm text-[var(--text-muted)]">
-            Календарь занятий, запись клиентов, посещаемость и управление тренерским составом.
-          </p>
-        </div>
-
-        <div className="inline-flex rounded-full border border-[var(--line-soft)] bg-[var(--bg-card)] p-1">
-          {availableTabs.map((tab) => (
-            <button
-              key={tab.value}
-              type="button"
-              onClick={() => setPageTab(tab.value)}
-              className={`rounded-full px-4 py-2 text-sm transition-colors ${
-                pageTab === tab.value
-                  ? "bg-[var(--accent)] text-[#062b26]"
-                  : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => setPageTab("gym")}
-            className={`rounded-full px-4 py-2 text-sm transition-colors ${
-              pageTab === "gym"
-                ? "bg-[var(--accent)] text-[#062b26]"
-                : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
-            }`}
-          >
-            Зал
-          </button>
-        </div>
+      <div>
+        <h1 className="font-[family:var(--font-heading)] text-3xl font-semibold tracking-tight text-[var(--text-main)] sm:text-4xl">
+          Расписание
+        </h1>
+        <p className="mt-2 max-w-2xl text-sm text-[var(--text-muted)]">
+          Календарь занятий, запись клиентов и посещаемость.
+        </p>
       </div>
 
-      {banner && (
-        <div className={`rounded-[22px] border px-4 py-3 text-sm ${getBannerClass(banner.tone)}`}>{banner.text}</div>
+      {/* Live-баннер: идёт занятие прямо сейчас */}
+      {liveSlot && (
+        <div
+          className="flex items-center gap-3 rounded-[0.75rem] px-[18px] py-[10px]"
+          style={{ background: "rgba(255,116,57,0.08)" }}
+        >
+          <span
+            className="inline-block h-2 w-2 shrink-0 rounded-full bg-[var(--energy)]"
+            style={{ animation: "pulse-glow 2s infinite" }}
+          />
+          <span className="text-[13px] font-medium text-[var(--energy)]">
+            Занятие идёт сейчас&nbsp;·&nbsp;
+            {liveSlot.training_type_name || liveSlot.slot_type}&nbsp;
+            {formatTime(liveSlot.start_time)}–{addMinutesToTime(liveSlot.start_time, liveSlot.duration_minutes)}
+            {liveSlot.trainer_name ? `\u00a0·\u00a0${liveSlot.trainer_name}` : ""}
+          </span>
+        </div>
       )}
 
-      {pageTab === "schedule" ? (
-        <>
-          <section className="rounded-[30px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-              <div className="inline-flex rounded-full border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-1">
-                {viewOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setView(option.value)}
-                    className={`rounded-full px-4 py-2 text-sm transition-colors ${
-                      view === option.value
-                        ? "bg-[var(--accent)] text-[#062b26]"
-                        : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
+      {banner && (
+        <div className={`rounded-[1.5rem] px-4 py-3 text-sm ${getBannerClass(banner.tone)}`}>
+          {banner.text}
+        </div>
+      )}
 
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentDate((value) => shiftDateByView(value, view, -1))}
-                    className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[var(--line-soft)] text-[var(--text-main)] transition-colors hover:bg-[rgba(255,255,255,0.04)]"
-                    aria-label="Назад"
-                  >
-                    <ChevronLeftIcon />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentDate(new Date())}
-                    className="rounded-[18px] border border-[var(--line-soft)] px-4 py-2.5 text-sm text-[var(--text-main)] transition-colors hover:bg-[rgba(255,255,255,0.04)]"
-                  >
-                    Сегодня
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentDate((value) => shiftDateByView(value, view, 1))}
-                    className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[var(--line-soft)] text-[var(--text-main)] transition-colors hover:bg-[rgba(255,255,255,0.04)]"
-                    aria-label="Вперёд"
-                  >
-                    <ChevronRightIcon />
-                  </button>
-                </div>
-
-                <div className="min-w-[230px] rounded-[20px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm font-medium text-[var(--text-main)]">
-                  {getViewTitle(view, currentDate)}
-                </div>
-
-                {canManageSchedule ? (
-                  <button
-                  type="button"
-                  onClick={() =>
-                    setSlotEditorState({
-                      slot: null,
-                      defaultDate: currentDate,
-                      defaultTime: "09:00",
-                    })
-                  }
-                  className="inline-flex items-center justify-center gap-2 rounded-[18px] bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110"
-                >
-                  <PlusIcon />
-                  Добавить
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          </section>
-
-          <section className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="space-y-4">
-              {error && (
-                <div className="rounded-[22px] border border-[rgba(248,81,73,0.35)] bg-[rgba(248,81,73,0.12)] px-4 py-3 text-sm text-[var(--danger)]">
-                  {error}
-                </div>
-              )}
-
-              {slotsLoading || supportLoading ? (
-                <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-6 py-20 text-center text-sm text-[var(--text-muted)]">
-                  Загружаем расписание...
-                </div>
-              ) : view === "day" ? (
-                <DayTimeline
-                  date={currentDate}
-                  slots={visibleDaySlots}
-                  onSlotClick={(slot) => setSelectedSlotId(slot.id)}
-                  onEmptyClick={(dateValue, startTime) => {
-                    if (!canManageSchedule) {
-                      return;
-                    }
-
-                    setSlotEditorState({
-                      slot: null,
-                      defaultDate: dateValue,
-                      defaultTime: startTime,
-                    });
-                  }}
-                />
-              ) : view === "week" ? (
-                <WeekBoard
-                  anchorDate={currentDate}
-                  slotsByDate={slotsByDate}
-                  onSlotClick={(slot) => setSelectedSlotId(slot.id)}
-                  onDaySelect={(day) => {
-                    setCurrentDate(day);
-                    setView("day");
-                  }}
-                  onCreate={(day) => {
-                    if (!canManageSchedule) {
-                      return;
-                    }
-
-                    setSlotEditorState({
-                      slot: null,
-                      defaultDate: day,
-                      defaultTime: "09:00",
-                    });
-                  }}
-                />
-              ) : (
-                <MonthBoard
-                  anchorDate={currentDate}
-                  slotsByDate={slotsByDate}
-                  onDaySelect={(day) => {
-                    setCurrentDate(day);
-                    setView("day");
-                  }}
-                  onSlotClick={(slot) => setSelectedSlotId(slot.id)}
-                />
-              )}
-            </div>
-
-            <aside className="space-y-4">
-              <div className="rounded-[28px] border border-[var(--line-soft)] bg-[linear-gradient(180deg,rgba(0,191,165,0.16),rgba(13,17,23,0.18))] p-5">
-                <p className="text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">Контроль</p>
-                <p className="mt-3 text-2xl font-semibold text-[var(--text-main)]">{slots.length}</p>
-                <p className="mt-1 text-sm text-[var(--text-muted)]">занятий в текущем диапазоне</p>
-              </div>
-
-              <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
-                <p className="text-sm font-semibold text-[var(--text-main)]">Справочники</p>
-                <div className="mt-4 space-y-3 text-sm text-[var(--text-main)]">
-                  <div className="flex items-center justify-between rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3">
-                    <span>Виды тренировок</span>
-                    <span className="text-[var(--accent)]">{trainingTypes.length}</span>
-                  </div>
-                  <div className="flex items-center justify-between rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3">
-                    <span>Активные тренеры</span>
-                    <span className="text-[var(--accent)]">{trainers.length}</span>
-                  </div>
-                  <div className="flex items-center justify-between rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3">
-                    <span>Услуги для списания</span>
-                    <span className="text-[var(--accent)]">{services.length}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
-                <p className="text-sm font-semibold text-[var(--text-main)]">Подсказки</p>
-                <ul className="mt-4 space-y-3 text-sm text-[var(--text-muted)]">
-                  <li>В дневном виде можно кликнуть по свободному времени и сразу создать слот.</li>
-                  <li>Запись клиента не списывает абонемент. Списание происходит только при отметке посещения.</li>
-                  <li>Неотмеченные записи после окончания занятия автоматически переходят в статус “Пропустил”.</li>
-                </ul>
-              </div>
-            </aside>
-          </section>
-        </>
-      ) : pageTab === "gym" ? (
-        <GymAccessPanel canManageHours={canManageGymHours} onNotice={(nextBanner) => setBanner(nextBanner)} />
-      ) : (
-        <section className="space-y-4">
-          <div className="flex flex-col gap-4 rounded-[30px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-lg font-semibold text-[var(--text-main)]">Тренеры</p>
-              <p className="mt-1 text-sm text-[var(--text-muted)]">Контакты, био и привязка к видам тренировок</p>
-            </div>
-
-            {canManageTrainers ? (
+      <section
+        className="rounded-[2rem] p-5"
+        style={{ background: "var(--bg-card)", boxShadow: "0 20px 40px rgba(0,0,0,0.2)" }}
+      >
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="inline-flex rounded-full p-1" style={{ background: "var(--bg-card-soft)" }}>
+            {viewOptions.map((option) => (
               <button
-              type="button"
-              onClick={() => {
-                setEditingTrainer(null);
-                setTrainerModalOpen(true);
-              }}
-              className="inline-flex items-center justify-center gap-2 rounded-[18px] bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110"
-            >
-              <PlusIcon />
-              Новый тренер
+                key={option.value}
+                type="button"
+                onClick={() => setView(option.value)}
+                className={`rounded-full px-4 py-2 text-sm font-medium transition-all ${
+                  view === option.value
+                    ? ""
+                    : "text-[var(--text-muted)] hover:bg-[rgba(255,255,255,0.07)] hover:text-[var(--text-main)]"
+                }`}
+                style={
+                  view === option.value
+                    ? { background: "var(--accent-grad)", color: "var(--text-inverse)" }
+                    : {}
+                }
+              >
+                {option.label}
               </button>
-            ) : null}
+            ))}
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            {trainers.length === 0 ? (
-              <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-6 py-16 text-center text-sm text-[var(--text-muted)]">
-                Тренеров пока нет
-              </div>
-            ) : (
-              trainers.map((trainer) => (
-                <div key={trainer.id} className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-xl font-semibold text-[var(--text-main)]">
-                        {trainer.last_name} {trainer.first_name}
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-[var(--text-muted)]">
-                        <span>{trainer.phone || "Телефон не указан"}</span>
-                        {trainer.email && (
-                          <>
-                            <span>•</span>
-                            <span>{trainer.email}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentDate((value) => shiftDateByView(value, view, -1))}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-[1rem] text-[var(--text-muted)] transition-colors hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--text-main)]"
+                aria-label="Назад"
+              >
+                <ChevronLeftIcon />
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentDate(new Date())}
+                className="rounded-[1rem] px-4 py-2.5 text-sm font-medium text-[var(--text-muted)] transition-colors hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--text-main)]"
+              >
+                Сегодня
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentDate((value) => shiftDateByView(value, view, 1))}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-[1rem] text-[var(--text-muted)] transition-colors hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--text-main)]"
+                aria-label="Вперёд"
+              >
+                <ChevronRightIcon />
+              </button>
+            </div>
 
-                    {canManageTrainers ? (
-                      <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingTrainer(trainer);
-                          setTrainerModalOpen(true);
-                        }}
-                        className="rounded-[16px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-main)] transition-colors hover:bg-[rgba(255,255,255,0.04)]"
-                      >
-                        Редактировать
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteTrainer(trainer.id)}
-                        disabled={deletingTrainerId === trainer.id}
-                        className="rounded-[16px] border border-[rgba(248,81,73,0.24)] px-3 py-2 text-sm text-[var(--danger)] transition-colors hover:bg-[rgba(248,81,73,0.12)] disabled:opacity-50"
-                      >
-                        {deletingTrainerId === trainer.id ? "Удаляем..." : "Удалить"}
-                      </button>
-                      </div>
-                    ) : null}
-                  </div>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setDatePickerOpen((v) => !v)}
+                className={`group relative min-w-[230px] overflow-hidden rounded-[1.25rem] px-4 py-3 text-center text-sm font-medium transition-colors ${
+                  datePickerOpen ? "text-[var(--accent)]" : "text-[var(--text-main)]"
+                }`}
+                style={{ background: "var(--bg-card-soft)" }}
+              >
+                <span className="absolute inset-0 bg-white/0 transition-colors group-hover:bg-white/[0.06]" />
+                <span className="relative">{getViewTitle(view, currentDate)}</span>
+              </button>
+              {datePickerOpen && (
+                <DatePickerPopover
+                  value={currentDate}
+                  onChange={(date) => setCurrentDate(date)}
+                  onClose={() => setDatePickerOpen(false)}
+                />
+              )}
+            </div>
 
-                  <p className="mt-4 text-sm text-[var(--text-muted)]">{trainer.bio || "Описание пока не добавлено"}</p>
-
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {trainer.training_types.length > 0 ? (
-                      trainer.training_types.map((type) => (
-                        <span
-                          key={type.id}
-                          className="rounded-full border px-3 py-1 text-xs"
-                          style={{
-                            borderColor: withAlpha(type.color || "#00BCD4", "66", "rgba(0,191,165,0.36)"),
-                            backgroundColor: withAlpha(type.color || "#00BCD4", "18", "rgba(0,191,165,0.12)"),
-                            color: type.color || "#00BCD4",
-                          }}
-                        >
-                          {type.name}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-sm text-[var(--text-muted)]">Виды тренировок не выбраны</span>
-                    )}
-                  </div>
-                </div>
-              ))
+            {canManageSchedule && (
+              <button
+                type="button"
+                onClick={() => setSlotEditorState({ slot: null, defaultDate: currentDate, defaultTime: "09:00" })}
+                className="inline-flex items-center justify-center gap-2 rounded-[1.25rem] px-5 py-3 text-sm font-semibold transition-all hover:brightness-110"
+                style={{ background: "var(--accent-grad)", color: "var(--text-inverse)", boxShadow: "0 4px 16px rgba(94,244,216,0.25)" }}
+              >
+                <PlusIcon />
+                Добавить
+              </button>
             )}
           </div>
-        </section>
-      )}
+        </div>
+      </section>
+
+      <GymSidebarBlock canGymAccess={canGymAccess} onNotice={(notice) => setBanner(notice)} />
+
+      <section className="space-y-4">
+        {error && (
+          <div className="rounded-[22px] border border-[rgba(248,81,73,0.35)] bg-[rgba(248,81,73,0.12)] px-4 py-3 text-sm text-[var(--danger)]">
+            {error}
+          </div>
+        )}
+
+        {slotsLoading || supportLoading ? (
+          <div className="rounded-[2rem] px-6 py-20 text-center text-sm text-[var(--text-muted)]" style={{ background: "var(--bg-card)" }}>
+            Загружаем расписание...
+          </div>
+        ) : view === "day" ? (
+          <DayTimeline
+            date={currentDate}
+            slots={visibleDaySlots}
+            onSlotClick={(slot) => setSelectedSlotId(slot.id)}
+            onEmptyClick={(dateValue, startTime) => {
+              if (!canManageSchedule) return;
+              setSlotEditorState({ slot: null, defaultDate: dateValue, defaultTime: startTime });
+            }}
+          />
+        ) : view === "week" ? (
+          <WeekBoard
+            anchorDate={currentDate}
+            slotsByDate={slotsByDate}
+            onSlotClick={(slot) => setSelectedSlotId(slot.id)}
+            onDaySelect={(day) => { setCurrentDate(day); setView("day"); }}
+            onCreate={(day) => {
+              if (!canManageSchedule) return;
+              setSlotEditorState({ slot: null, defaultDate: day, defaultTime: "09:00" });
+            }}
+          />
+        ) : (
+          <MonthBoard
+            anchorDate={currentDate}
+            slotsByDate={slotsByDate}
+            onDaySelect={(day) => { setCurrentDate(day); setView("day"); }}
+            onSlotClick={(slot) => setSelectedSlotId(slot.id)}
+          />
+        )}
+      </section>
 
       <SlotEditorModal
         state={slotEditorState}
@@ -527,26 +321,12 @@ export default function SchedulePage() {
         }}
       />
 
-      {trainerModalOpen && (
-        <TrainerFormModal
-          trainer={editingTrainer}
-          trainingTypes={trainingTypes}
-          onClose={() => {
-            setTrainerModalOpen(false);
-            setEditingTrainer(null);
-          }}
-          onSaved={(message) => {
-            setTrainerModalOpen(false);
-            setEditingTrainer(null);
-            refreshPage();
-            setBanner({ tone: "success", text: message });
-          }}
-        />
-      )}
-
       <SlotDetailsModal
         slotId={selectedSlotId}
-        canManageSchedule={canManageSchedule}
+        canEditSchedule={canManageSchedule}
+        canCancelSlot={canCancelSlot}
+        canManageClients={canManageClients}
+        canManageAttendance={canManageAttendance}
         onClose={() => setSelectedSlotId(null)}
         onEdit={(slot) => {
           setSelectedSlotId(null);
@@ -556,12 +336,9 @@ export default function SchedulePage() {
             defaultTime: formatTime(slot.start_time),
           });
         }}
-        onChanged={() => {
-          refreshPage();
-        }}
+        onChanged={refreshPage}
         onNotice={(nextBanner) => setBanner(nextBanner)}
       />
     </div>
   );
 }
-

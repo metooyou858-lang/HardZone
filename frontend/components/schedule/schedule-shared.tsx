@@ -1,6 +1,5 @@
 import type { ClientDetail } from "@/lib/api/clients";
 import type { ScheduleBooking, ScheduleSlot, ScheduleSlotDetail, SlotType } from "@/lib/api/schedule";
-export type PageTab = "schedule" | "gym" | "trainers";
 export type CalendarView = "day" | "week" | "month";
 export type EntryMode = "single" | "regular";
 export type BannerTone = "info" | "success" | "error";
@@ -16,8 +15,8 @@ export type SlotEditorState = {
   defaultTime: string;
 } | null;
 
-const PAGE_START_HOUR = 6;
-const PAGE_END_HOUR = 22;
+export const PAGE_START_HOUR = 6;
+export const PAGE_END_HOUR = 22;
 const HOUR_HEIGHT = 72;
 const HOURS = Array.from({ length: PAGE_END_HOUR - PAGE_START_HOUR + 1 }, (_, index) => PAGE_START_HOUR + index);
 
@@ -27,10 +26,6 @@ export const viewOptions: { value: CalendarView; label: string }[] = [
   { value: "month", label: "Месяц" },
 ];
 
-export const pageTabs: { value: PageTab; label: string }[] = [
-  { value: "schedule", label: "Расписание" },
-  { value: "trainers", label: "Тренеры" },
-];
 
 export const slotTypeOptions: { value: SlotType; label: string }[] = [
   { value: "group", label: "Групповое" },
@@ -156,13 +151,13 @@ function parseTime(value: string) {
   };
 }
 
-function addDays(date: Date, days: number) {
+export function addDays(date: Date, days: number) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
   return next;
 }
 
-function startOfWeek(date: Date) {
+export function startOfWeek(date: Date) {
   const day = date.getDay() === 0 ? 7 : date.getDay();
   return addDays(new Date(date.getFullYear(), date.getMonth(), date.getDate()), 1 - day);
 }
@@ -179,7 +174,7 @@ function endOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth() + 1, 0);
 }
 
-function getMonthGrid(date: Date) {
+export function getMonthGrid(date: Date) {
   const start = startOfWeek(startOfMonth(date));
   const end = endOfWeek(endOfMonth(date));
   const days: Date[] = [];
@@ -274,7 +269,7 @@ export function shiftDateByView(date: Date, view: CalendarView, direction: -1 | 
   return new Date(date.getFullYear(), date.getMonth() + direction, 1);
 }
 
-function parseTimeToMinutes(value: string) {
+export function parseTimeToMinutes(value: string) {
   const { hours, minutes } = parseTime(value);
   return hours * 60 + minutes;
 }

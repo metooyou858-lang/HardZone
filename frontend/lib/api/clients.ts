@@ -25,6 +25,9 @@ export type Client = {
 export type ClientSubscription = {
   id: string;
   client_id: string;
+  product_id: string | null;
+  product_name: string | null;
+  training_type_ids: number[];
   type: SubscriptionType;
   visits_total: number | null;
   visits_left: number | null;

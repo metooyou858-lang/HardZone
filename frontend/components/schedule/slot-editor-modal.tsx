@@ -84,6 +84,15 @@ export function SlotEditorModal({
     setError(null);
   }, [state]);
 
+  useEffect(() => {
+    if (!state) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [state, onClose]);
+
   if (!state) {
     return null;
   }
@@ -179,8 +188,15 @@ export function SlotEditorModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(5,8,12,0.78)] px-4 py-8">
-      <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-[30px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-6 shadow-[0_30px_90px_rgba(0,0,0,0.45)]">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(5,8,12,0.78)] px-4 py-8"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-[2.5rem] p-6"
+        style={{ background: "var(--bg-card)", boxShadow: "0 30px 90px rgba(0,0,0,0.5)" }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <div className="flex items-start justify-between gap-4">
           <div className="max-w-2xl">
             <p className="font-[family:var(--font-heading)] text-[1.9rem] font-semibold leading-none text-[var(--text-main)]">
@@ -207,9 +223,9 @@ export function SlotEditorModal({
         )}
 
         {!editorState.slot && (
-          <div className="mt-6 rounded-[24px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4">
+          <div className="mt-6 rounded-[2rem] p-4" style={{ background: "var(--bg-card-soft)" }}>
             <p className={labelCls}>Вид занятия</p>
-            <div className="mt-3 inline-flex rounded-full border border-[var(--line-soft)] bg-[var(--bg-card)] p-1">
+            <div className="mt-3 inline-flex rounded-full p-1" style={{ background: "var(--bg-app)" }}>
               {([
                 { value: "single", label: "Разовое" },
                 { value: "regular", label: "Регулярное" },
@@ -218,11 +234,12 @@ export function SlotEditorModal({
                   key={item.value}
                   type="button"
                   onClick={() => setEntryMode(item.value)}
-                  className={`rounded-full px-4 py-2 text-sm transition-colors ${
+                  className="rounded-full px-4 py-2 text-sm font-medium transition-all"
+                  style={
                     entryMode === item.value
-                      ? "bg-[var(--accent)] text-[#062b26]"
-                      : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
-                  }`}
+                      ? { background: "var(--accent-grad)", color: "var(--text-inverse)" }
+                      : { color: "var(--text-muted)" }
+                  }
                 >
                   {item.label}
                 </button>
@@ -232,7 +249,7 @@ export function SlotEditorModal({
         )}
 
         <div className="mt-6 grid gap-4 lg:grid-cols-2">
-          <div className="rounded-[24px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4">
+          <div className="rounded-[2rem] p-4" style={{ background: "var(--bg-card-soft)" }}>
             <p className={labelCls}>Тип занятия</p>
             <div className="mt-3 grid grid-cols-2 gap-2">
               {slotTypeOptions.map((option) => (
@@ -301,24 +318,9 @@ export function SlotEditorModal({
               </select>
             </div>
 
-            <div className="mt-4">
-              <label className={labelCls}>Услуга для списания</label>
-              <select
-                value={productId}
-                onChange={(event) => setProductId(event.target.value)}
-                className={`mt-2 ${inputCls}`}
-              >
-                <option value="">Без услуги</option>
-                {services.map((service) => (
-                  <option key={service.id} value={service.id}>
-                    {service.name}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
 
-          <div className="rounded-[24px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4">
+          <div className="rounded-[2rem] p-4" style={{ background: "var(--bg-card-soft)" }}>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className={labelCls}>Дата</label>
@@ -385,7 +387,7 @@ export function SlotEditorModal({
             </div>
 
             {!editorState.slot && entryMode === "regular" && (
-              <div className="mt-4 rounded-[20px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-4">
+              <div className="mt-4 rounded-[1.5rem] p-4" style={{ background: "var(--bg-app)" }}>
                 <p className={labelCls}>Дни недели</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {weekdayOptions.map((day) => {
@@ -437,7 +439,8 @@ export function SlotEditorModal({
             type="button"
             onClick={() => void handleSubmit()}
             disabled={saving}
-            className="inline-flex items-center gap-2 rounded-[18px] bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-[1.25rem] px-5 py-3 text-sm font-semibold transition-all hover:brightness-110 disabled:opacity-50"
+            style={{ background: "var(--accent-grad)", color: "var(--text-inverse)", boxShadow: "0 4px 16px rgba(94,244,216,0.25)" }}
           >
             <PlusIcon />
             {saving ? "Сохраняем..." : editorState.slot ? "Сохранить" : "Создать"}
@@ -445,7 +448,7 @@ export function SlotEditorModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-[18px] border border-[var(--line-soft)] px-5 py-3 text-sm text-[var(--text-main)] transition-colors hover:bg-[rgba(255,255,255,0.04)]"
+            className="rounded-[1.25rem] px-5 py-3 text-sm text-[var(--text-muted)] transition-colors hover:text-[var(--text-main)] hover:bg-[rgba(255,255,255,0.05)]"
           >
             Отмена
           </button>

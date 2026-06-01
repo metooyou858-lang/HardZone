@@ -4,8 +4,7 @@ const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
 
 const router = express.Router();
-const requireScheduleRead = authMiddleware.requireRole('owner', 'admin');
-const requireScheduleManage = authMiddleware.requireModule('clients', 'warehouse', 'services', 'users_manage');
+const requireModule = authMiddleware.requireModule;
 const CLUB_TIME_ZONE = process.env.APP_TIMEZONE || 'Asia/Vladivostok';
 
 function getClubNowParts(date = new Date()) {
@@ -120,7 +119,7 @@ async function buildGymOverview(executor = pool) {
   };
 }
 
-router.get('/gym-hours', requireScheduleRead, async (req, res) => {
+router.get('/gym-hours', async (req, res) => {
   try {
     const overview = await buildGymOverview();
     res.json({ success: true, data: overview });
@@ -129,7 +128,7 @@ router.get('/gym-hours', requireScheduleRead, async (req, res) => {
   }
 });
 
-router.put('/gym-hours', requireScheduleManage, async (req, res) => {
+router.put('/gym-hours', requireModule('schedule_gym'), async (req, res) => {
   try {
     const days = Array.isArray(req.body?.days) ? req.body.days : null;
 
@@ -185,9 +184,9 @@ router.put('/gym-hours', requireScheduleManage, async (req, res) => {
   }
 });
 
-router.post('/open-gym/check-in', requireScheduleRead, async (req, res) => {
+router.post('/open-gym/check-in', requireModule('schedule_gym'), async (req, res) => {
   try {
-    const { client_id, barcode, created_by = 'admin' } = req.body || {};
+    const { client_id, barcode, subscription_id, created_by = 'admin' } = req.body || {};
 
     if (!client_id && !barcode) {
       return res.status(422).json({ success: false, error: 'Укажите клиента или штрихкод' });
@@ -201,19 +200,11 @@ router.post('/open-gym/check-in', requireScheduleRead, async (req, res) => {
 
       const clientLookup = client_id
         ? await client.query(
-            `
-              SELECT id, first_name, last_name, phone, barcode
-              FROM clients
-              WHERE id = $1
-            `,
+            `SELECT id, first_name, last_name, phone, barcode FROM clients WHERE id = $1`,
             [client_id]
           )
         : await client.query(
-            `
-              SELECT id, first_name, last_name, phone, barcode
-              FROM clients
-              WHERE barcode = $1
-            `,
+            `SELECT id, first_name, last_name, phone, barcode FROM clients WHERE barcode = $1`,
             [barcode]
           );
 
@@ -241,13 +232,52 @@ router.post('/open-gym/check-in', requireScheduleRead, async (req, res) => {
         return res.status(409).json({ success: false, error: 'Сегодня клиент уже отмечен в зале' });
       }
 
+      // Валидация и списание абонемента
+      let resolvedSubscriptionId = null;
+
+      if (subscription_id) {
+        const { rows: subRows } = await client.query(
+          `SELECT * FROM client_subscriptions WHERE id = $1 AND client_id = $2`,
+          [subscription_id, customer.id]
+        );
+        const sub = subRows[0];
+
+        if (!sub) {
+          await client.query('ROLLBACK');
+          return res.status(404).json({ success: false, error: 'Абонемент не найден' });
+        }
+
+        if (sub.status !== 'active') {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ success: false, error: 'Абонемент неактивен' });
+        }
+
+        if (['visits', 'single'].includes(sub.type)) {
+          if ((sub.visits_left || 0) <= 0) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ success: false, error: 'Визиты по абонементу исчерпаны' });
+          }
+
+          const newVisitsLeft = (sub.visits_left || 0) - 1;
+
+          await client.query(
+            `UPDATE client_subscriptions
+             SET visits_left = $1,
+                 status = CASE WHEN $1 = 0 THEN 'exhausted'::subscription_status ELSE status END,
+                 updated_at = NOW()
+             WHERE id = $2`,
+            [newVisitsLeft, sub.id]
+          );
+        }
+
+        resolvedSubscriptionId = sub.id;
+      }
+
       const { rows: insertedRows } = await client.query(
-        `
-          INSERT INTO client_visits (client_id, visit_type, created_by)
-          VALUES ($1, 'open_gym', $2)
-          RETURNING *
-        `,
-        [customer.id, created_by]
+        `INSERT INTO client_visits (client_id, subscription_id, visit_type, created_by)
+         VALUES ($1, $2, 'open_gym', $3)
+         RETURNING *`,
+        [customer.id, resolvedSubscriptionId, created_by]
       );
 
       await client.query('COMMIT');
@@ -281,7 +311,68 @@ router.post('/open-gym/check-in', requireScheduleRead, async (req, res) => {
   }
 });
 
-router.get('/slots', requireScheduleRead, async (req, res) => {
+router.delete('/open-gym/visits/:id', requireModule('schedule_gym'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+
+    await client.query('BEGIN');
+
+    const { rows } = await client.query(
+      `DELETE FROM client_visits
+       WHERE id = $1 AND visit_type = 'open_gym'
+       RETURNING *`,
+      [id]
+    );
+
+    if (rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Визит не найден' });
+    }
+
+    const deleted = rows[0];
+
+    if (deleted.subscription_id) {
+      const { rows: subRows } = await client.query(
+        'SELECT * FROM client_subscriptions WHERE id = $1',
+        [deleted.subscription_id]
+      );
+      const sub = subRows[0];
+
+      if (sub && ['visits', 'single'].includes(sub.type)) {
+        await client.query(
+          'UPDATE client_subscriptions SET visits_left = visits_left + 1, updated_at = NOW() WHERE id = $1',
+          [deleted.subscription_id]
+        );
+        if (sub.status === 'exhausted') {
+          await client.query(
+            "UPDATE client_subscriptions SET status = 'active', updated_at = NOW() WHERE id = $1",
+            [deleted.subscription_id]
+          );
+        }
+      }
+    }
+
+    await client.query('COMMIT');
+
+    const overview = await buildGymOverview();
+    res.json({
+      success: true,
+      data: {
+        visits: overview.visits,
+        total_today: overview.total_today,
+        today: overview.today,
+      },
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ success: false, error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+router.get('/slots', async (req, res) => {
   try {
     const { date_from, date_to, trainer_id, slot_type } = req.query;
     const params = ['cancelled'];
@@ -336,7 +427,7 @@ router.get('/slots', requireScheduleRead, async (req, res) => {
   }
 });
 
-router.get('/slots/:id', requireScheduleRead, async (req, res) => {
+router.get('/slots/:id', async (req, res) => {
   try {
     const { rows: slotRows } = await pool.query(
       `
@@ -378,7 +469,7 @@ router.get('/slots/:id', requireScheduleRead, async (req, res) => {
   }
 });
 
-router.post('/slots', requireScheduleManage, async (req, res) => {
+router.post('/slots', async (req, res) => {
   try {
     const {
       slot_type = 'group',
@@ -393,6 +484,12 @@ router.post('/slots', requireScheduleManage, async (req, res) => {
       block_if_empty_hours,
       comment,
     } = req.body;
+
+    const isPersonal = slot_type === 'personal';
+    const requiredPermission = isPersonal ? 'schedule_edit_personal' : 'schedule_edit_groups';
+    if (!req.user.modules.includes(requiredPermission)) {
+      return res.status(403).json({ success: false, error: 'Недостаточно прав доступа' });
+    }
 
     if (!date || !start_time) {
       return res.status(422).json({ success: false, error: 'Укажите дату и время' });
@@ -427,8 +524,21 @@ router.post('/slots', requireScheduleManage, async (req, res) => {
   }
 });
 
-router.patch('/slots/:id', requireScheduleManage, async (req, res) => {
+router.patch('/slots/:id', async (req, res) => {
   try {
+    const { rows: slotTypeRows } = await pool.query(
+      'SELECT slot_type FROM schedule_slots WHERE id = $1',
+      [req.params.id]
+    );
+    if (!slotTypeRows[0]) {
+      return res.status(404).json({ success: false, error: 'Занятие не найдено' });
+    }
+    const isPersonal = slotTypeRows[0].slot_type === 'personal';
+    const requiredPermission = isPersonal ? 'schedule_edit_personal' : 'schedule_edit_groups';
+    if (!req.user.modules.includes(requiredPermission)) {
+      return res.status(403).json({ success: false, error: 'Недостаточно прав доступа' });
+    }
+
     const fields = [
       'slot_type',
       'training_type_id',
@@ -478,9 +588,12 @@ router.patch('/slots/:id', requireScheduleManage, async (req, res) => {
   }
 });
 
-router.post('/slots/:id/cancel', requireScheduleManage, async (req, res) => {
+router.post('/slots/:id/cancel', requireModule('schedule_cancel'), async (req, res) => {
+  const client = await pool.connect();
   try {
-    const { rows } = await pool.query(
+    await client.query('BEGIN');
+
+    const { rows } = await client.query(
       `
         UPDATE schedule_slots
         SET status = 'cancelled', updated_at = NOW()
@@ -491,10 +604,11 @@ router.post('/slots/:id/cancel', requireScheduleManage, async (req, res) => {
     );
 
     if (!rows[0]) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ success: false, error: 'Занятие не найдено или уже отменено' });
     }
 
-    await pool.query(
+    await client.query(
       `
         UPDATE bookings
         SET status = 'cancelled', cancelled_at = NOW(), cancel_reason = 'Занятие отменено'
@@ -503,13 +617,17 @@ router.post('/slots/:id/cancel', requireScheduleManage, async (req, res) => {
       [req.params.id]
     );
 
+    await client.query('COMMIT');
     res.json({ success: true, data: rows[0] });
   } catch (err) {
+    await client.query('ROLLBACK');
     res.status(500).json({ success: false, error: err.message });
+  } finally {
+    client.release();
   }
 });
 
-router.get('/templates', requireScheduleRead, async (req, res) => {
+router.get('/templates', async (req, res) => {
   try {
     const { rows } = await pool.query(`
       SELECT
@@ -530,7 +648,7 @@ router.get('/templates', requireScheduleRead, async (req, res) => {
   }
 });
 
-router.post('/templates', requireScheduleManage, async (req, res) => {
+router.post('/templates', requireModule('schedule_edit_groups'), async (req, res) => {
   try {
     const {
       slot_type = 'group',
@@ -575,7 +693,7 @@ router.post('/templates', requireScheduleManage, async (req, res) => {
   }
 });
 
-router.post('/templates/generate', requireScheduleManage, async (req, res) => {
+router.post('/templates/generate', requireModule('schedule_edit_groups'), async (req, res) => {
   try {
     const { date_from, date_to } = req.body;
 

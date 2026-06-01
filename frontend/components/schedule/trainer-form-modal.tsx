@@ -36,6 +36,14 @@ export function TrainerFormModal({
     setError(null);
   }, [trainer]);
 
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   async function handleSubmit() {
     if (!firstName.trim() || !lastName.trim()) {
       setError("Укажите имя и фамилию тренера");
