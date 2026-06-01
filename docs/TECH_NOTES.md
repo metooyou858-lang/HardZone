@@ -25,10 +25,13 @@
 
 ## Sub-permissions расписания
 
-`canManageSchedule` разбит на sub-permissions:
+`schedule` дополнен sub-permissions:
 
-- `schedule_view`
-- `schedule_edit`
+- `schedule_edit_groups`
+- `schedule_edit_personal`
+- `schedule_cancel`
+- `schedule_clients`
+- `schedule_attendance`
 - `schedule_gym`
 
 Миграция: `028_schedule_sub_permissions.sql`.

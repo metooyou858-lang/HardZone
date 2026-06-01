@@ -1,20 +1,52 @@
 # HARDZONE CRM — Проектный документ
 
-Версия 4.1 • Апрель 2026 • Пилот: HardZone, Хабаровск
+Версия 4.3 • Май 2026 • Пилот: HardZone, Хабаровск
 
 ---
 
 ## 1. Процесс разработки
 
 1. Владелец продукта обсуждает сценарий и бизнес-логику.
-2. Claude помогает сформулировать архитектуру и точное ТЗ.
-3. ChatGPT реализует код, деплоит на сервер и проверяет результат.
-4. Все изменения фиксируются в этом документе как в рабочей спецификации.
+2. Claude Code реализует архитектуру, код, деплой и проверку.
+3. Все изменения фиксируются в этом документе как в рабочей спецификации.
 
 **Роли:**
-- **Claude** — продуктовые решения, архитектура, формулировка ТЗ
-- **ChatGPT** — код, деплой, миграции, проверка на сервере
+- **Claude Code** — архитектура, код, деплой, миграции, проверка на сервере
 - **Заказчик** — финальное решение по бизнес-логике и приоритетам
+
+---
+
+## Журнал изменений
+
+### 7 мая 2026
+
+**Касса — v4 AQSI acquiring flow (полный рефакторинг):**
+- «Оплата картой» — главная кнопка → v4: `POST /v4/Slips/process/purchase` → polling `sync-slip` каждые 3 сек → `POST /v4/Receipts/process` → polling → закрытие заказа
+- «Оплата наличными» — вторичная кнопка → старый v2 `/v2/Orders/simple` flow (без acquiring)
+- Критическое правило безопасности: если receipt-операция не завершилась → заказ НЕ закрывается, сохраняется `aqsi_error`, показывается кнопка «Восстановить фискализацию» → `sync-aqsi-v4`
+- `aqsi_payment_operation_id` хранится до полного закрытия заказа (не сбрасывается после slip) — обеспечивает корректный lock на всём протяжении цикла
+- Auto-resume polling при перезагрузке страницы: если у открытого заказа стоит `aqsi_payment_operation_id`, polling возобновляется автоматически
+- Новые поля в таблице `orders` (миграции 032–033): `aqsi_payment_operation_id`, `aqsi_slip_id`, `aqsi_receipt_operation_id`, `aqsi_payment_status`, `aqsi_receipt_status`, `aqsi_error`
+
+**Обработка OperationInProgress:**
+- Когда AQSI отвечает `reason: OperationInProgress` (терминал занят другой операцией) — CRM показывает кнопку «Отменить операцию на кассе»
+- Кнопка вызывает `cancel-aqsi-operation`, после чего можно повторить оплату
+
+---
+
+### 14 апреля 2026
+
+**Инфраструктура:**
+- Настроен GitHub `origin/main` как основной репозиторий проекта.
+- На production остался bare repo `/srv/HardZone.git` с хуком `post-receive` (checkout → npm install → migrate → build → pm2 restart).
+- Локальный remote `server` → `ssh://root@79.137.162.55/srv/HardZone.git` является production-деплоем, не обычным backup remote.
+- Безопасный стандарт деплоя с Windows: `deploy.ps1` / `deploy.sh`; `git push server main` использовать только осознанно как production deploy.
+
+**Исправления:**
+- Баг маркировки: `markingRequired` вычислялось как `is_marked || has_marking`, из-за чего все товары типа "Товар" получали маркировку. Исправлено на `Boolean(product.is_marked)` в двух местах:
+  - `backend/src/routes/orders.js:712`
+  - `frontend/components/sales/use-sales-order.ts:486`
+- Маркировка теперь работает только для товаров с галочкой `is_marked` (Вода 0.5, Вода 1,5)
 
 ---
 
@@ -280,14 +312,30 @@ CRM работает как **предкасса**:
 | Налогообложение | УСН доход (`taxationSystem: 1`) |
 | Авторизация | `x-client-key: Application {AQSI_API_KEY}` |
 
-### 8.7 Подтверждение оплаты
+### 8.7 Acquiring flow v4 (оплата картой)
+
+Основной флоу с 2026-05:
+
+1. **Инициация** `POST /api/orders/:id/initiate-payment` → `POST /v4/Slips/process/purchase` → возвращает `operation_id`
+2. **Polling платежа** `POST /api/orders/:id/sync-slip` каждые 3 сек → `GET /v4/Operations/{id}` → когда `Completed`: сохраняет `aqsi_slip_id`, запускает `POST /v4/Receipts/process`
+3. **Polling чека** продолжается внутри `sync-slip` → `GET /v4/Operations/{receiptOpId}` → когда `Completed`: сохраняет `aqsi_receipt_id`, закрывает заказ
+4. **Ошибка фискализации** → статус `receipt_error`, заказ остаётся открытым, показывается кнопка «Восстановить»
+5. **Восстановление** `POST /api/orders/:id/sync-aqsi-v4` → повтор шагов 2–3
+
+Оплата наличными (`/v2/Orders/simple`) — вторичная кнопка, без acquiring, фоновый sync через `order-sync.js`.
+
+Технические детали:
+- `nomenclatureCode` маркировки в v4 передаётся как raw string (не base64)
+- `taxSystemCode` в v4 bitmask: `4 = УСН доход-расход`; в v2 sequential: `1 = УСН доход`
+- `aqsi_payment_operation_id` остаётся выставленным до полного закрытия заказа (не сбрасывается после slip)
+
+### 8.8 Подтверждение оплаты
 
 Используются несколько уровней подтверждения:
-- webhook от aQsi;
-- ручная кнопка проверки оплаты в истории продаж;
-- фоновая повторная синхронизация через backend.
-
-Это сделано потому, что webhook от aQsi на практике может приходить нестабильно.
+- polling `sync-slip` во время acquiring flow (основной);
+- webhook от aQsi (может приходить нестабильно);
+- ручная кнопка «Проверить оплату» в истории продаж;
+- фоновая повторная синхронизация через `order-sync.js`.
 
 ---
 
@@ -442,11 +490,16 @@ CRM работает как **предкасса**:
 - `POST /api/orders/:id/items`
 - `PATCH /api/orders/:id/items/:itemId`
 - `DELETE /api/orders/:id/items/:itemId`
-- `POST /api/orders/:id/send-to-aqsi`
 - `POST /api/orders/:id/confirm`
 - `POST /api/orders/:id/cancel`
 - `POST /api/orders/:id/refund`
-- `POST /api/orders/:id/sync-aqsi`
+- `POST /api/orders/:id/send-to-aqsi` — оплата наличными (v2)
+- `POST /api/orders/:id/sync-aqsi` — фоновая синхронизация v2
+- `POST /api/orders/:id/initiate-payment` — запуск acquiring v4 (оплата картой)
+- `POST /api/orders/:id/sync-slip` — polling платёжной/фискальной операции v4
+- `POST /api/orders/:id/cancel-payment` — отмена ожидающего slip
+- `POST /api/orders/:id/cancel-aqsi-operation` — отмена конкурирующей операции на терминале
+- `POST /api/orders/:id/sync-aqsi-v4` — ручное восстановление после ошибки фискализации
 
 ### Клиенты
 - `GET /api/clients`
@@ -517,6 +570,11 @@ CRM работает как **предкасса**:
 | `017_schedule.sql` | тренеры, шаблоны, слоты, записи |
 | `018_training_types_slot_type.sql` | `slot_type` в `training_types` |
 | `019_gym_hours.sql` | часы работы зала |
+| `020–027` | (склад, клиенты, расписание — промежуточные) |
+| `028_schedule_sub_permissions.sql` | sub-permissions расписания: `schedule_edit_groups`, `schedule_edit_personal`, `schedule_cancel`, `schedule_clients`, `schedule_attendance`, `schedule_gym` |
+| `029–031` | (промежуточные) |
+| `032_aqsi_slip_fields.sql` | поля acquiring v4: `aqsi_payment_operation_id`, `aqsi_slip_id`, `aqsi_receipt_operation_id` |
+| `033_aqsi_status_fields.sql` | статусы acquiring: `aqsi_payment_status`, `aqsi_receipt_status`, `aqsi_error` |
 
 ### Ключевые таблицы
 
@@ -589,4 +647,4 @@ CRM работает как **предкасса**:
 
 ---
 
-Версия 4.1 • Апрель 2026 • Пилот HardZone: склад, услуги, продажи, клиенты, расписание и зал уже в живой работе
+Версия 4.3 • Май 2026 • Пилот HardZone: склад, услуги, продажи (v4 acquiring), клиенты, расписание и зал уже в живой работе
