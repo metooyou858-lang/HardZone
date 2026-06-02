@@ -1,10 +1,10 @@
 # HardZone Payments / AQSI
 
-AQSI - самая рискованная часть проекта. Не менять ее "по памяти".
+AQSI is one of the highest-risk parts of the project. Do not change endpoints, payloads, or order-closing rules from memory; always compare code against `swagger (3).json`.
 
-## Источники
+## Sources
 
-- Swagger: `swagger (3).json` - каноничная документация AQSI по кассе и кассовым операциям.
+- Swagger: `swagger (3).json` is the canonical local AQSI API reference.
 - Backend:
   - `backend/src/services/aqsi.js`
   - `backend/src/services/aqsi-v4-flow.js`
@@ -14,23 +14,38 @@ AQSI - самая рискованная часть проекта. Не мен�
 - Frontend:
   - `frontend/components/sales/`
 
-## Главные правила
+## Current Code Shape
 
-1. Перед изменением AQSI endpoint или payload сверить `swagger (3).json`.
-2. Для повторной фискализации уже оплаченного, но не закрытого заказа использовать существующий серверный flow `syncAqsiV4(orderId)`.
-3. Не собирать новый чек вручную, если у заказа уже есть платежный след AQSI.
-4. Не закрывать заказ, если receipt operation не `Completed`.
-5. При сетевой неопределенности сохранять возможность восстановления, а не стирать все следы операции.
+There are two AQSI paths in the codebase:
 
-## V4 acquiring flow
+1. Legacy/simple order flow in `backend/src/services/aqsi.js`:
+   - `sendOrderToAqsi(order)` uses `POST /v2/Orders/simple`.
+   - This path is retained for compatibility with older order/fiscalization code.
 
-UI:
+2. Current V4 acquiring and receipt flow:
+   - `backend/src/routes/aqsi-v4.js`
+   - `backend/src/services/aqsi-v4-flow.js`
+   - `sendOrderToAqsiV4(...)`, `processPaymentSlip(...)`, `pollOperation(...)`, receipt helpers in `backend/src/services/aqsi.js`.
+
+If UI/payment behavior is changed, treat the V4 flow as the primary path unless the task explicitly says it is touching the legacy v2 flow.
+
+## Main Rules
+
+1. Before changing AQSI endpoint or payload code, compare it with `swagger (3).json`.
+2. For re-fiscalizing an already paid but not closed order, use the existing server flow `syncAqsiV4(orderId)`.
+3. Do not manually create a fresh receipt if an order already has AQSI payment/receipt operation traces.
+4. Do not close an order until the receipt operation is `Completed`.
+5. During network uncertainty, preserve operation IDs and AQSI traces instead of clearing fields.
+
+## V4 Acquiring Flow
+
+UI flow:
 
 ```text
-Оплата картой -> initiate-payment -> polling sync-slip -> receipt -> закрытие заказа
+card payment -> initiate-payment -> polling sync-slip -> receipt -> close order
 ```
 
-Backend:
+Backend AQSI endpoints:
 
 ```text
 POST /v4/Slips/process/purchase
@@ -39,7 +54,7 @@ POST /v4/Receipts/process
 GET /v4/Operations/{id}
 ```
 
-Ключевые поля заказа:
+Key order fields:
 
 - `aqsi_payment_operation_id`
 - `aqsi_payment_operation_at`
@@ -50,26 +65,30 @@ GET /v4/Operations/{id}
 - `aqsi_receipt_status`
 - `aqsi_error`
 
-## Маркировка
+## Marking
 
 - Frontend normalization: `frontend/components/sales/sales-marking-utils.ts`.
 - Backend normalization/parsing: `backend/src/routes/orders.js`.
-- V4 flow не использует `itemCode`.
-- `nomenclatureCode` в v4 передается как raw string.
+- The V4 flow does not use `itemCode`.
+- `nomenclatureCode` is sent as the raw string for V4 receipts.
 
-## Terminal blockers
+## Terminal Blockers
 
-Таблица: `aqsi_terminal_blockers`, миграция `034_aqsi_terminal_blockers.sql`.
+Table: `aqsi_terminal_blockers`, migration `034_aqsi_terminal_blockers.sql`.
 
-Назначение: хранить операции AQSI, которые блокируют терминал, но не всегда напрямую связаны с текущим открытым заказом.
+Purpose: store AQSI operations that block the terminal, including operations that are not always directly tied to the current open order.
 
-Frontend recovery: кнопка проверки кассы вызывает `recover-terminal-blocker`.
+Frontend recovery: the cash-register check action calls `recover-terminal-blocker`.
 
-## Что считать опасными изменениями
+## Dangerous Changes
 
-- Любые изменения в `buildAqsiV4ReceiptPayload`.
-- Изменения условий закрытия заказа после receipt.
-- Очистка `aqsi_*` полей.
-- Повторная отправка платежа/чека.
-- Изменения polling/cancel/recover flow.
-- Изменения скидок и итоговых сумм в чеке.
+Treat these as high-risk:
+
+- changes in `buildAqsiV4ReceiptPayload`;
+- changes to order-closing conditions after receipt operations;
+- clearing `aqsi_*` fields;
+- retrying payment/receipt operations;
+- changing polling/cancel/recover flow;
+- changing discounts and final receipt totals.
+
+For these changes, use staging first and create or confirm a recent production backup before production deploy.

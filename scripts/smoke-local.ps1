@@ -11,7 +11,11 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 Write-Host "== mojibake scan =="
 & rg "Рџ|Ð|Ñ|�" "$repoRoot\frontend" "$repoRoot\backend"
 if ($LASTEXITCODE -gt 1) { exit $LASTEXITCODE }
-if ($LASTEXITCODE -eq 1) { $global:LASTEXITCODE = 0 }
+if ($LASTEXITCODE -eq 0) {
+  Write-Error "Mojibake markers found"
+  exit 1
+}
+$global:LASTEXITCODE = 0
 
 if (-not $SkipFrontendLint) {
   Write-Host "== frontend lint =="
