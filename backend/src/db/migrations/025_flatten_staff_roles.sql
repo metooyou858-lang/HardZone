@@ -21,9 +21,9 @@ legacy_defaults AS (
     COALESCE(u.module_grants, '{}'::TEXT[]) AS module_grants,
     COALESCE(u.module_revokes, '{}'::TEXT[]) AS module_revokes,
     CASE
-      WHEN u.role IN ('owner', 'senior_admin') THEN (SELECT items FROM all_modules)
-      WHEN u.role = 'admin' THEN ARRAY['warehouse', 'sales', 'clients', 'schedule']::TEXT[]
-      WHEN u.role = 'trainer' THEN ARRAY['sales', 'schedule']::TEXT[]
+      WHEN u.role::TEXT IN ('owner', 'senior_admin') THEN (SELECT items FROM all_modules)
+      WHEN u.role::TEXT = 'admin' THEN ARRAY['warehouse', 'sales', 'clients', 'schedule']::TEXT[]
+      WHEN u.role::TEXT = 'trainer' THEN ARRAY['sales', 'schedule']::TEXT[]
       ELSE '{}'::TEXT[]
     END AS default_modules
   FROM users u
@@ -55,19 +55,19 @@ effective_modules AS (
 UPDATE users u
 SET
   role = CASE
-    WHEN u.role = 'owner' THEN 'owner'::user_role
+    WHEN u.role::TEXT = 'owner' THEN 'owner'::user_role
     ELSE 'admin'::user_role
   END,
   role_title = CASE
-    WHEN u.role = 'owner' THEN 'Владелец'
+    WHEN u.role::TEXT = 'owner' THEN 'Владелец'
     ELSE 'Главный администратор'
   END,
   module_grants = CASE
-    WHEN u.role = 'owner' THEN COALESCE(u.module_grants, '{}'::TEXT[])
+    WHEN u.role::TEXT = 'owner' THEN COALESCE(u.module_grants, '{}'::TEXT[])
     ELSE '{}'::TEXT[]
   END,
   module_revokes = CASE
-    WHEN u.role = 'owner' THEN COALESCE(u.module_revokes, '{}'::TEXT[])
+    WHEN u.role::TEXT = 'owner' THEN COALESCE(u.module_revokes, '{}'::TEXT[])
     ELSE COALESCE(
       ARRAY(
         SELECT module
