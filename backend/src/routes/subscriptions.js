@@ -1,6 +1,7 @@
 const express = require('express');
 
 const { pool } = require('../db');
+const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
 
@@ -50,7 +51,7 @@ router.post('/', async (req, res) => {
 
     res.status(201).json({ success: true, data: rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'subscriptions.create' });
   }
 });
 
@@ -89,7 +90,7 @@ router.post('/:id/freeze', async (req, res) => {
     res.json({ success: true, data: rows[0] });
   } catch (err) {
     await client.query('ROLLBACK');
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'subscriptions.freeze' });
   } finally {
     client.release();
   }
@@ -136,7 +137,7 @@ router.post('/:id/unfreeze', async (req, res) => {
     res.json({ success: true, data: { days_restored: daysFrozen } });
   } catch (err) {
     await client.query('ROLLBACK');
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'subscriptions.unfreeze' });
   } finally {
     client.release();
   }
@@ -206,7 +207,7 @@ router.post('/:id/visit', async (req, res) => {
     res.status(201).json({ success: true, data: rows[0] });
   } catch (err) {
     await client.query('ROLLBACK');
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'subscriptions.use_visit' });
   } finally {
     client.release();
   }

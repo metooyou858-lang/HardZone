@@ -2,6 +2,7 @@ const express = require('express');
 
 const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
+const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
 const requireModule = authMiddleware.requireModule;
@@ -124,7 +125,7 @@ router.get('/gym-hours', async (req, res) => {
     const overview = await buildGymOverview();
     res.json({ success: true, data: overview });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'schedule.week_template.get' });
   }
 });
 
@@ -180,7 +181,7 @@ router.put('/gym-hours', requireModule('schedule_gym'), async (req, res) => {
     const overview = await buildGymOverview();
     res.json({ success: true, data: overview });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'schedule.week_template.update' });
   }
 });
 
@@ -307,7 +308,7 @@ router.post('/open-gym/check-in', requireModule('schedule_gym'), async (req, res
       client.release();
     }
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'schedule.gym_visits.create' });
   }
 });
 
@@ -366,7 +367,7 @@ router.delete('/open-gym/visits/:id', requireModule('schedule_gym'), async (req,
     });
   } catch (err) {
     await client.query('ROLLBACK');
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'schedule.gym_visits.delete' });
   } finally {
     client.release();
   }
@@ -423,7 +424,7 @@ router.get('/slots', async (req, res) => {
 
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'schedule.classes.list' });
   }
 });
 
@@ -465,7 +466,7 @@ router.get('/slots/:id', async (req, res) => {
 
     res.json({ success: true, data: { ...slotRows[0], bookings } });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'schedule.classes.get' });
   }
 });
 
@@ -520,7 +521,7 @@ router.post('/slots', async (req, res) => {
 
     res.status(201).json({ success: true, data: rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'schedule.classes.create' });
   }
 });
 
@@ -584,7 +585,7 @@ router.patch('/slots/:id', async (req, res) => {
 
     res.json({ success: true, data: rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'schedule.classes.update' });
   }
 });
 
@@ -621,7 +622,7 @@ router.post('/slots/:id/cancel', requireModule('schedule_cancel'), async (req, r
     res.json({ success: true, data: rows[0] });
   } catch (err) {
     await client.query('ROLLBACK');
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'schedule.classes.cancel' });
   } finally {
     client.release();
   }
@@ -644,7 +645,7 @@ router.get('/templates', async (req, res) => {
 
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'schedule.personal.create' });
   }
 });
 
@@ -689,7 +690,7 @@ router.post('/templates', requireModule('schedule_edit_groups'), async (req, res
 
     res.status(201).json({ success: true, data: rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'schedule.generate' });
   }
 });
 
@@ -755,7 +756,7 @@ router.post('/templates/generate', requireModule('schedule_edit_groups'), async 
 
     res.json({ success: true, data: { created } });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'schedule.range' });
   }
 });
 

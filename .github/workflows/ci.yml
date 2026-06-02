@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - stabilize/**
+      - feature/**
+      - fix/**
+  pull_request:
+    branches:
+      - main
+      - stabilize/**
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend lint and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+  backend:
+    name: Backend migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: hardzone
+          POSTGRES_USER: hardzone
+          POSTGRES_PASSWORD: hardzone
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hardzone -d hardzone"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      DATABASE_URL: postgres://hardzone:hardzone@127.0.0.1:5432/hardzone
+      HARDZONE_SESSION_SECRET: ci-session-secret
+      BACKEND_API_TOKEN: ci-api-token
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run migrations
+        run: npm run migrate
+
+  encoding:
+    name: Mojibake scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Scan frontend and backend text
+        run: |
+          if grep -R -n -E "Рџ|Ð|Ñ|�" frontend backend; then
+            echo "Mojibake markers found"
+            exit 1
+          fi

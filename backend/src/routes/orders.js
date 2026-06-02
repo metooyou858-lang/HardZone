@@ -10,6 +10,7 @@ const {
 } = require('../services/aqsi');
 const { confirmOpenOrderPayment, syncOrderWithAqsi } = require('../services/order-sync');
 const logger = require('../services/logger');
+const { getPublicErrorMessage, sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
 
@@ -707,7 +708,7 @@ router.get('/', async (req, res) => {
     const { rows } = await pool.query(sql, params);
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'orders.list' });
   }
 });
 
@@ -727,7 +728,7 @@ router.get('/:id', async (req, res) => {
 
     return res.json({ success: true, data: { ...order, items } });
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    return sendInternalError(res, err, { route: 'orders.get' });
   }
 });
 
@@ -754,7 +755,7 @@ router.post('/', async (req, res) => {
 
     return res.status(201).json({ success: true, data: rows[0] });
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    return sendInternalError(res, err, { route: 'orders.create' });
   }
 });
 
@@ -827,7 +828,7 @@ router.patch('/:id', async (req, res) => {
     } catch (rollbackError) {
       console.error('Order patch rollback failed', rollbackError);
     }
-    return res.status(500).json({ success: false, error: err.message });
+    return sendInternalError(res, err, { route: 'orders.add_item' });
   } finally {
     client.release();
   }
@@ -977,7 +978,7 @@ router.post('/:id/items', async (req, res) => {
     } catch (rollbackError) {
       console.error('Order item create rollback failed', rollbackError);
     }
-    return res.status(500).json({ success: false, error: err.message });
+    return sendInternalError(res, err, { route: 'orders.remove_item' });
   } finally {
     client.release();
   }
@@ -1114,7 +1115,7 @@ router.patch('/:id/items/:itemId', async (req, res) => {
     } catch (rollbackError) {
       console.error('Order item patch rollback failed', rollbackError);
     }
-    return res.status(500).json({ success: false, error: err.message });
+    return sendInternalError(res, err, { route: 'orders.update_item_quantity' });
   } finally {
     client.release();
   }
@@ -1151,7 +1152,7 @@ router.delete('/:id/items/:itemId', async (req, res) => {
     } catch (rollbackError) {
       console.error('Order item delete rollback failed', rollbackError);
     }
-    return res.status(500).json({ success: false, error: err.message });
+    return sendInternalError(res, err, { route: 'orders.confirm' });
   } finally {
     client.release();
   }
@@ -1252,7 +1253,7 @@ router.post('/:id/send-to-aqsi', async (req, res) => {
   } catch (err) {
     try { await pgClient.query('ROLLBACK'); } catch (_) {}
     pgClient.release();
-    return res.status(500).json({ success: false, error: err.message });
+    return sendInternalError(res, err, { route: 'orders.initiate_payment' });
   }
   pgClient.release();
 
@@ -1269,7 +1270,7 @@ router.post('/:id/send-to-aqsi', async (req, res) => {
   } catch (err) {
     // Any AQSI error — safe to reset lock, order was never created on terminal
     await pool.query('UPDATE orders SET aqsi_sent_at = NULL WHERE id = $1', [orderId]).catch(() => {});
-    return res.status(500).json({ success: false, error: err.message });
+    return sendInternalError(res, err, { route: 'orders.sync_slip' });
   }
 
   if (!receiptOpId) {
@@ -1281,7 +1282,7 @@ router.post('/:id/send-to-aqsi', async (req, res) => {
   try {
     finalOp = await pollOperation(receiptOpId, 2000, 30000);
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    return sendInternalError(res, err, { route: 'orders.sync' });
   }
 
   if (finalOp.status !== 'Completed') {
@@ -1340,7 +1341,7 @@ router.post('/:id/sync-aqsi', async (req, res) => {
       },
     });
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    return sendInternalError(res, err, { route: 'orders.refund' });
   }
 });
 
@@ -1374,7 +1375,7 @@ router.post('/:id/confirm', async (req, res) => {
     const finalized = await confirmOpenOrderPayment(req.params.id, payment_type);
     return res.json({ success: true, data: finalized.order });
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    return sendInternalError(res, err, { route: 'orders.cancel' });
   }
 });
 
@@ -1495,7 +1496,8 @@ router.post('/:id/refund', async (req, res) => {
       console.error('Order refund rollback failed', rollbackError);
     }
 
-    return res.status(err.statusCode || 500).json({ success: false, error: err.message });
+    const statusCode = err.statusCode || 500;
+    return res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });
   } finally {
     client.release();
   }

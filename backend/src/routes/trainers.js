@@ -2,6 +2,7 @@ const express = require('express');
 
 const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
+const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
 const requireTrainersRead = authMiddleware.requireRole('owner', 'admin');
@@ -23,7 +24,7 @@ router.get('/', requireTrainersRead, async (req, res) => {
 
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'trainers.list' });
   }
 });
 
@@ -67,7 +68,7 @@ router.post('/', requireTrainersManage, async (req, res) => {
       client.release();
     }
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'trainers.create' });
   }
 });
 
@@ -120,7 +121,7 @@ router.patch('/:id', requireTrainersManage, async (req, res) => {
       client.release();
     }
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'trainers.update' });
   }
 });
 
@@ -142,7 +143,7 @@ router.delete('/:id', requireTrainersManage, async (req, res) => {
 
     res.status(204).end();
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'trainers.delete' });
   }
 });
 

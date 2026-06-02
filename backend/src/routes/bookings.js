@@ -2,6 +2,7 @@ const express = require('express');
 
 const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
+const { getPublicErrorMessage } = require('../utils/http-response');
 
 const router = express.Router();
 const requireModule = authMiddleware.requireModule;
@@ -152,7 +153,8 @@ router.post('/', requireModule('schedule_clients'), async (req, res) => {
       client.release();
     }
   } catch (err) {
-    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+    const statusCode = err.statusCode || 500;
+    res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });
   }
 });
 
@@ -203,7 +205,8 @@ router.post('/:id/cancel', requireModule('schedule_clients'), async (req, res) =
       client.release();
     }
   } catch (err) {
-    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+    const statusCode = err.statusCode || 500;
+    res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });
   }
 });
 
@@ -224,7 +227,8 @@ router.post('/:id/attend', requireModule('schedule_attendance'), async (req, res
       client.release();
     }
   } catch (err) {
-    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+    const statusCode = err.statusCode || 500;
+    res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });
   }
 });
 
@@ -298,7 +302,8 @@ router.post('/:id/unattend', requireModule('schedule_attendance'), async (req, r
       client.release();
     }
   } catch (err) {
-    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+    const statusCode = err.statusCode || 500;
+    res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });
   }
 });
 
@@ -345,7 +350,8 @@ router.post('/attend-by-barcode', requireModule('schedule_attendance'), async (r
       client.release();
     }
   } catch (err) {
-    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+    const statusCode = err.statusCode || 500;
+    res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });
   }
 });
 

@@ -5,6 +5,7 @@ const fs = require('fs');
 
 const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
+const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
 const upload = multer({ dest: '/tmp/' });
@@ -87,7 +88,7 @@ router.get('/', requireClientsRead, async (req, res) => {
 
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'clients.list' });
   }
 });
 
@@ -180,7 +181,7 @@ router.post('/import', requireClientsManage, upload.single('file'), async (req, 
     if (req.file?.path && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'clients.import' });
   }
 });
 
@@ -211,7 +212,7 @@ router.get('/barcode/:barcode', requireClientsRead, async (req, res) => {
 
     res.json({ success: true, data: rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'clients.create' });
   }
 });
 
@@ -252,7 +253,7 @@ router.get('/:id', requireClientsRead, async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'clients.get' });
   }
 });
 
@@ -312,7 +313,7 @@ router.post('/', requireClientsManage, async (req, res) => {
 
     res.status(201).json({ success: true, data: rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'clients.update' });
   }
 });
 
@@ -360,7 +361,7 @@ router.patch('/:id', requireClientsManage, async (req, res) => {
 
     res.json({ success: true, data: rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'clients.delete' });
   }
 });
 

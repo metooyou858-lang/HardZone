@@ -2,6 +2,7 @@ const express = require('express');
 
 const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
+const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
 const requireTrainingTypesRead = authMiddleware.requireRole('owner', 'admin');
@@ -26,7 +27,7 @@ router.get('/', requireTrainingTypesRead, async (req, res) => {
     const { rows } = await pool.query(`SELECT * FROM training_types ${where} ORDER BY slot_type, name`, params);
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'training_types.list' });
   }
 });
 
@@ -50,7 +51,7 @@ router.post('/', requireTrainingTypesManage, async (req, res) => {
 
     res.status(201).json({ success: true, data: rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'training_types.create' });
   }
 });
 
@@ -89,7 +90,7 @@ router.patch('/:id', requireTrainingTypesManage, async (req, res) => {
 
     res.json({ success: true, data: rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'training_types.update' });
   }
 });
 
@@ -108,7 +109,7 @@ router.delete('/:id', requireTrainingTypesManage, async (req, res) => {
     await pool.query('DELETE FROM training_types WHERE id = $1', [req.params.id]);
     res.status(204).end();
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(res, err, { route: 'training_types.delete' });
   }
 });
 

@@ -2,6 +2,7 @@
 
 const express = require('express');
 const flow = require('../services/aqsi-v4-flow');
+const { getPublicErrorMessage } = require('../utils/http-response');
 
 const router = express.Router();
 
@@ -18,9 +19,10 @@ router.post('/:id/initiate-payment', async (req, res) => {
     }
     return res.json({ success: true, data: { operation_id: result.operationId } });
   } catch (err) {
-    const body = { success: false, error: err.message };
+    const statusCode = err.statusCode || 500;
+    const body = { success: false, error: getPublicErrorMessage(err, statusCode) };
     if (err.payment_operation_id) body.payment_operation_id = err.payment_operation_id;
-    return res.status(err.statusCode || 500).json(body);
+    return res.status(statusCode).json(body);
   }
 });
 
@@ -29,7 +31,8 @@ router.post('/:id/sync-slip', async (req, res) => {
     const result = await flow.syncSlip(req.params.id);
     return res.json({ success: true, data: result });
   } catch (err) {
-    return res.status(err.statusCode || 500).json({ success: false, error: err.message });
+    const statusCode = err.statusCode || 500;
+    return res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });
   }
 });
 
@@ -38,7 +41,8 @@ router.post('/:id/sync-aqsi-v4', async (req, res) => {
     const result = await flow.syncAqsiV4(req.params.id);
     return res.json({ success: true, data: result });
   } catch (err) {
-    return res.status(err.statusCode || 500).json({ success: false, error: err.message });
+    const statusCode = err.statusCode || 500;
+    return res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });
   }
 });
 
@@ -50,7 +54,8 @@ router.post('/recover-terminal-blocker', async (req, res) => {
     const result = await flow.recoverTerminalBlocker(operation_id);
     return res.json({ success: true, data: result });
   } catch (err) {
-    return res.status(err.statusCode || 500).json({ success: false, error: err.message });
+    const statusCode = err.statusCode || 500;
+    return res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });
   }
 });
 
@@ -61,7 +66,8 @@ router.post('/force-clear-blocker', async (req, res) => {
     const result = await flow.forceClearBlocker(operation_id);
     return res.json({ success: true, data: result });
   } catch (err) {
-    return res.status(err.statusCode || 500).json({ success: false, error: err.message });
+    const statusCode = err.statusCode || 500;
+    return res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });
   }
 });
 

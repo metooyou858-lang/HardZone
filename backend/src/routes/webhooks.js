@@ -5,6 +5,7 @@ const path = require('path');
 const { pool } = require('../db');
 const { getAqsiOrder } = require('../services/aqsi');
 const { confirmOpenOrderPayment, detectPaymentType, saveOrderFiscalData } = require('../services/order-sync');
+const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
 const logDir = process.env.AQSI_WEBHOOK_LOG_DIR
@@ -80,7 +81,7 @@ router.post('/aqsi', async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return sendInternalError(res, err, { route: 'webhooks.aqsi' });
   }
 });
 

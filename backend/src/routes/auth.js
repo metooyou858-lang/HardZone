@@ -5,6 +5,7 @@ const { query, withTransaction } = require('../db');
 const authMiddleware = require('../middleware/auth');
 const { isMailConfigured, sendTemporaryPasswordEmail } = require('../services/mail');
 const { normalizeEmail, serializeUser } = require('../services/user-auth');
+const { sendInternalError } = require('../utils/http-response');
 const { createTemporaryPassword, hashPassword, normalizeUsername, verifyPassword } = require('../utils/passwords');
 const { createResetToken, hashResetToken } = require('../utils/reset-tokens');
 
@@ -15,6 +16,10 @@ const MANAGEABLE_ROLES = ['admin'];
 
 function isUniqueViolation(error, indexName) {
   return String(error?.message || '').includes(indexName);
+}
+
+function canExposeTemporaryPassword() {
+  return process.env.NODE_ENV !== 'production' && process.env.HARDZONE_EXPOSE_TEMP_PASSWORD === 'true';
 }
 
 function getFrontendBaseUrl() {
@@ -158,7 +163,7 @@ router.post('/login', async (req, res) => {
       },
     });
   } catch (error) {
-    return res.status(500).json({ success: false, error: error.message });
+    return sendInternalError(res, error, { route: 'auth.login' });
   }
 });
 
@@ -184,7 +189,7 @@ router.get('/me', authMiddleware, async (req, res) => {
 
     return res.json({ success: true, data: { user: serializeUser(rows[0]) } });
   } catch (error) {
-    return res.status(500).json({ success: false, error: error.message });
+    return sendInternalError(res, error, { route: 'auth.me' });
   }
 });
 
@@ -203,7 +208,7 @@ router.get('/users', authMiddleware, requireModule('users_manage'), async (req, 
       data: rows.map(serializeUser),
     });
   } catch (error) {
-    return res.status(500).json({ success: false, error: error.message });
+    return sendInternalError(res, error, { route: 'auth.users.list' });
   }
 });
 
@@ -265,7 +270,7 @@ router.post('/users', authMiddleware, requireModule('users_manage'), async (req,
         onboarding: {
           email_sent: emailSent,
           email_error: emailError,
-          temporary_password: generatedPassword && !emailSent ? password : null,
+          temporary_password: generatedPassword && !emailSent && canExposeTemporaryPassword() ? password : null,
         },
       },
     });
@@ -278,7 +283,7 @@ router.post('/users', authMiddleware, requireModule('users_manage'), async (req,
       return res.status(409).json({ success: false, error: 'Такой email уже используется' });
     }
 
-    return res.status(500).json({ success: false, error: error.message });
+    return sendInternalError(res, error, { route: 'auth.users.create' });
   }
 });
 
@@ -396,7 +401,7 @@ router.patch('/users/:id', authMiddleware, requireModule('users_manage'), async 
       return res.status(409).json({ success: false, error: 'Такой email уже используется' });
     }
 
-    return res.status(500).json({ success: false, error: error.message });
+    return sendInternalError(res, error, { route: 'auth.users.update' });
   }
 });
 
@@ -447,7 +452,7 @@ router.delete('/users/:id', authMiddleware, requireModule('users_manage'), async
     await query('DELETE FROM users WHERE id = $1', [userId]);
     return res.status(204).end();
   } catch (error) {
-    return res.status(500).json({ success: false, error: error.message });
+    return sendInternalError(res, error, { route: 'auth.users.delete' });
   }
 });
 
@@ -478,7 +483,7 @@ router.post('/password-reset/request', async (req, res) => {
 
     return res.json({ success: true });
   } catch (error) {
-    return res.status(500).json({ success: false, error: error.message });
+    return sendInternalError(res, error, { route: 'auth.password_reset.request' });
   }
 });
 
@@ -520,7 +525,7 @@ router.post('/users/:id/send-password', authMiddleware, requireModule('users_man
       },
     });
   } catch (error) {
-    return res.status(500).json({ success: false, error: error.message });
+    return sendInternalError(res, error, { route: 'auth.users.send_password' });
   }
 });
 
@@ -579,7 +584,7 @@ router.post('/users/:id/reset-link', authMiddleware, requireModule('users_manage
       },
     });
   } catch (error) {
-    return res.status(500).json({ success: false, error: error.message });
+    return sendInternalError(res, error, { route: 'auth.users.reset_link' });
   }
 });
 
@@ -612,7 +617,7 @@ router.get('/password-reset/:token', async (req, res) => {
       },
     });
   } catch (error) {
-    return res.status(500).json({ success: false, error: error.message });
+    return sendInternalError(res, error, { route: 'auth.password_reset.get' });
   }
 });
 
@@ -658,7 +663,7 @@ router.post('/password-reset/complete', async (req, res) => {
 
     return res.json({ success: true });
   } catch (error) {
-    return res.status(500).json({ success: false, error: error.message });
+    return sendInternalError(res, error, { route: 'auth.password_reset.complete' });
   }
 });
 

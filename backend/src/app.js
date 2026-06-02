@@ -27,6 +27,7 @@ const { startDelayedAqsiSyncScheduler } = require('./services/order-sync');
 const { markMissedBookings } = require('./jobs/schedule-cleanup');
 const { ensureBootstrapUser } = require('./services/user-auth');
 const logger = require('./services/logger');
+const { getPublicErrorMessage } = require('./utils/http-response');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -102,7 +103,7 @@ app.use((error, req, res, next) => {
   });
 
   res.status(statusCode).json({
-    error: error.message || 'Internal server error',
+    error: getPublicErrorMessage(error, statusCode),
   });
 });
 
