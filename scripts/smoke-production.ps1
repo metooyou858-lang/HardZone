@@ -3,20 +3,24 @@ $ErrorActionPreference = "Stop"
 $sshKey = "$HOME\.ssh\hardzone_deploy"
 $target = "root@79.137.162.55"
 
-Write-Host "== ssh =="
-ssh -i $sshKey -o ConnectTimeout=10 -o StrictHostKeyChecking=no $target "echo ok"
+$remoteScript = @'
+set -euo pipefail
 
-Write-Host "== pm2 status =="
-ssh -i $sshKey -o StrictHostKeyChecking=no $target "su - app -c 'pm2 status'"
+echo "== backend health =="
+curl -fsS http://127.0.0.1:3000/health
+echo
 
-Write-Host "== backend health =="
-ssh -i $sshKey -o StrictHostKeyChecking=no $target "curl -fsS http://127.0.0.1:3000/health"
+echo "== frontend http =="
+curl -I -fsS http://127.0.0.1:3001
 
-Write-Host "== frontend http =="
-ssh -i $sshKey -o StrictHostKeyChecking=no $target "curl -I -fsS http://127.0.0.1:3001"
+echo "== listening ports =="
+ss -ltnp | grep -E ':3000|:3001'
 
-Write-Host "== recent backend errors =="
-ssh -i $sshKey -o StrictHostKeyChecking=no $target "su - app -c 'pm2 logs inventory-backend --lines 80 --nostream' | tail -n 80"
+echo "== recent backend logs =="
+su - app -c 'pm2 logs inventory-backend --lines 100 --nostream' | tail -n 100
 
-Write-Host "== recent frontend errors =="
-ssh -i $sshKey -o StrictHostKeyChecking=no $target "su - app -c 'pm2 logs hardzone-frontend --lines 80 --nostream' | tail -n 80"
+echo "== recent frontend logs =="
+su - app -c 'pm2 logs hardzone-frontend --lines 100 --nostream' | tail -n 100
+'@
+
+$remoteScript | ssh -i $sshKey -o ConnectTimeout=10 -o StrictHostKeyChecking=no $target "tr -d '\r' | bash"
