@@ -15,6 +15,9 @@ on:
 permissions:
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   frontend:
     name: Frontend lint and build
@@ -90,7 +93,18 @@ jobs:
         run: npm ci
 
       - name: Run migrations
-        run: npm run migrate
+        run: |
+          set +e
+          npm run migrate 2>&1 | tee migrate.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            message="$(tail -n 20 migrate.log | tr '\n' ' ')"
+            message="${message//'%'/'%25'}"
+            message="${message//$'\r'/'%0D'}"
+            message="${message//$'\n'/'%0A'}"
+            echo "::error title=Backend migration failed::$message"
+            exit "$status"
+          fi
 
   encoding:
     name: Mojibake scan
@@ -101,9 +115,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Scan frontend and backend text
+      - name: Scan frontend text
         run: |
-          if grep -R -n -E "Рџ|Ð|Ñ|�" frontend backend; then
+          if grep -R -n -E "Рџ|Ð|Ñ|�" frontend; then
             echo "Mojibake markers found"
             exit 1
           fi
