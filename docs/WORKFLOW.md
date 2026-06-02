@@ -1,5 +1,11 @@
 # HardZone Workflow
 
+Node.js version: `24.14.1` (`.nvmrc`, `.node-version`). Check before installing dependencies:
+
+```powershell
+node --version
+```
+
 ## Ежедневный цикл разработки
 
 1. Проверить ветку и незакоммиченные изменения:

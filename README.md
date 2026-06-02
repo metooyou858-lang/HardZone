@@ -1,5 +1,7 @@
 # HardZone
 
+Node.js version: `24.14.1` (`.nvmrc`, `.node-version`).
+
 CRM для CrossFit-клуба HardZone: `frontend/` (Next.js) + `backend/` (Express/PostgreSQL).
 
 ## Быстрый вход
