@@ -34,24 +34,29 @@ async function run() {
     const sql = await fs.readFile(fullPath, 'utf8');
 
     const applied = await withTransaction(async (client) => {
-      await ensureMigrationsTable(client);
+      try {
+        await ensureMigrationsTable(client);
 
-      const existing = await client.query(
-        'SELECT 1 FROM schema_migrations WHERE filename = $1',
-        [filename]
-      );
+        const existing = await client.query(
+          'SELECT 1 FROM schema_migrations WHERE filename = $1',
+          [filename]
+        );
 
-      if (existing.rowCount > 0) {
-        return false;
+        if (existing.rowCount > 0) {
+          return false;
+        }
+
+        await client.query(sql);
+        await client.query(
+          'INSERT INTO schema_migrations (filename) VALUES ($1)',
+          [filename]
+        );
+
+        return true;
+      } catch (error) {
+        console.error(`failed ${filename}`);
+        throw error;
       }
-
-      await client.query(sql);
-      await client.query(
-        'INSERT INTO schema_migrations (filename) VALUES ($1)',
-        [filename]
-      );
-
-      return true;
     });
 
     console.log(`${applied ? 'applied' : 'skipped'} ${filename}`);

@@ -32,9 +32,9 @@ SET product_type_id = (
   SELECT id
   FROM product_types
   WHERE name = CASE
-    WHEN products.type = 'product' THEN 'Товар'
-    WHEN products.type = 'service' THEN 'Услуга'
-    WHEN products.type = 'consumable' THEN 'Расходник'
+    WHEN products.type::TEXT = 'product' THEN 'Товар'
+    WHEN products.type::TEXT = 'service' THEN 'Услуга'
+    WHEN products.type::TEXT = 'consumable' THEN 'Расходник'
     ELSE 'Товар'
   END
 );
