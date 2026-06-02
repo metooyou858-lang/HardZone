@@ -23,4 +23,4 @@ echo "== recent staging frontend logs =="
 su - app -c 'pm2 logs hardzone-staging-frontend --lines 80 --nostream' | tail -n 80
 '@
 
-$remoteScript | ssh -i $sshKey -o ConnectTimeout=10 -o StrictHostKeyChecking=no $target "tr -d '\r' | bash"
+$remoteScript | ssh -i $sshKey -o ConnectTimeout=10 $target "tr -d '\r' | bash"

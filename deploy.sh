@@ -15,6 +15,7 @@ set -euo pipefail
 SSH_TARGET="${HARDZONE_SSH_TARGET:-hardzone}"
 REMOTE_BASE="/srv/HardZone"
 LOCAL_BASE="$(cd "$(dirname "$0")" && pwd)"
+SSH_OPTIONS=(-o ConnectTimeout=10)
 
 DO_BUILD_FRONTEND=false
 DO_BUILD_BACKEND=false
@@ -37,7 +38,7 @@ for arg in "$@"; do
 done
 
 ssh_cmd() {
-  ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$SSH_TARGET" "$@"
+  ssh "${SSH_OPTIONS[@]}" "$SSH_TARGET" "$@"
 }
 
 restart_frontend() {
@@ -46,7 +47,7 @@ restart_frontend() {
 
 preflight_ssh() {
   echo "=== SSH preflight: $SSH_TARGET ==="
-  if ! ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$SSH_TARGET" "echo ok" >/dev/null; then
+  if ! ssh -o BatchMode=yes "${SSH_OPTIONS[@]}" "$SSH_TARGET" "echo ok" >/dev/null; then
     cat >&2 <<'EOF'
 ERROR: cannot connect to the HardZone server over SSH.
 
@@ -72,7 +73,7 @@ sync_dir() {
   # tar excludes passed as remaining args, e.g. --exclude='frontend/.next'
   echo "→ $local_dir/"
   tar -C "$LOCAL_BASE" "$@" -czf - "$local_dir" \
-    | ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$SSH_TARGET" \
+    | ssh "${SSH_OPTIONS[@]}" "$SSH_TARGET" \
         "tar -C '$REMOTE_BASE' -xzf -"
 }
 
@@ -81,7 +82,7 @@ scp_file() {
   local remote_path="$REMOTE_BASE/$local_path"
   echo "→ $local_path"
   ssh_cmd "mkdir -p '$(dirname "$remote_path")'"
-  scp -o ConnectTimeout=10 -o StrictHostKeyChecking=no \
+  scp "${SSH_OPTIONS[@]}" \
     "$LOCAL_BASE/$local_path" \
     "$SSH_TARGET:$remote_path"
 }
