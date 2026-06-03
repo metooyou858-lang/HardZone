@@ -4,16 +4,18 @@ import { useEffect, useState } from "react";
 
 import { CloseIcon } from "@/components/schedule/schedule-shared";
 import { inputCls, labelCls } from "@/components/warehouse/shared";
-import { createTrainer, type Trainer, updateTrainer } from "@/lib/api/trainers";
+import { createTrainer, type Trainer, type TrainerStaffUser, updateTrainer } from "@/lib/api/trainers";
 import type { TrainingType } from "@/lib/api/training-types";
 export function TrainerFormModal({
   trainer,
   trainingTypes,
+  staffUsers,
   onClose,
   onSaved,
 }: {
   trainer: Trainer | null;
   trainingTypes: TrainingType[];
+  staffUsers: TrainerStaffUser[];
   onClose: () => void;
   onSaved: (message: string) => void;
 }) {
@@ -22,6 +24,7 @@ export function TrainerFormModal({
   const [phone, setPhone] = useState(trainer?.phone ?? "");
   const [email, setEmail] = useState(trainer?.email ?? "");
   const [bio, setBio] = useState(trainer?.bio ?? "");
+  const [selectedUserId, setSelectedUserId] = useState(trainer?.user_id ?? "");
   const [selectedTypes, setSelectedTypes] = useState<string[]>(trainer?.training_types.map((item) => item.id) ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +35,7 @@ export function TrainerFormModal({
     setPhone(trainer?.phone ?? "");
     setEmail(trainer?.email ?? "");
     setBio(trainer?.bio ?? "");
+    setSelectedUserId(trainer?.user_id ?? "");
     setSelectedTypes(trainer?.training_types.map((item) => item.id) ?? []);
     setError(null);
   }, [trainer]);
@@ -60,6 +64,7 @@ export function TrainerFormModal({
         phone: phone.trim() || null,
         email: email.trim() || null,
         bio: bio.trim() || null,
+        user_id: selectedUserId ? Number.parseInt(selectedUserId, 10) : null,
         training_type_ids: selectedTypes.map((value) => Number.parseInt(value, 10)),
       };
 
@@ -133,6 +138,33 @@ export function TrainerFormModal({
         </div>
 
         <div className="mt-4 rounded-[24px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4">
+          <label className={labelCls}>Связанный пользователь</label>
+          <select
+            value={selectedUserId}
+            onChange={(event) => setSelectedUserId(event.target.value)}
+            className={`mt-2 ${inputCls}`}
+          >
+            <option value="">Не привязан</option>
+            {staffUsers.map((user) => {
+              const userId = String(user.id);
+              const linkedToCurrentTrainer = trainer?.id === user.trainer_id;
+              const linkedToAnotherTrainer = Boolean(user.trainer_id && !linkedToCurrentTrainer);
+
+              return (
+                <option key={user.id} value={userId} disabled={linkedToAnotherTrainer}>
+                  {user.name}
+                  {user.email ? ` · ${user.email}` : ""}
+                  {linkedToAnotherTrainer ? " · уже привязан" : ""}
+                </option>
+              );
+            })}
+          </select>
+          <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+            Связь нужна для расписания и Telegram. Она не меняет права сотрудника.
+          </p>
+        </div>
+
+        <div className="mt-4 rounded-[24px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4">
           <p className={labelCls}>Виды тренировок</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {trainingTypes.map((type) => {
@@ -181,4 +213,3 @@ export function TrainerFormModal({
     </div>
   );
 }
-

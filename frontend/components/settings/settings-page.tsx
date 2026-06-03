@@ -10,7 +10,7 @@ import { hasModuleAccess, type AuthModulePermission, type AuthUserRole } from "@
 import { UsersPanel } from "@/components/admin/users-panel";
 import { SystemStatusPanel } from "@/components/settings/system-status-panel";
 import { fetchGymOverview, saveGymHours, type GymHour } from "@/lib/api/schedule";
-import { deleteTrainer, fetchTrainers, type Trainer } from "@/lib/api/trainers";
+import { deleteTrainer, fetchTrainerStaffUsers, fetchTrainers, type Trainer, type TrainerStaffUser } from "@/lib/api/trainers";
 import { fetchTrainingTypes, type TrainingType } from "@/lib/api/training-types";
 
 type SettingsTab = "trainers" | "gym" | "users" | "system";
@@ -39,6 +39,7 @@ export function SettingsPage() {
 
   // Trainers state
   const [trainers, setTrainers] = useState<Trainer[]>([]);
+  const [trainerStaffUsers, setTrainerStaffUsers] = useState<TrainerStaffUser[]>([]);
   const [trainingTypes, setTrainingTypes] = useState<TrainingType[]>([]);
   const [trainersLoading, setTrainersLoading] = useState(false);
   const [trainerModalOpen, setTrainerModalOpen] = useState(false);
@@ -72,11 +73,12 @@ export function SettingsPage() {
     let cancelled = false;
     setTrainersLoading(true);
 
-    Promise.all([fetchTrainers(), fetchTrainingTypes()])
-      .then(([loadedTrainers, loadedTypes]) => {
+    Promise.all([fetchTrainers(), fetchTrainingTypes(), fetchTrainerStaffUsers()])
+      .then(([loadedTrainers, loadedTypes, loadedStaffUsers]) => {
         if (cancelled) return;
         setTrainers(loadedTrainers);
         setTrainingTypes(loadedTypes);
+        setTrainerStaffUsers(loadedStaffUsers);
       })
       .catch((err) => {
         if (!cancelled) {
@@ -289,6 +291,18 @@ export function SettingsPage() {
                     {trainer.bio || "Описание пока не добавлено"}
                   </p>
 
+                  <div className="mt-4 rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm">
+                    <span className="text-[var(--text-muted)]">Связанный пользователь: </span>
+                    {trainer.linked_user ? (
+                      <span className="font-medium text-[var(--text-main)]">
+                        {trainer.linked_user.name}
+                        {trainer.linked_user.email ? ` · ${trainer.linked_user.email}` : ""}
+                      </span>
+                    ) : (
+                      <span className="text-[var(--text-muted)]">не привязан</span>
+                    )}
+                  </div>
+
                   <div className="mt-4 flex flex-wrap gap-2">
                     {trainer.training_types.length > 0 ? (
                       trainer.training_types.map((type) => (
@@ -356,6 +370,7 @@ export function SettingsPage() {
         <TrainerFormModal
           trainer={editingTrainer}
           trainingTypes={trainingTypes}
+          staffUsers={trainerStaffUsers}
           onClose={() => { setTrainerModalOpen(false); setEditingTrainer(null); }}
           onSaved={(message) => {
             setTrainerModalOpen(false);
@@ -363,6 +378,7 @@ export function SettingsPage() {
             setBanner({ tone: "success", text: message });
             // Перезагружаем список тренеров
             fetchTrainers().then(setTrainers).catch(() => {});
+            fetchTrainerStaffUsers().then(setTrainerStaffUsers).catch(() => {});
           }}
         />
       )}

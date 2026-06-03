@@ -8,23 +8,60 @@ const router = express.Router();
 const requireTrainersRead = authMiddleware.requireRole('owner', 'admin');
 const requireTrainersManage = authMiddleware.requireModule('services');
 
+function isUniqueUserLinkViolation(error) {
+  return String(error?.message || '').includes('idx_trainers_user_id_unique');
+}
+
 router.get('/', requireTrainersRead, async (req, res) => {
   try {
     const { rows } = await pool.query(`
       SELECT
         t.*,
+        CASE
+          WHEN u.id IS NULL THEN NULL
+          ELSE json_build_object(
+            'id', u.id,
+            'name', u.name,
+            'email', u.email,
+            'role_title', u.role_title,
+            'is_active', u.is_active
+          )
+        END AS linked_user,
         COALESCE(json_agg(tt.*) FILTER (WHERE tt.id IS NOT NULL), '[]') AS training_types
       FROM trainers t
+      LEFT JOIN users u ON u.id = t.user_id
       LEFT JOIN trainer_training_types ttt ON ttt.trainer_id = t.id
       LEFT JOIN training_types tt ON tt.id = ttt.training_type_id
       WHERE t.is_active = true
-      GROUP BY t.id
+      GROUP BY t.id, u.id
       ORDER BY t.last_name, t.first_name
     `);
 
     res.json({ success: true, data: rows });
   } catch (err) {
     sendInternalError(res, err, { route: 'trainers.list' });
+  }
+});
+
+router.get('/staff-users', requireTrainersManage, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        u.id,
+        u.name,
+        u.email,
+        u.role_title,
+        u.is_active,
+        t.id AS trainer_id
+      FROM users u
+      LEFT JOIN trainers t ON t.user_id = u.id AND t.is_active = true
+      WHERE u.is_active = true
+      ORDER BY u.name, u.id
+    `);
+
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    sendInternalError(res, err, { route: 'trainers.staff_users' });
   }
 });
 
@@ -68,6 +105,10 @@ router.post('/', requireTrainersManage, async (req, res) => {
       client.release();
     }
   } catch (err) {
+    if (isUniqueUserLinkViolation(err)) {
+      return res.status(409).json({ success: false, error: 'Этот сотрудник уже привязан к другой карточке тренера' });
+    }
+
     sendInternalError(res, err, { route: 'trainers.create' });
   }
 });
@@ -122,6 +163,10 @@ router.patch('/:id', requireTrainersManage, async (req, res) => {
       client.release();
     }
   } catch (err) {
+    if (isUniqueUserLinkViolation(err)) {
+      return res.status(409).json({ success: false, error: 'Этот сотрудник уже привязан к другой карточке тренера' });
+    }
+
     sendInternalError(res, err, { route: 'trainers.update' });
   }
 });
