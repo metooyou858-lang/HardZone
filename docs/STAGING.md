@@ -2,29 +2,29 @@
 
 Цель: проверять изменения CRM до production на отдельной базе, отдельных портах и отдельных PM2-процессах.
 
-## Целевая схема
+## Target Shape
 
-- Сервер: `79.137.162.55`.
-- Путь: `/srv/HardZone-staging`.
+- Server: `79.137.162.55`.
+- Path: `/srv/HardZone-staging`.
 - Backend port: `3100`.
 - Frontend port: `3101`.
 - PostgreSQL DB: `hardzone_staging`.
 - Backend PM2: `hardzone-staging-backend`.
 - Frontend PM2: `hardzone-staging-frontend`.
-- Production DB и production PM2-процессы не трогать.
+- Production DB and production PM2 processes must not be touched by staging work.
 
-## Создание staging DB
+## Create Staging DB
 
-Выполнять на сервере под `root`:
+Run on server as `root`:
 
 ```bash
 sudo -u postgres psql -c "CREATE DATABASE hardzone_staging;"
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE hardzone_staging TO hardzone;"
 ```
 
-Если используется другой production DB user, сначала сверить `/srv/HardZone/backend/.env`.
+If production uses a different DB user, first check `/srv/HardZone/backend/.env`.
 
-## Первый checkout
+## First Checkout
 
 ```bash
 mkdir -p /srv/HardZone-staging
@@ -35,11 +35,11 @@ git clone /srv/HardZone.git .
 git checkout stabilize/worktree-audit
 ```
 
-Если staging будет брать код из GitHub, вместо локального bare repo можно использовать `origin`, но не пушить staging в `server`.
+If staging should use GitHub instead of the local bare repo, configure `origin`, but do not push staging changes to `server`.
 
-## Backend env
+## Backend Env
 
-Создать `/srv/HardZone-staging/backend/.env`:
+Create `/srv/HardZone-staging/backend/.env`:
 
 ```env
 HOST=127.0.0.1
@@ -76,11 +76,11 @@ SMTP_SECURE=false
 LOG_DIR=/srv/HardZone-staging/logs
 ```
 
-Для staging лучше не подключать реальные AQSI-ключи, пока отдельно не решён безопасный тестовый flow оплат.
+For staging, avoid real AQSI keys until a separate safe payment-test flow is defined.
 
-## Frontend env
+## Frontend Env
 
-Создать `/srv/HardZone-staging/frontend/.env.local`:
+Create `/srv/HardZone-staging/frontend/.env.local`:
 
 ```env
 BACKEND_API_URL=http://127.0.0.1:3100/api
@@ -90,9 +90,9 @@ BACKEND_API_TOKEN=replace-with-staging-token
 SESSION_COOKIE_SECURE=false
 ```
 
-`HARDZONE_SESSION_SECRET` и `BACKEND_API_TOKEN` должны совпадать с backend staging.
+`HARDZONE_SESSION_SECRET` and `BACKEND_API_TOKEN` must match backend staging.
 
-## Установка и миграции
+## Install And Build
 
 ```bash
 su - app
@@ -126,25 +126,25 @@ pm2 start npm --name hardzone-staging-frontend -- start -- -p 3101 -H 127.0.0.1
 pm2 save
 ```
 
-## Health checks
+## Health Checks
 
-С локальной машины:
+From local Windows:
 
 ```powershell
 .\scripts\smoke-staging.ps1
 ```
 
-Вручную:
+Manual checks:
 
 ```powershell
 ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "curl -fsS http://127.0.0.1:3100/health"
 ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "curl -I -fsS http://127.0.0.1:3101"
 ```
 
-## Правила
+## Rules
 
-- Не использовать production DB для staging.
-- Не использовать production PM2 names.
-- Не открывать порты `3100`, `3101`, `5432` наружу.
-- Перед restore production dump в staging прочитать `docs/BACKUP_RESTORE.md`.
-- Перед изменениями оплат на staging отдельно решить, какие AQSI ключи и устройства допустимы.
+- Do not use production DB for staging.
+- Do not use production PM2 names.
+- Do not expose ports `3100`, `3101`, `5432` publicly.
+- Before restoring a production dump into staging, read `docs/BACKUP_RESTORE.md`.
+- Before payment changes on staging, decide separately which AQSI keys/devices are allowed.

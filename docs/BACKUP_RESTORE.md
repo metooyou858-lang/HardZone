@@ -1,22 +1,39 @@
 # HardZone Backup and Restore
 
-Цель: перед изменениями базы, оплат, расписания и прав доступа иметь понятную процедуру сохранения и проверки восстановления PostgreSQL.
+Цель: перед изменениями базы, оплат, расписания и прав доступа иметь понятную процедуру сохранения PostgreSQL и проверяемого восстановления.
 
 ## Когда делать backup
 
 Backup обязателен перед:
 
 - production deploy с миграциями;
-- изменениями AQSI/оплат и заказов;
+- изменениями AQSI, оплат, заказов и фискализации;
 - изменениями расписания, посещений, абонементов;
 - изменениями ролей, прав доступа и пользователей;
-- ручными SQL-операциями на production.
+- ручными SQL-операциями на production;
+- любым production restore.
 
 Перед restore на production всегда сначала сделать свежий backup текущего состояния.
 
-## Production backup
+## Быстрая команда
 
-Подключение выполняется с Windows через ключ `~/.ssh/hardzone_deploy`.
+Из корня репозитория на Windows:
+
+```powershell
+.\scripts\backup-production.ps1
+```
+
+Скрипт подключается к `79.137.162.55`, читает `/srv/HardZone/backend/.env`, создаёт custom dump PostgreSQL и показывает список последних backup-файлов.
+
+Опционально:
+
+```powershell
+.\scripts\backup-production.ps1 -BackupDir /srv/backups/hardzone
+```
+
+## Production backup вручную
+
+Проверить SSH:
 
 ```powershell
 ssh -i "$HOME\.ssh\hardzone_deploy" -o ConnectTimeout=10 root@79.137.162.55 "echo ok"
@@ -28,17 +45,18 @@ ssh -i "$HOME\.ssh\hardzone_deploy" -o ConnectTimeout=10 root@79.137.162.55 "ech
 ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "mkdir -p /srv/backups/hardzone && chown app:app /srv/backups/hardzone && chmod 750 /srv/backups/hardzone"
 ```
 
-Сделать backup из production `.env`. Сначала зайти на сервер:
+Зайти на сервер:
 
 ```powershell
 ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55
 ```
 
-Затем выполнить на сервере:
+Выполнить на сервере:
 
 ```bash
 su - app
 cd /srv/HardZone/backend
+
 backup_file="/srv/backups/hardzone/hardzone_$(date +%Y%m%d_%H%M%S).dump"
 database_url="$(sed -n 's/^DATABASE_URL=//p' .env | tail -n 1)"
 
@@ -50,13 +68,22 @@ else
   db_name="$(sed -n 's/^DB_NAME=//p' .env | tail -n 1)"
   db_user="$(sed -n 's/^DB_USER=//p' .env | tail -n 1)"
   db_password="$(sed -n 's/^DB_PASSWORD=//p' .env | tail -n 1)"
-  PGPASSWORD="$db_password" pg_dump --format=custom --no-owner --no-privileges --file="$backup_file" -h "${db_host:-127.0.0.1}" -p "${db_port:-5432}" -U "$db_user" -d "$db_name"
+
+  PGPASSWORD="$db_password" pg_dump \
+    --format=custom \
+    --no-owner \
+    --no-privileges \
+    --file="$backup_file" \
+    -h "${db_host:-127.0.0.1}" \
+    -p "${db_port:-5432}" \
+    -U "$db_user" \
+    -d "$db_name"
 fi
 
 ls -lh "$backup_file"
 ```
 
-Проверить, что файл появился и не пустой:
+Проверить последние файлы:
 
 ```powershell
 ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "ls -lh /srv/backups/hardzone | tail -n 10"
@@ -68,7 +95,7 @@ ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "ls -lh /srv/backups/hard
 scp -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55:/srv/backups/hardzone/hardzone_YYYYMMDD_HHMMSS.dump .
 ```
 
-Не коммитить `.dump` файлы в репозиторий.
+Не коммитить `.dump`, `.backup`, `.sql`, `.sql.gz` файлы в репозиторий.
 
 ## Test restore locally
 
@@ -95,9 +122,37 @@ psql "postgres://hardzone:hardzone@127.0.0.1:5432/hardzone_restore" -c "SELECT C
 psql "postgres://hardzone:hardzone@127.0.0.1:5432/hardzone_restore" -c "SELECT COUNT(*) AS clients_count FROM clients;"
 ```
 
+## Test restore on production server
+
+Быстрая проверка последнего production dump во временную БД на том же сервере:
+
+```powershell
+.\scripts\test-restore-production-backup.ps1
+```
+
+Скрипт:
+
+- берёт последний `/srv/backups/hardzone/hardzone_*.dump`, если файл не указан явно;
+- создаёт временную БД `hardzone_restore_YYYYMMDD_HHMMSS`;
+- выполняет `pg_restore`;
+- выводит counts по `users`, `clients`, `orders`, `schema_migrations`;
+- удаляет временную БД после успешной проверки.
+
+Проверить конкретный файл:
+
+```powershell
+.\scripts\test-restore-production-backup.ps1 -BackupFile /srv/backups/hardzone/hardzone_YYYYMMDD_HHMMSS.dump
+```
+
+Оставить временную БД для ручного просмотра:
+
+```powershell
+.\scripts\test-restore-production-backup.ps1 -KeepDatabase
+```
+
 ## Staging restore
 
-Для staging использовать отдельную БД, отдельный `.env` и отдельные PM2-процессы. Не восстанавливать production dump в production DB для проверки.
+Для staging использовать отдельную БД, отдельный `.env` и отдельные PM2-процессы. Не восстанавливать production dump в production DB ради проверки.
 
 Рекомендуемый порядок:
 
@@ -108,6 +163,8 @@ psql "postgres://hardzone:hardzone@127.0.0.1:5432/hardzone_restore" -c "SELECT C
 5. Запустить `npm run migrate` на staging DB.
 6. Запустить staging backend/frontend.
 7. Проверить login, `/health`, продажи, расписание, права доступа.
+
+Подробности staging-контура: `docs/STAGING.md`.
 
 ## Production restore
 
@@ -131,7 +188,7 @@ ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "su - app -c 'pm2 stop in
 ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "su - app -c 'pm2 restart inventory-backend hardzone-frontend'"
 ```
 
-Restore-команда зависит от production DB name/user. Перед выполнением сверить `.env` на сервере:
+Перед restore сверить production `.env` на сервере:
 
 ```powershell
 ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "su - app -c 'cd /srv/HardZone/backend && grep -E \"^(DATABASE_URL|DB_HOST|DB_PORT|DB_NAME|DB_USER)=\" .env | sed \"s/=.*/=<set>/\"'"

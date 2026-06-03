@@ -6,87 +6,33 @@ Node.js version: `24.14.1` (`.nvmrc`, `.node-version`). Check before installing 
 node --version
 ```
 
-## Ежедневный цикл разработки
+## Daily Development
 
-1. Проверить ветку и незакоммиченные изменения:
+1. Check branch and working tree:
 
 ```powershell
 git status --short --branch
 ```
 
-2. Перед правкой понять затронутую область:
-
-```powershell
-rg "имя_функции|endpoint|текст_ошибки" backend frontend
-```
-
-3. Делать маленькие изменения: одна задача - один участок - одна проверка.
-
-4. После правок фронтенда:
-
-```powershell
-cd frontend
-npm run lint
-npm run build
-```
-
-5. После правок backend:
-
-```powershell
-cd backend
-npm run migrate
-npm run start
-```
-
-Для локального backend нужен заполненный `backend/.env`.
-
-## Кодировки
-
-Проект использует русский интерфейс. Все текстовые файлы с кириллицей должны оставаться UTF-8.
-
-Быстрая проверка:
-
-```powershell
-rg "Рџ|Ð|Ñ|�" frontend backend
-```
-
-Если найдены реальные mojibake-строки в UI/коде, сначала исправить текст и кодировку, потом пересобирать.
-
-## Git
-
-Минимальная целевая схема:
-
-- `main` - состояние, которое можно деплоить.
-- `fix/<short-name>` - багфикс.
-- `feature/<short-name>` - новая возможность.
-- Инфраструктурные правки коммитить отдельно от бизнес-логики.
-
-Сейчас важно отдельно решить upstream: текущий `main` показывает `origin/main [gone]`. До нормальной командной работы нужно привязать репозиторий к живому remote или переименовать upstream.
-
-## Миграции
-
-Не менять production-схему руками без SQL-файла.
-
-Новая миграция:
+2. Read the relevant docs before editing:
 
 ```text
-backend/src/db/migrations/035_short_description.sql
+docs/PROJECT_MAP.md
+docs/COMMANDS.md
+docs/OPERATIONS.md
+docs/PAYMENTS.md
+docs/BACKUP_RESTORE.md
 ```
 
-Применение:
+3. Search the affected area before changing code:
 
 ```powershell
-cd backend
-npm run migrate
+rg "functionName|endpoint|error text" backend frontend
 ```
 
-На production миграции запускать через деплой:
+4. Keep changes small: one task, one area, one verification path.
 
-```powershell
-.\deploy.ps1 backend/src/db/migrations/035_short_description.sql --migrate --restart-backend
-```
-
-## Локальный запуск
+## Local Run
 
 Backend:
 
@@ -107,28 +53,108 @@ copy .env.example .env.local
 npm run dev
 ```
 
-По умолчанию frontend ожидает backend на `http://127.0.0.1:3000/api`.
+By default, frontend expects backend at `http://127.0.0.1:3000/api`.
 
-## Перед передачей задачи другому агенту
+## Checks
 
-Коротко записать:
+Fast local smoke:
 
-- что менялось;
-- какие файлы затронуты;
-- какие команды проверены;
-- что не проверено и почему;
-- есть ли риск для AQSI, расписания, прав доступа или БД.
+```powershell
+.\scripts\smoke-local.ps1 -SkipBackendMigrate
+```
 
-## Smoke-check scripts
+Only mojibake scan:
 
-Локально:
+```powershell
+.\scripts\smoke-local.ps1 -SkipFrontendLint -SkipFrontendBuild -SkipBackendMigrate
+```
+
+Frontend:
+
+```powershell
+cd frontend
+npm run lint
+npm run build
+```
+
+Backend syntax:
+
+```powershell
+Get-ChildItem backend\src -Recurse -Filter *.js | ForEach-Object { node --check $_.FullName }
+```
+
+Backend tests:
+
+```powershell
+cd backend
+npm test
+```
+
+## Encoding
+
+The project has a Russian-language interface. Text files with Cyrillic must stay UTF-8.
+
+If mojibake appears in UI/code/docs, fix the text first, then rebuild or rerun smoke.
+
+## Git
+
+Safe routine flow:
+
+```powershell
+git switch -c fix/short-name
+git add .
+git commit -m "Short clear message"
+git push -u origin fix/short-name
+```
+
+`origin` is GitHub. Pushing to `origin` does not deploy production.
+
+`server` is the production bare repo and may trigger a deploy through an old hook. Do not use `git push server main` for routine work.
+
+## Migrations
+
+Do not change production schema manually without a SQL migration.
+
+New migration format:
+
+```text
+backend/src/db/migrations/035_short_description.sql
+```
+
+Apply locally:
+
+```powershell
+cd backend
+npm run migrate
+```
+
+Production migration through deploy:
+
+```powershell
+.\deploy.ps1 backend/src/db/migrations/035_short_description.sql --migrate --restart-backend
+```
+
+Before production migrations, run:
+
+```powershell
+.\scripts\backup-production.ps1
+.\scripts\test-restore-production-backup.ps1
+```
+
+## Handoff Checklist
+
+Record briefly:
+
+- what changed;
+- which files changed;
+- which commands passed;
+- what was not checked and why;
+- whether there is risk for AQSI, schedule, access rights, or database.
+
+## Smoke Scripts
 
 ```powershell
 .\scripts\smoke-local.ps1
-```
-
-Production после деплоя:
-
-```powershell
+.\scripts\smoke-staging.ps1
 .\scripts\smoke-production.ps1
 ```

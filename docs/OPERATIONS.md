@@ -1,57 +1,28 @@
 # HardZone Operations
 
-## Production-РґРѕСЃС‚СѓРї
+## Production
 
-РўРµРєСѓС‰РёР№ production:
-
-- IP: `79.137.162.55`.
+- Server: `79.137.162.55`.
 - SSH user: `root`.
 - SSH key: `~/.ssh/hardzone_deploy`.
-- SSH password login РѕС‚РєР»СЋС‡РµРЅ; `root` РґРѕСЃС‚СѓРїРµРЅ С‚РѕР»СЊРєРѕ РїРѕ РєР»СЋС‡Сѓ.
-- РћС‚РєСЂС‹С‚С‹Рµ РІРЅРµС€РЅРёРµ РїРѕСЂС‚С‹: `22`, `80`, `443`.
-- `3001` frontend, `3000` backend Рё `5432` PostgreSQL РґРѕР»Р¶РЅС‹ Р±С‹С‚СЊ РґРѕСЃС‚СѓРїРЅС‹ С‚РѕР»СЊРєРѕ Р»РѕРєР°Р»СЊРЅРѕ РЅР° СЃРµСЂРІРµСЂРµ.
-- `ufw` Рё `fail2ban` РІРєР»СЋС‡РµРЅС‹.
-- HTTPS СЃРµР№С‡Р°СЃ РІСЂРµРјРµРЅРЅРѕ РІС‹РїСѓС‰РµРЅ РЅР° IP. РЎРµСЂС‚РёС„РёРєР°С‚ РґРµР№СЃС‚РІРёС‚РµР»РµРЅ РґРѕ `2026-06-06`; РїРѕСЃР»Рµ РїРѕСЏРІР»РµРЅРёСЏ РґРѕРјРµРЅР° РЅСѓР¶РЅРѕ РїРµСЂРµРІС‹РїСѓСЃС‚РёС‚СЊ СЃРµСЂС‚РёС„РёРєР°С‚ РЅР° РґРѕРјРµРЅ.
+- App user on server: `app`.
+- App path: `/srv/HardZone`.
+- Backend PM2: `inventory-backend`, local port `3000`.
+- Frontend PM2: `hardzone-frontend`, local port `3001`.
+- PostgreSQL must not be exposed publicly.
+- Public ports: `22`, `80`, `443`.
+- Internal-only ports: `3000`, `3001`, `5432`.
+- Old server `80.66.87.178` must not be used unless explicitly requested.
 
-РџСЂРѕРІРµСЂРєР° SSH СЃ Windows:
-
-```powershell
-ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "echo ok"
-```
-
-Перед первым подключением host key сервера должен быть в `~/.ssh/known_hosts`.
-Проверить:
+SSH password login is disabled. Access is by key only.
 
 ```powershell
-ssh-keygen -F 79.137.162.55
-```
-
-Если ключа нет, подключиться вручную и подтвердить fingerprint только после сверки с администратором сервера:
-
-```powershell
-ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "echo ok"
-```
-
-Р•СЃР»Рё РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ `deploy.sh`, РЅСѓР¶РµРЅ SSH alias:
-
-```sshconfig
-Host hardzone
-    HostName 79.137.162.55
-    User root
-    IdentityFile ~/.ssh/hardzone_deploy
-    IdentitiesOnly yes
-```
-
-Р•СЃР»Рё SSH РЅРµ РїРѕРґРєР»СЋС‡Р°РµС‚СЃСЏ, СЃРЅР°С‡Р°Р»Р° РїСЂРѕРІРµСЂСЏС‚СЊ СЃРµС‚СЊ Рё РїРѕСЂС‚:
-
-```powershell
-Test-NetConnection 79.137.162.55 -Port 22
 ssh -i "$HOME\.ssh\hardzone_deploy" -o ConnectTimeout=10 root@79.137.162.55 "echo ok"
 ```
 
-## Р”РµРїР»РѕР№
+## Deploy
 
-РћСЃРЅРѕРІРЅРѕР№ СЃРїРѕСЃРѕР± production-РґРµРїР»РѕСЏ СЃ Windows - `deploy.ps1`. РћРЅ РїРѕРґРєР»СЋС‡Р°РµС‚СЃСЏ РїРѕ SSH Рё РІС‹РїРѕР»РЅСЏРµС‚ РґРµР№СЃС‚РІРёСЏ РїРѕРґ РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј `app`, РіРґРµ СЌС‚Рѕ РЅСѓР¶РЅРѕ.
+Main production deploy from Windows:
 
 ```powershell
 .\deploy.ps1 --build-frontend --restart-frontend
@@ -59,55 +30,64 @@ ssh -i "$HOME\.ssh\hardzone_deploy" -o ConnectTimeout=10 root@79.137.162.55 "ech
 .\deploy.ps1 --build-frontend --restart-frontend --restart-backend
 ```
 
-Backend РЅРµ СЃРѕР±РёСЂР°РµС‚СЃСЏ: РґРѕСЃС‚Р°С‚РѕС‡РЅРѕ СЃРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°С‚СЊ `backend/src` Рё РїРµСЂРµР·Р°РїСѓСЃС‚РёС‚СЊ `inventory-backend`.
+Migration + backend restart:
 
-Frontend РїРѕСЃР»Рµ РїСЂР°РІРѕРє РЅСѓР¶РЅРѕ СЃРѕР±СЂР°С‚СЊ Рё РїРµСЂРµР·Р°РїСѓСЃС‚РёС‚СЊ `hardzone-frontend`. РЎРєСЂРёРїС‚ РґРµРїР»РѕСЏ РїРµСЂРµСЃРѕР·РґР°РµС‚ frontend PM2-РїСЂРѕС†РµСЃСЃ РєР°Рє `next start -p 3001 -H 127.0.0.1`, С‡С‚РѕР±С‹ РїРѕСЂС‚ `3001` РЅРµ Р±С‹Р» РѕС‚РєСЂС‹С‚ РЅР°СЂСѓР¶Сѓ.
+```powershell
+.\deploy.ps1 backend/src/db/migrations/035_short_description.sql --migrate --restart-backend
+```
 
-РќР° СЃРµСЂРІРµСЂРµ РЅРµ Р·Р°РїСѓСЃРєР°С‚СЊ `npm`, СЃР±РѕСЂРєСѓ РёР»Рё `pm2` РїРѕРґ root РІСЂСѓС‡РЅСѓСЋ. РСЃРїРѕР»СЊР·РѕРІР°С‚СЊ:
+Do not run `npm`, frontend builds, or `pm2` manually as `root`. If manual server work is unavoidable, run app commands as `app`:
 
 ```bash
 su - app -c '...'
 ```
 
-## Git remotes and production risk
+## Git Remotes
 
-`origin` - GitHub repository. Push to `origin/main` only updates GitHub and does not deploy by itself.
+- `origin` is GitHub. Push to `origin` does not deploy production.
+- `server` points to production bare repo `/srv/HardZone.git`.
+- Pushing to `server` can trigger production deploy through the old post-receive hook.
 
-`server` points to `/srv/HardZone.git` on production. That bare repository has a `post-receive` hook which checks out `main` into `/srv/HardZone`, runs backend migrations, installs dependencies, builds frontend, and restarts PM2.
+Routine production deploy should use `deploy.ps1`, not `git push server main`.
 
-Do not push to `server` unless the intent is a production deploy. Prefer `deploy.ps1` / `deploy.sh`, because they are explicit and easier to reason about from Windows.
+## Backup
 
-Recommended commit/deploy flow:
-
-1. Commit locally on a feature/fix branch.
-2. Push to GitHub `origin`.
-3. Run checks locally.
-4. Deploy explicitly through `deploy.ps1`.
-
-Avoid `git push server main` for routine work. It is an old production hook path, not the normal commit flow.
-
-## Р”РѕРјРµРЅ Рё СЃРµСЂС‚РёС„РёРєР°С‚
-
-РџРѕРєР° РґРѕРјРµРЅР° РЅРµС‚, nginx РѕР±СЃР»СѓР¶РёРІР°РµС‚ `https://79.137.162.55/` Рё СЂРµРґРёСЂРµРєС‚РёС‚ HTTP РЅР° HTTPS.
-
-РљРѕРіРґР° РїРѕСЏРІРёС‚СЃСЏ РґРѕРјРµРЅ:
-
-1. РЎРѕР·РґР°С‚СЊ DNS `A` record РЅР° `79.137.162.55`.
-2. Р”РѕР±Р°РІРёС‚СЊ РґРѕРјРµРЅ РІ `server_name` nginx.
-3. Р’С‹РїСѓСЃС‚РёС‚СЊ Let's Encrypt СЃРµСЂС‚РёС„РёРєР°С‚ РЅР° РґРѕРјРµРЅ.
-4. РџСЂРѕРІРµСЂРёС‚СЊ HTTPS, login, `/health`, PM2 Рё AQSI/payment flow.
-5. РћСЃС‚Р°РІРёС‚СЊ IP РєР°Рє redirect РЅР° РґРѕРјРµРЅ РёР»Рё Р·Р°РєСЂС‹С‚СЊ РѕС‚РґРµР»СЊРЅС‹Рј default server.
-
-Р”Рѕ РїРѕСЏРІР»РµРЅРёСЏ РґРѕРјРµРЅР° СЃР»РµРґРёС‚СЊ Р·Р° IP-СЃРµСЂС‚РёС„РёРєР°С‚РѕРј: С‚РµРєСѓС‰РёР№ РёСЃС‚РµРєР°РµС‚ `2026-06-06`.
-
-## Р›РѕРіРё
+Before production migrations or risky changes:
 
 ```powershell
-ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "su - app -c 'pm2 logs inventory-backend --lines 200 --nostream'"
-ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "su - app -c 'pm2 logs hardzone-frontend --lines 200 --nostream'"
+.\scripts\backup-production.ps1
 ```
 
-## Health checks
+Backup and restore procedure: `docs/BACKUP_RESTORE.md`.
+
+Minimum rule: if a task touches AQSI, DB schema, schedule, subscriptions, attendance, access rights, or users, create or confirm a recent production backup first.
+
+## Domain And HTTPS
+
+Current domain:
+
+```text
+hardzone.space
+www.hardzone.space
+```
+
+DNS records should point to production:
+
+```text
+@      A      79.137.162.55
+www    A      79.137.162.55
+```
+
+After DNS resolves:
+
+1. Add `hardzone.space www.hardzone.space` to nginx `server_name`.
+2. Issue a Let's Encrypt certificate for both names.
+3. Update nginx redirect/default server behavior.
+4. Check HTTPS, login, `/health`, PM2, and the sales flow.
+
+Temporary IP certificate expires on `2026-06-06`; after domain setup, use a domain certificate.
+
+## Health Checks
 
 Backend:
 
@@ -121,28 +101,51 @@ Frontend:
 ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "curl -I -fsS http://127.0.0.1:3001"
 ```
 
-Р•СЃР»Рё frontend РїРѕСЂС‚ РѕС‚Р»РёС‡Р°РµС‚СЃСЏ РІ PM2/nginx, СЃРЅР°С‡Р°Р»Р° СЃРјРѕС‚СЂРµС‚СЊ PM2:
+PM2:
 
 ```powershell
 ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "su - app -c 'pm2 status'"
 ```
 
-## Post-deploy checklist
-
-1. PM2 РїСЂРѕС†РµСЃСЃС‹ `online`.
-2. Backend `/health` РѕС‚РІРµС‡Р°РµС‚.
-3. Frontend РѕС‚РґР°РµС‚ СЃС‚СЂР°РЅРёС†Сѓ.
-4. Р’ Р»РѕРіР°С… РЅРµС‚ РЅРѕРІС‹С… `ERROR`.
-5. РџРѕСЃР»Рµ frontend-РїСЂР°РІРѕРє РЅРµС‚ mojibake:
+Logs:
 
 ```powershell
-rg "Р Сџ|Гђ|Г‘|пїЅ" frontend
+ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "su - app -c 'pm2 logs inventory-backend --lines 200 --nostream'"
+ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "su - app -c 'pm2 logs hardzone-frontend --lines 200 --nostream'"
 ```
 
-6. Р•СЃР»Рё РјРµРЅСЏР»РёСЃСЊ РѕРїР»Р°С‚С‹, РїСЂРѕРІРµСЂРёС‚СЊ СЃС†РµРЅР°СЂРёР№ РІ CRM Р±РµР· СЂСѓС‡РЅРѕРіРѕ СЃРѕР·РґР°РЅРёСЏ С‡РµРєРѕРІ РјРёРјРѕ СЃСѓС‰РµСЃС‚РІСѓСЋС‰РµРіРѕ flow.
+## Smoke Checks
 
-РђРІС‚РѕРјР°С‚РёР·РёСЂРѕРІР°РЅРЅР°СЏ С‡Р°СЃС‚СЊ:
+Local:
+
+```powershell
+.\scripts\smoke-local.ps1
+```
+
+Production:
 
 ```powershell
 .\scripts\smoke-production.ps1
 ```
+
+Staging:
+
+```powershell
+.\scripts\smoke-staging.ps1
+```
+
+## Post-Deploy Checklist
+
+1. Production backup exists if migrations or risky data paths changed.
+2. PM2 processes are `online`.
+3. Backend `/health` responds.
+4. Frontend serves a page.
+5. No new `ERROR` entries in recent backend/frontend logs.
+6. `.\scripts\smoke-production.ps1` passes.
+7. If payments changed, verify the CRM flow without creating manual receipts outside the existing AQSI flow.
+
+## Staging
+
+Staging notes: `docs/STAGING.md`.
+
+Use staging before risky AQSI, DB, schedule, subscriptions, attendance, access-rights, and restore work.

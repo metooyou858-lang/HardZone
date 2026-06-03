@@ -8,6 +8,9 @@
 - Команды для пользователя: `docs/COMMANDS.md`.
 - Workflow, Git, проверки, кодировки: `docs/WORKFLOW.md`.
 - Production, деплой, SSH, PM2, логи: `docs/OPERATIONS.md`.
+- Backup/restore: `docs/BACKUP_RESTORE.md`.
+- Staging: `docs/STAGING.md`.
+- Роли и доступы: `docs/ACCESS_MODEL.md`.
 - Бизнес-правила: `docs/BUSINESS_RULES.md`.
 - Технические решения: `docs/TECH_NOTES.md`.
 - AQSI/оплаты: `docs/PAYMENTS.md`.
@@ -17,7 +20,9 @@
 
 - Проект использует русскоязычный интерфейс; файлы с кириллицей сохранять в UTF-8.
 - Для ручных правок использовать `apply_patch`, не PowerShell redirection и не `Set-Content` без явного контроля кодировки.
-- После frontend-правок проверять mojibake: `rg "Рџ|Ð|Ñ|�" frontend`.
+- После frontend/backend-правок проверять mojibake или запускать `.\scripts\smoke-local.ps1 -SkipFrontendLint -SkipFrontendBuild -SkipBackendMigrate`.
 - Production-сервер: `79.137.162.55`; старый `80.66.87.178` не использовать без явной просьбы.
+- Домен в настройке: `hardzone.space`, `www.hardzone.space`.
 - Деплой с Windows запускать через `.\deploy.ps1`, подробности в `docs/OPERATIONS.md`.
+- Перед risky production work запускать `.\scripts\backup-production.ps1` и проверять restore через `.\scripts\test-restore-production-backup.ps1`.
 - Перед изменением AQSI сверять `swagger (3).json` и `docs/PAYMENTS.md`.

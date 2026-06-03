@@ -20,12 +20,15 @@ There are two AQSI paths in the codebase:
 
 1. Legacy/simple order flow in `backend/src/services/aqsi.js`:
    - `sendOrderToAqsi(order)` uses `POST /v2/Orders/simple`.
-   - This path is retained for compatibility with older order/fiscalization code.
+   - `getAqsiOrder(orderId)` reads `GET /v2/Orders/simple/{id}` for legacy sync.
+   - Refunds currently use `POST /v2/Receipts/returnReceipt`.
+   - This path is retained for compatibility with older cash/order/fiscalization code.
 
 2. Current V4 acquiring and receipt flow:
-   - `backend/src/routes/aqsi-v4.js`
-   - `backend/src/services/aqsi-v4-flow.js`
-   - `sendOrderToAqsiV4(...)`, `processPaymentSlip(...)`, `pollOperation(...)`, receipt helpers in `backend/src/services/aqsi.js`.
+   - `backend/src/routes/aqsi-v4.js` is mounted before `ordersRouter` on `/api/orders`.
+   - `backend/src/services/aqsi-v4-flow.js` owns card acquiring, slip polling, receipt creation, recovery, cancellation, and terminal-blocker handling.
+   - `backend/src/services/aqsi.js` contains the shared AQSI client and low-level helpers: `startSlipPurchase(...)`, `getOperation(...)`, `cancelOperation(...)`, `sendV4ReceiptRequest(...)`, `buildAqsiV4ReceiptPayload(...)`, `listAqsiReceipts(...)`, `listAqsiSlips(...)`, and `getAqsiSlip(...)`.
+   - Cash confirmation in `backend/src/routes/orders.js` still calls `sendOrderToAqsiV4(...)`, which sends a V4 receipt directly with `POST /v4/Receipts/process`.
 
 If UI/payment behavior is changed, treat the V4 flow as the primary path unless the task explicitly says it is touching the legacy v2 flow.
 
@@ -42,7 +45,7 @@ If UI/payment behavior is changed, treat the V4 flow as the primary path unless 
 UI flow:
 
 ```text
-card payment -> initiate-payment -> polling sync-slip -> receipt -> close order
+card payment -> initiate-payment -> polling sync-slip -> receipt operation -> close order
 ```
 
 Backend AQSI endpoints:
@@ -52,6 +55,16 @@ POST /v4/Slips/process/purchase
 GET /v4/Operations/{id}
 POST /v4/Receipts/process
 GET /v4/Operations/{id}
+```
+
+HardZone API endpoints mounted under `/api/orders`:
+
+```text
+POST /api/orders/{id}/initiate-payment
+POST /api/orders/{id}/sync-slip
+POST /api/orders/{id}/sync-aqsi-v4
+POST /api/orders/recover-terminal-blocker
+POST /api/orders/force-clear-blocker
 ```
 
 Key order fields:

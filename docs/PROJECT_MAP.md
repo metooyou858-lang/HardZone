@@ -10,53 +10,62 @@ HardZone - monorepo CRM для CrossFit-клуба:
 - `backend/` - Node.js, Express, PostgreSQL.
 - `backend/src/db/migrations/` - SQL-миграции, применяются через `npm run migrate`.
 - `deploy.ps1` - Windows wrapper для `deploy.sh`.
-- `deploy.sh` - деплой на production `79.137.162.55:/srv/HardZone`.
+- `deploy.sh` - production deploy на `79.137.162.55:/srv/HardZone`.
+- `scripts/smoke-local.ps1` - локальный smoke-check.
+- `scripts/smoke-production.ps1` - production smoke-check.
+- `scripts/smoke-staging.ps1` - staging smoke-check.
+- `scripts/backup-production.ps1` - production PostgreSQL backup.
+- `scripts/test-restore-production-backup.ps1` - проверка восстановления production backup во временную БД.
 - `swagger (3).json` - каноничная локальная Swagger-документация AQSI по кассе и кассовым операциям.
-- `docs/STABILIZATION_PLAN.md` - план стабилизации проекта.
-- `docs/COMMANDS.md` - короткая шпаргалка команд для человека.
-- `HardZone_CRM_Документ_v4.1.md` - каноничный проектный документ. Копии из `frontend/` и `backend/` удалены, чтобы агенты не читали устаревшие дубли.
+- `docs/STABILIZATION_PLAN.md` - план стабилизации.
+- `docs/COMMANDS.md` - короткая шпаргалка команд.
+- `docs/OPERATIONS.md` - production, deploy, домен, smoke, backup.
+- `docs/BACKUP_RESTORE.md` - backup/restore PostgreSQL.
+- `docs/PAYMENTS.md` - AQSI/оплаты.
+- `docs/ACCESS_MODEL.md` - роли, права, staff/client модель для CRM, Telegram и MAX.
+- `docs/STAGING.md` - staging-контур.
 
 ## Production
 
-- Сервер: `79.137.162.55`.
+- Server: `79.137.162.55`.
+- Domain in progress: `hardzone.space`, `www.hardzone.space`.
 - SSH user: `root`.
 - SSH key: `~/.ssh/hardzone_deploy`.
-- App user на сервере: `app`.
-- Путь: `/srv/HardZone`.
-- Backend PM2: `inventory-backend`.
-- Frontend PM2: `hardzone-frontend`.
-- SSH password login отключен; доступ только по ключу.
-- Внешние порты: `22`, `80`, `443`; app-порты `3001`, `3000`, `5432` наружу не открывать.
-- Временный HTTPS-сертификат на IP истекает `2026-06-06`; после появления домена перевыпустить сертификат на домен.
+- App user: `app`.
+- Path: `/srv/HardZone`.
+- Backend PM2: `inventory-backend`, local port `3000`.
+- Frontend PM2: `hardzone-frontend`, local port `3001`.
+- Public ports: `22`, `80`, `443`.
+- Internal-only ports: `3000`, `3001`, `5432`.
+- Old server `80.66.87.178` must not be used unless explicitly requested.
 
-Старый адрес `80.66.87.178` не использовать без прямой просьбы.
+## Current Stabilization
 
-## Фактическое сравнение с целевой схемой
+| Layer | Current state | Gate / next action |
+| --- | --- | --- |
+| Git | GitHub `origin`; production `server` remote exists | Routine deploy through `deploy.ps1`, not `git push server main` |
+| Env | Real `.env` files excluded from Git; examples exist | Keep `backend/.env.example` and `frontend/.env.example` current |
+| Database | SQL migrations and `schema_migrations` exist | Schema changes require a new SQL migration |
+| Backup | Production backup script and restore-smoke exist | Run backup before risky production work |
+| Checks | Smoke scripts exist for local, staging, production | Run the relevant smoke-check before handoff |
+| Payments | AQSI flow documented in `docs/PAYMENTS.md` | Compare endpoint/payload changes with `swagger (3).json` |
+| Domain | DNS records for `hardzone.space` point to production | Finish nginx and Let's Encrypt after DNS propagation |
 
-| Слой | Что уже есть | Что не хватает / риск | Следующий шаг |
-| --- | --- | --- | --- |
-| Git | Репозиторий есть, `.gitignore` закрывает `.env`, `node_modules`, `.next` | `main` сейчас указывает на исчезнувший `origin/main`; много незакоммиченных файлов | Настроить живой remote/upstream и зафиксировать инфраструктурный слой отдельным коммитом |
-| Структура | Frontend/backend разделены, монорепа понятная | README был слишком короткий | Держать карту проекта в `docs/PROJECT_MAP.md` |
-| Env | Реальные `.env` исключены из Git | Не было `.env.example` | Поддерживать `backend/.env.example` и `frontend/.env.example` |
-| Деплой | Есть `deploy.ps1` и `deploy.sh`, PM2-процессы известны | Скрипты были не зафиксированы в Git; нет единого post-deploy checklist | См. `docs/OPERATIONS.md` |
-| БД | Есть SQL-миграции и `schema_migrations` | Нужно не делать ручных ALTER в production без миграции | Любое изменение схемы - новый SQL в `backend/src/db/migrations/` |
-| Проверки | Есть `npm run build`, `npm run lint`, backend `/health`, проверка mojibake через `rg` | Нет единого smoke-check скрипта | Пока использовать команды из `docs/WORKFLOW.md` |
-| Оплаты | AQSI flow вынесен в `docs/PAYMENTS.md`, код разнесен по service/routes/UI | Высокий риск регрессий при точечных изменениях | Перед правками читать `docs/PAYMENTS.md` и сверять Swagger |
-| Документы | Общие docs вынесены в `docs/`; `AGENTS.md` и `CLAUDE.md` стали короткими указателями | Исторические `HardZone_CRM_Документ_v3.1.md` и `v4.md` пока оставлены как архив | Не добавлять новые дубли, обновлять каноничные docs |
+## Critical Areas
 
-## Критичные области
+- AQSI/payments: `backend/src/services/aqsi.js`, `backend/src/services/aqsi-v4-flow.js`, `backend/src/routes/aqsi-v4.js`, `backend/src/routes/orders.js`, `frontend/components/sales/`.
+- Schedule/attendance: `backend/src/routes/schedule.js`, `frontend/components/schedule/`.
+- Access rights: `backend/src/authz.js`, `frontend/lib/access.ts`, user settings.
+- Access model: `docs/ACCESS_MODEL.md`.
+- Database migrations: `backend/src/db/migrations/`.
+- Russian text encoding: any `.md`, `.ts`, `.tsx`, `.js`, `.json` with Cyrillic.
 
-- AQSI/оплаты: `backend/src/services/aqsi.js`, `backend/src/services/aqsi-v4-flow.js`, `backend/src/routes/aqsi-v4.js`, `backend/src/routes/orders.js`, `frontend/components/sales/`.
-- Расписание и списание посещений: `backend/src/routes/schedule.js`, `frontend/components/schedule/`.
-- Права доступа: `backend/src/authz.js`, `frontend/lib/access.ts`, настройки пользователей.
-- Кодировки русского текста: любые `.md`, `.ts`, `.tsx`, `.js`, `.json` с кириллицей.
+## Agent Rules
 
-## Правило для агентов
-
-1. Не переписывать большие участки без явной задачи.
-2. Перед изменением оплаты сверять payload/endpoint с `swagger (3).json`.
-3. Для ручных правок использовать `apply_patch`, не PowerShell redirection.
-4. После фронтенд-правок проверять `rg "Рџ|Ð|Ñ|�" frontend`.
-5. Если нужно деплоить с Windows, запускать `deploy.ps1`, а не ручные `npm`/`pm2` под root.
-6. Долгосрочные улучшения вести через `docs/STABILIZATION_PLAN.md`.
-7. Push в GitHub `origin` не деплоит production. Push в remote `server` запускает production hook, поэтому не использовать его случайно; обычный production deploy - через `deploy.ps1`.
+1. Do not rewrite large areas without a clear task.
+2. Before AQSI changes, compare payload/endpoints with `swagger (3).json` and `docs/PAYMENTS.md`.
+3. Use `apply_patch` for manual edits.
+4. After frontend/backend text changes, run a mojibake check or `.\scripts\smoke-local.ps1 -SkipFrontendLint -SkipFrontendBuild -SkipBackendMigrate`.
+5. If production deploy is needed from Windows, use `deploy.ps1`.
+6. Before risky production work, create or confirm a recent backup and restore evidence.
+7. Long-term stabilization changes go through `docs/STABILIZATION_PLAN.md`.
