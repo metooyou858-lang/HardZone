@@ -30,7 +30,7 @@ router.get('/', requireTrainersRead, async (req, res) => {
 
 router.post('/', requireTrainersManage, async (req, res) => {
   try {
-    const { first_name, last_name, phone, email, bio, training_type_ids } = req.body;
+    const { first_name, last_name, phone, email, bio, user_id, training_type_ids } = req.body;
 
     if (!first_name || !last_name) {
       return res.status(422).json({ success: false, error: 'Укажите имя и фамилию' });
@@ -43,11 +43,11 @@ router.post('/', requireTrainersManage, async (req, res) => {
 
       const { rows } = await client.query(
         `
-          INSERT INTO trainers (first_name, last_name, phone, email, bio)
-          VALUES ($1, $2, $3, $4, $5)
+          INSERT INTO trainers (user_id, first_name, last_name, phone, email, bio)
+          VALUES ($1, $2, $3, $4, $5, $6)
           RETURNING *
         `,
-        [first_name, last_name, phone || null, email || null, bio || null]
+        [user_id || null, first_name, last_name, phone || null, email || null, bio || null]
       );
 
       if (Array.isArray(training_type_ids) && training_type_ids.length > 0) {
@@ -74,7 +74,7 @@ router.post('/', requireTrainersManage, async (req, res) => {
 
 router.patch('/:id', requireTrainersManage, async (req, res) => {
   try {
-    const { first_name, last_name, phone, email, bio, is_active, training_type_ids } = req.body;
+    const { first_name, last_name, phone, email, bio, user_id, is_active, training_type_ids } = req.body;
     const client = await pool.connect();
 
     try {
@@ -88,12 +88,13 @@ router.patch('/:id', requireTrainersManage, async (req, res) => {
             phone      = COALESCE($3, phone),
             email      = COALESCE($4, email),
             bio        = COALESCE($5, bio),
-            is_active  = COALESCE($6, is_active),
+            user_id    = CASE WHEN $6::BOOLEAN THEN $7 ELSE user_id END,
+            is_active  = COALESCE($8, is_active),
             updated_at = NOW()
-          WHERE id = $7
+          WHERE id = $9
           RETURNING *
         `,
-        [first_name, last_name, phone, email, bio, is_active, req.params.id]
+        [first_name, last_name, phone, email, bio, req.body?.user_id !== undefined, user_id || null, is_active, req.params.id]
       );
 
       if (!rows[0]) {

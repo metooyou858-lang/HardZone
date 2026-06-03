@@ -9,6 +9,7 @@ type ApiEnvelope<T> = {
 
 export type Trainer = {
   id: string;
+  user_id: string | null;
   first_name: string;
   last_name: string;
   phone: string | null;
@@ -26,6 +27,7 @@ export async function fetchTrainers(): Promise<Trainer[]> {
 }
 
 export async function createTrainer(data: {
+  user_id?: number | null;
   first_name: string;
   last_name: string;
   phone?: string | null;
@@ -49,6 +51,7 @@ export async function updateTrainer(
     phone: string | null;
     email: string | null;
     bio: string | null;
+    user_id: number | null;
     is_active: boolean;
     training_type_ids: number[];
   }>

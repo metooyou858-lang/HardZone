@@ -11,6 +11,7 @@ const {
   hasModuleAccess,
 } = require('../src/authz');
 const authMiddleware = require('../src/middleware/auth');
+const { serializeUser } = require('../src/services/user-auth');
 
 function createResponse() {
   return {
@@ -96,4 +97,28 @@ test('staff with schedule_cancel can pass direct training cancellation guard', (
   assert.equal(nextCalled, true);
   assert.equal(res.statusCode, 200);
   assert.equal(res.body, null);
+});
+
+test('serialized users expose linked trainer profile separately from access modules', () => {
+  const user = serializeUser({
+    id: 10,
+    name: 'Мария Николаева',
+    username: 'maria@example.test',
+    email: 'maria@example.test',
+    role: 'admin',
+    role_title: 'Дежурный тренер',
+    is_active: true,
+    last_login_at: null,
+    module_grants: [],
+    module_revokes: ['users_manage', 'schedule_cancel'],
+    trainer_id: 25,
+    trainer_first_name: 'Мария',
+    trainer_last_name: 'Николаева',
+    trainer_is_active: true,
+  });
+
+  assert.equal(user.trainer_profile.id, 25);
+  assert.equal(user.trainer_profile.first_name, 'Мария');
+  assert.equal(user.modules.includes('users_manage'), false);
+  assert.equal(user.modules.includes('schedule_cancel'), false);
 });

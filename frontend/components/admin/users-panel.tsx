@@ -32,6 +32,7 @@ type UserFormState = {
   email: string;
   role_title: string;
   modules: AuthModulePermission[];
+  create_trainer_profile: boolean;
   is_active: boolean;
   password: string;
 };
@@ -64,6 +65,7 @@ const initialFormState: UserFormState = {
   email: "",
   role_title: accessPresets[0].role_title,
   modules: [...accessPresets[0].modules],
+  create_trainer_profile: false,
   is_active: true,
   password: "",
 };
@@ -87,6 +89,7 @@ function toFormState(user: AuthUser): UserFormState {
     email: user.email || "",
     role_title: user.role_title || roleLabels[user.role],
     modules: [...user.modules],
+    create_trainer_profile: false,
     is_active: user.is_active,
     password: "",
   };
@@ -217,6 +220,7 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
       ...state,
       role_title: preset.role_title,
       modules: [...preset.modules],
+      create_trainer_profile: preset.id === "duty_trainer",
     }));
   }
 
@@ -240,6 +244,7 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
         const created = await createAuthUser({
           ...payload,
           role: "admin",
+          create_trainer_profile: form.create_trainer_profile,
         });
 
         setOnboarding({
@@ -467,6 +472,35 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
           </div>
 
           <div className="rounded-[22px] border border-[var(--line-soft)] bg-[rgba(255,255,255,0.02)] p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-sm font-medium text-[var(--text-main)]">Карточка тренера</p>
+                <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
+                  Это профиль для расписания. Он не выдает права доступа, а только связывает сотрудника с тренером.
+                </p>
+              </div>
+
+              {editingUser?.trainer_profile ? (
+                <span className="rounded-full border border-[rgba(0,191,165,0.18)] bg-[rgba(0,191,165,0.08)] px-3 py-1 text-xs text-[var(--accent)]">
+                  {editingUser.trainer_profile.first_name} {editingUser.trainer_profile.last_name}
+                </span>
+              ) : editingUserId === null ? (
+                <label className="flex min-h-[42px] items-center gap-3 rounded-2xl border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] px-4 py-2 text-sm text-[var(--text-main)]">
+                  <input
+                    type="checkbox"
+                    checked={form.create_trainer_profile}
+                    onChange={(event) => setForm((state) => ({ ...state, create_trainer_profile: event.target.checked }))}
+                    className="h-4 w-4 rounded border-[var(--line-soft)] bg-transparent accent-[var(--accent)]"
+                  />
+                  Создать карточку
+                </label>
+              ) : (
+                <span className="text-xs text-[var(--text-muted)]">Карточка не привязана</span>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-[22px] border border-[var(--line-soft)] bg-[rgba(255,255,255,0.02)] p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <p className="text-sm font-medium text-[var(--text-main)]">Доступы</p>
               {isEditingOwner ? (
@@ -671,6 +705,11 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
                         </span>
                         {user.id === currentUserId ? (
                           <span className="rounded-full border border-[rgba(255,255,255,0.08)] px-2 py-1 text-[11px] text-[var(--text-muted)]">Вы</span>
+                        ) : null}
+                        {user.trainer_profile ? (
+                          <span className="rounded-full border border-[rgba(0,191,165,0.18)] bg-[rgba(0,191,165,0.08)] px-2 py-1 text-[11px] text-[var(--accent)]">
+                            Карточка тренера
+                          </span>
                         ) : null}
                       </div>
 

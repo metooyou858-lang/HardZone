@@ -26,6 +26,14 @@ function serializeUser(row) {
     module_grants: normalizeModules(row.module_grants),
     module_revokes: normalizeModules(row.module_revokes),
     modules: resolveModules(row.role, row.module_grants, row.module_revokes),
+    trainer_profile: row.trainer_id
+      ? {
+          id: Number(row.trainer_id),
+          first_name: row.trainer_first_name,
+          last_name: row.trainer_last_name,
+          is_active: row.trainer_is_active,
+        }
+      : null,
   };
 }
 

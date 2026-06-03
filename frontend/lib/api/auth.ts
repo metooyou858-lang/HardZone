@@ -13,6 +13,12 @@ export type AuthUser = {
   module_grants: AuthModulePermission[];
   module_revokes: AuthModulePermission[];
   modules: AuthModulePermission[];
+  trainer_profile: {
+    id: number;
+    first_name: string;
+    last_name: string;
+    is_active: boolean;
+  } | null;
 };
 
 export type AuthUserPayload = {
@@ -24,6 +30,7 @@ export type AuthUserPayload = {
   modules?: AuthModulePermission[];
   is_active?: boolean;
   password?: string;
+  create_trainer_profile?: boolean;
 };
 
 export type ResetLinkPayload = {

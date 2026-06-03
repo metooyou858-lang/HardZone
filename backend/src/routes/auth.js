@@ -51,6 +51,45 @@ function getRequestedModules(body, role) {
   return buildUserAccessPayload(role, body.modules);
 }
 
+function splitTrainerName(fullName) {
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+  const firstName = parts[0] || 'Тренер';
+  const lastName = parts.slice(1).join(' ') || firstName;
+
+  return { firstName, lastName };
+}
+
+async function fetchUserWithTrainer(client, userId) {
+  const { rows } = await client.query(
+    `
+      SELECT
+        u.id,
+        u.name,
+        u.role,
+        u.role_title,
+        u.username,
+        u.email,
+        u.is_active,
+        u.created_at,
+        u.updated_at,
+        u.last_login_at,
+        u.module_grants,
+        u.module_revokes,
+        t.id AS trainer_id,
+        t.first_name AS trainer_first_name,
+        t.last_name AS trainer_last_name,
+        t.is_active AS trainer_is_active
+      FROM users u
+      LEFT JOIN trainers t ON t.user_id = u.id
+      WHERE u.id = $1
+      LIMIT 1
+    `,
+    [userId]
+  );
+
+  return rows[0] || null;
+}
+
 async function resetUserPasswordAndSendEmail(user) {
   if (!user?.id || !user?.email || !user?.is_active) {
     throw new Error('Нельзя отправить новый пароль для этой учетной записи');
@@ -175,9 +214,24 @@ router.get('/me', authMiddleware, async (req, res) => {
 
     const { rows } = await query(
       `
-        SELECT id, name, role, role_title, username, email, is_active, last_login_at, module_grants, module_revokes
-        FROM users
-        WHERE id = $1
+        SELECT
+          u.id,
+          u.name,
+          u.role,
+          u.role_title,
+          u.username,
+          u.email,
+          u.is_active,
+          u.last_login_at,
+          u.module_grants,
+          u.module_revokes,
+          t.id AS trainer_id,
+          t.first_name AS trainer_first_name,
+          t.last_name AS trainer_last_name,
+          t.is_active AS trainer_is_active
+        FROM users u
+        LEFT JOIN trainers t ON t.user_id = u.id
+        WHERE u.id = $1
         LIMIT 1
       `,
       [req.user.id]
@@ -197,9 +251,26 @@ router.get('/users', authMiddleware, requireModule('users_manage'), async (req, 
   try {
     const { rows } = await query(
       `
-        SELECT id, name, role, role_title, username, email, is_active, created_at, updated_at, last_login_at, module_grants, module_revokes
-        FROM users
-        ORDER BY name, id
+        SELECT
+          u.id,
+          u.name,
+          u.role,
+          u.role_title,
+          u.username,
+          u.email,
+          u.is_active,
+          u.created_at,
+          u.updated_at,
+          u.last_login_at,
+          u.module_grants,
+          u.module_revokes,
+          t.id AS trainer_id,
+          t.first_name AS trainer_first_name,
+          t.last_name AS trainer_last_name,
+          t.is_active AS trainer_is_active
+        FROM users u
+        LEFT JOIN trainers t ON t.user_id = u.id
+        ORDER BY u.name, u.id
       `
     );
 
@@ -233,15 +304,31 @@ router.post('/users', authMiddleware, requireModule('users_manage'), async (req,
     }
 
     const accessPayload = getRequestedModules(req.body, role) || buildUserAccessPayload(role, getDefaultModulesForRole(role));
+    const createTrainerProfile = Boolean(req.body?.create_trainer_profile);
     const passwordHash = await hashPassword(password);
-    const { rows } = await query(
-      `
-        INSERT INTO users (name, role, role_title, username, email, password_hash, is_active, module_grants, module_revokes, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-        RETURNING id, name, role, role_title, username, email, is_active, last_login_at, module_grants, module_revokes
-      `,
-      [name, role, roleTitle, username, email, passwordHash, isActive, accessPayload.module_grants, accessPayload.module_revokes]
-    );
+    const createdUser = await withTransaction(async (client) => {
+      const { rows } = await client.query(
+        `
+          INSERT INTO users (name, role, role_title, username, email, password_hash, is_active, module_grants, module_revokes, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+          RETURNING id
+        `,
+        [name, role, roleTitle, username, email, passwordHash, isActive, accessPayload.module_grants, accessPayload.module_revokes]
+      );
+
+      if (createTrainerProfile) {
+        const { firstName, lastName } = splitTrainerName(name);
+        await client.query(
+          `
+            INSERT INTO trainers (user_id, first_name, last_name, email)
+            VALUES ($1, $2, $3, $4)
+          `,
+          [rows[0].id, firstName, lastName, email]
+        );
+      }
+
+      return fetchUserWithTrainer(client, rows[0].id);
+    });
 
     let emailSent = false;
     let emailError = null;
@@ -266,7 +353,7 @@ router.post('/users', authMiddleware, requireModule('users_manage'), async (req,
     return res.status(201).json({
       success: true,
       data: {
-        user: serializeUser(rows[0]),
+        user: serializeUser(createdUser),
         onboarding: {
           email_sent: emailSent,
           email_error: emailError,
@@ -382,7 +469,7 @@ router.patch('/users/:id', authMiddleware, requireModule('users_manage'), async 
         UPDATE users
         SET ${updates.join(', ')}, updated_at = NOW()
         WHERE id = $${values.length}
-        RETURNING id, name, role, role_title, username, email, is_active, last_login_at, module_grants, module_revokes
+        RETURNING id
       `,
       values
     );
@@ -391,7 +478,9 @@ router.patch('/users/:id', authMiddleware, requireModule('users_manage'), async 
       return res.status(404).json({ success: false, error: 'Пользователь не найден' });
     }
 
-    return res.json({ success: true, data: { user: serializeUser(rows[0]) } });
+    const userWithTrainer = await fetchUserWithTrainer({ query }, rows[0].id);
+
+    return res.json({ success: true, data: { user: serializeUser(userWithTrainer) } });
   } catch (error) {
     if (isUniqueViolation(error, 'idx_users_username_lower') || isUniqueViolation(error, 'users_username_key')) {
       return res.status(409).json({ success: false, error: 'Такой email уже используется' });
