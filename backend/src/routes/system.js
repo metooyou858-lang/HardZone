@@ -112,8 +112,8 @@ function buildOperationalChecks({ dbOk, backupFiles, stuckOrdersCount, terminalB
 }
 
 router.get('/status', async (req, res, next) => {
-  if (!req.user || !['owner', 'admin'].includes(req.user.role)) {
-    return res.status(403).json({ error: 'Forbidden' });
+  if (!req.user || !req.user.modules?.includes('users_manage')) {
+    return res.status(403).json({ success: false, error: 'Недостаточно прав доступа' });
   }
 
   try {

@@ -3,6 +3,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import {
+  accessPresets,
+  type AccessPreset,
   getDefaultModulesForRole,
   getDefaultRoleTitle,
   moduleLabels,
@@ -60,8 +62,8 @@ const moduleOrder: AuthModulePermission[] = [
 const initialFormState: UserFormState = {
   name: "",
   email: "",
-  role_title: getDefaultRoleTitle("admin"),
-  modules: getDefaultModulesForRole("admin"),
+  role_title: accessPresets[0].role_title,
+  modules: [...accessPresets[0].modules],
   is_active: true,
   password: "",
 };
@@ -204,6 +206,18 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
         modules: hasModule ? state.modules.filter((item) => item !== module) : [...state.modules, module],
       };
     });
+  }
+
+  function applyAccessPreset(preset: AccessPreset) {
+    if (isEditingOwner) {
+      return;
+    }
+
+    setForm((state) => ({
+      ...state,
+      role_title: preset.role_title,
+      modules: [...preset.modules],
+    }));
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -415,6 +429,41 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
                 Логин совпадает с email. Пароль система создаст сама.
               </div>
             )}
+          </div>
+
+          <div className="rounded-[22px] border border-[var(--line-soft)] bg-[rgba(255,255,255,0.02)] p-4">
+            <div className="mb-3 flex flex-col gap-1">
+              <p className="text-sm font-medium text-[var(--text-main)]">Шаблон доступа</p>
+              <p className="text-xs text-[var(--text-muted)]">
+                Быстро задает должность и права. Детальные доступы ниже можно изменить вручную.
+              </p>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              {accessPresets.map((preset) => {
+                const selected =
+                  form.role_title === preset.role_title &&
+                  preset.modules.length === form.modules.length &&
+                  preset.modules.every((module) => form.modules.includes(module));
+
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    disabled={isEditingOwner}
+                    onClick={() => applyAccessPreset(preset)}
+                    className={`rounded-2xl border px-4 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-70 ${
+                      selected
+                        ? "border-[rgba(0,191,165,0.28)] bg-[rgba(0,191,165,0.1)]"
+                        : "border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.16)]"
+                    }`}
+                  >
+                    <span className="block text-sm font-medium text-[var(--text-main)]">{preset.label}</span>
+                    <span className="mt-1 block text-xs leading-5 text-[var(--text-muted)]">{preset.description}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="rounded-[22px] border border-[var(--line-soft)] bg-[rgba(255,255,255,0.02)] p-4">

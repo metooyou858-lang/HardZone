@@ -41,8 +41,8 @@ export const SCHEDULE_SUB_PERMISSIONS: AuthModulePermission[] = [
 ];
 
 export const roleLabels: Record<AuthUserRole, string> = {
-  owner: "Владелец",
-  admin: "Главный администратор",
+  owner: "Главный администратор",
+  admin: "Администратор",
 };
 
 export const moduleLabels: Record<AuthModulePermission, string> = {
@@ -51,15 +51,42 @@ export const moduleLabels: Record<AuthModulePermission, string> = {
   sales: "Продажи",
   clients: "Клиенты",
   schedule: "Расписание",
-  schedule_edit_groups: "Групповые: создание/редактирование",
-  schedule_edit_personal: "Персоналки: создание/редактирование",
+  schedule_edit_groups: "Групповые: создание и редактирование",
+  schedule_edit_personal: "Персоналки: создание и редактирование",
   schedule_cancel: "Отмена тренировок",
-  schedule_clients: "Запись/отписка клиентов",
+  schedule_clients: "Запись и отписка клиентов",
   schedule_attendance: "Отметка посещаемости",
-  schedule_gym: "Зал (open_gym)",
+  schedule_gym: "Зал (open gym)",
   analytics: "Аналитика",
   users_manage: "Сотрудники и доступы",
 };
+
+export type AccessPresetId = "admin_full" | "duty_trainer";
+
+export type AccessPreset = {
+  id: AccessPresetId;
+  label: string;
+  description: string;
+  role_title: string;
+  modules: AuthModulePermission[];
+};
+
+export const accessPresets: AccessPreset[] = [
+  {
+    id: "admin_full",
+    label: "Администратор",
+    description: "Полный доступ к CRM, настройкам, сотрудникам и системной диагностике.",
+    role_title: "Администратор",
+    modules: ALL_MODULE_PERMISSIONS,
+  },
+  {
+    id: "duty_trainer",
+    label: "Дежурный тренер",
+    description: "Продажи, клиенты, запись на тренировки и посещаемость без отмен тренировок и системных прав.",
+    role_title: "Дежурный тренер",
+    modules: ["sales", "clients", "schedule", "schedule_clients", "schedule_attendance"],
+  },
+];
 
 export const roleDefaultModules: Record<AuthUserRole, AuthModulePermission[]> = {
   owner: ALL_MODULE_PERMISSIONS,

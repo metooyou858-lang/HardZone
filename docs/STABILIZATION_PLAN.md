@@ -43,7 +43,7 @@ Before production work:
    - issue Let's Encrypt certificate;
    - run production smoke-check.
 2. Continue cleaning older archive docs mojibake gradually if they are still needed.
-3. Implement access presets and backend guards from `docs/ACCESS_MODEL.md`.
+3. Verify access presets and backend guards from `docs/ACCESS_MODEL.md` on critical staff scenarios.
 4. Review `npm audit` findings.
 5. Extend auth tests to frontend cookie/session route flow.
 

@@ -207,3 +207,44 @@ test('module revokes prevent access to protected modules', async () => {
 
   assert.equal(result.response.status, 403);
 });
+
+test('staff without users_manage cannot open system diagnostics', async () => {
+  const staffUser = await createUser({
+    module_revokes: ['users_manage'],
+  });
+
+  const sessionUser = {
+    id: Number(staffUser.id),
+    name: staffUser.name,
+    username: staffUser.username,
+    role: staffUser.role,
+  };
+
+  const result = await request('/api/system/status', {
+    headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
+  });
+
+  assert.equal(result.response.status, 403);
+  assert.equal(result.body.success, false);
+});
+
+test('staff without schedule_cancel cannot cancel a training slot by direct request', async () => {
+  const staffUser = await createUser({
+    module_revokes: ['schedule_cancel'],
+  });
+
+  const sessionUser = {
+    id: Number(staffUser.id),
+    name: staffUser.name,
+    username: staffUser.username,
+    role: staffUser.role,
+  };
+
+  const result = await request('/api/schedule/slots/1/cancel', {
+    method: 'POST',
+    headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
+  });
+
+  assert.equal(result.response.status, 403);
+  assert.equal(result.body.success, false);
+});

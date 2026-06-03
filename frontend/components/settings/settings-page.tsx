@@ -114,12 +114,12 @@ export function SettingsPage() {
   }, [tab]);
 
   const canManageUsers = hasModuleAccess(currentModules, "users_manage");
-  const isOwnerOrAdmin = ["owner", "admin"].includes(currentUserRole);
+  const canViewSystem = canManageUsers;
 
   const tabs = [
     ...baseTabs,
     ...(canManageUsers ? [{ value: "users" as SettingsTab, label: "Сотрудники" }] : []),
-    ...(isOwnerOrAdmin ? [{ value: "system" as SettingsTab, label: "Система" }] : []),
+    ...(canViewSystem ? [{ value: "system" as SettingsTab, label: "Система" }] : []),
   ];
 
   const canManageTrainers = hasModuleAccess(currentModules, "schedule") && hasModuleAccess(currentModules, "services");
@@ -348,7 +348,7 @@ export function SettingsPage() {
         <UsersPanel currentUserId={currentUserId} currentUserRole={currentUserRole} />
       )}
 
-      {tab === "system" && isOwnerOrAdmin && (
+      {tab === "system" && canViewSystem && (
         <SystemStatusPanel />
       )}
 

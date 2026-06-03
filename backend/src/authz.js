@@ -20,8 +20,8 @@ const ROLE_DEFAULT_MODULES = {
 };
 
 const ROLE_DEFAULT_TITLES = {
-  owner: 'Владелец',
-  admin: 'Главный администратор',
+  owner: 'Главный администратор',
+  admin: 'Администратор',
 };
 
 function normalizeModules(value) {
