@@ -10,9 +10,14 @@ const {
 } = require('../services/aqsi');
 const { confirmOpenOrderPayment, syncOrderWithAqsi } = require('../services/order-sync');
 const logger = require('../services/logger');
+const authMiddleware = require('../middleware/auth');
 const { getPublicErrorMessage, sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
+const requireSalesCreate = authMiddleware.requireModule('sales_create');
+const requireSalesPay = authMiddleware.requireModule('sales_pay');
+const requireSalesRefund = authMiddleware.requireModule('sales_refund');
+const requireSalesAqsiRecovery = authMiddleware.requireModule('sales_aqsi_recovery');
 
 function asNumber(value) {
   if (value === null || value === undefined || value === '') {
@@ -732,7 +737,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireSalesCreate, async (req, res) => {
   try {
     const { comment } = req.body;
     const clientId = parseClientId(req.body?.client_id);
@@ -759,7 +764,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', requireSalesCreate, async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -834,7 +839,7 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-router.post('/:id/items', async (req, res) => {
+router.post('/:id/items', requireSalesCreate, async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -984,7 +989,7 @@ router.post('/:id/items', async (req, res) => {
   }
 });
 
-router.patch('/:id/items/:itemId', async (req, res) => {
+router.patch('/:id/items/:itemId', requireSalesCreate, async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -1121,7 +1126,7 @@ router.patch('/:id/items/:itemId', async (req, res) => {
   }
 });
 
-router.delete('/:id/items/:itemId', async (req, res) => {
+router.delete('/:id/items/:itemId', requireSalesCreate, async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -1158,7 +1163,7 @@ router.delete('/:id/items/:itemId', async (req, res) => {
   }
 });
 
-router.post('/:id/send-to-aqsi', async (req, res) => {
+router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
   const clientId = parseClientId(req.body?.client_id);
   if (Number.isNaN(clientId)) {
     return res.status(422).json({ success: false, error: 'Некорректный client_id' });
@@ -1319,7 +1324,7 @@ router.post('/:id/send-to-aqsi', async (req, res) => {
 });
 
 
-router.post('/:id/sync-aqsi', async (req, res) => {
+router.post('/:id/sync-aqsi', requireSalesAqsiRecovery, async (req, res) => {
   try {
     const result = await syncOrderWithAqsi(req.params.id);
 
@@ -1345,7 +1350,7 @@ router.post('/:id/sync-aqsi', async (req, res) => {
   }
 });
 
-router.post('/:id/confirm', async (req, res) => {
+router.post('/:id/confirm', requireSalesPay, async (req, res) => {
   try {
     const { payment_type } = req.body;
 
@@ -1379,7 +1384,7 @@ router.post('/:id/confirm', async (req, res) => {
   }
 });
 
-router.post('/:id/refund', async (req, res) => {
+router.post('/:id/refund', requireSalesRefund, async (req, res) => {
   const client = await pool.connect();
 
   try {

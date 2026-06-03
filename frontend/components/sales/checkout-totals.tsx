@@ -25,6 +25,9 @@ type CheckoutTotalsProps = {
   receiptError: boolean;
   conflictingOperationId: string | null;
   paymentBusy: boolean;
+  canCreateSales: boolean;
+  canPaySales: boolean;
+  canRecoverSalesAqsi: boolean;
   scheduleReceiptDiscount: (mode: DiscountMode, value: string) => void;
   handleConfirmCash: () => void | Promise<void>;
   handleInitiatePayment: () => void | Promise<void>;
@@ -52,6 +55,9 @@ export function CheckoutTotals({
   receiptError,
   conflictingOperationId,
   paymentBusy,
+  canCreateSales,
+  canPaySales,
+  canRecoverSalesAqsi,
   scheduleReceiptDiscount,
   handleConfirmCash,
   handleInitiatePayment,
@@ -63,16 +69,17 @@ export function CheckoutTotals({
   const [cashReceived, setCashReceived] = useState("");
 
   const hasActiveReceiptDiscount = Number(receiptDiscountValue) > 0;
-  const showDiscountBlock = basketLinesCount > 0 && (discountOpen || hasActiveReceiptDiscount);
+  const showDiscountBlock = canCreateSales && basketLinesCount > 0 && (discountOpen || hasActiveReceiptDiscount);
   const cancellationPending = order?.aqsi_payment_status === "cancelling";
 
   const isDisabled = confirming || orderLoading || basketLinesCount === 0 || sendBlockedByClient || sendBlockedByMarking || clientSaving || orderLocked || paymentBusy;
+  const payDisabled = !canPaySales || isDisabled;
 
   return (
     <div className="border-t border-[var(--line-soft)] p-5">
       <div className="rounded-[24px] border border-[rgba(94,244,216,0.12)] bg-[linear-gradient(135deg,rgba(94,244,216,0.08),rgba(22,27,39,0.98))] p-5">
 
-        {basketLinesCount > 0 && !showDiscountBlock && (
+        {canCreateSales && basketLinesCount > 0 && !showDiscountBlock && (
           <button
             type="button"
             onClick={() => setDiscountOpen(true)}
@@ -172,21 +179,21 @@ export function CheckoutTotals({
                 : "Ожидаем оплату от клиента..."}
             </span>
           </div>
-        ) : (
+        ) : canPaySales ? (
           <button
             type="button"
             onClick={() => void handleInitiatePayment()}
-            disabled={isDisabled}
-            style={isDisabled ? undefined : { background: "var(--accent-grad)" }}
+            disabled={payDisabled}
+            style={payDisabled ? undefined : { background: "var(--accent-grad)" }}
             className={`mt-4 inline-flex w-full items-center justify-center rounded-[18px] px-4 py-3.5 text-sm font-semibold transition-all ${
-              isDisabled
+              payDisabled
                 ? "cursor-not-allowed bg-[var(--bg-card-soft)] text-[var(--text-muted)]"
                 : "text-[var(--text-inverse)] hover:brightness-110"
             }`}
           >
             {conflictingOperationId ? "Повторить оплату картой" : "Оплата картой"}
           </button>
-        )}
+        ) : null}
 
         {(slipPending || cancellationPending) && !receiptError && (
           <p className="mt-2 rounded-[18px] border border-[var(--line-soft)] px-4 py-2.5 text-center text-xs text-[var(--text-muted)]">
@@ -205,7 +212,7 @@ export function CheckoutTotals({
         )}
 
         {/* Восстановление после ошибки фискализации */}
-        {receiptError && (
+        {receiptError && canRecoverSalesAqsi && (
           <button
             type="button"
             onClick={() => void handleSyncV4()}
@@ -216,16 +223,16 @@ export function CheckoutTotals({
         )}
 
         {/* Наличные: двухшаговый флоу с расчётом сдачи */}
-        {!paymentBusy && !receiptError && !cashStep && (
+        {!paymentBusy && !receiptError && !cashStep && canPaySales && (
           <button
             type="button"
             onClick={() => {
               setCashReceived(String(Math.ceil(Number(order?.total_amount ?? 0))));
               setCashStep(true);
             }}
-            disabled={isDisabled}
+            disabled={payDisabled}
             className={`mt-2 inline-flex w-full items-center justify-center rounded-[18px] border border-[var(--line-soft)] px-4 py-2.5 text-xs transition-all ${
-              isDisabled
+              payDisabled
                 ? "cursor-not-allowed text-[var(--text-muted)] opacity-40"
                 : "text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
             }`}
@@ -234,7 +241,7 @@ export function CheckoutTotals({
           </button>
         )}
 
-        {cashStep && !paymentBusy && (
+        {cashStep && !paymentBusy && canPaySales && (
           <div className="mt-2 rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-panel)] p-4">
             <p className="mb-3 text-xs font-medium text-[var(--text-muted)]">Оплата наличными</p>
             <div className="flex items-center gap-3">

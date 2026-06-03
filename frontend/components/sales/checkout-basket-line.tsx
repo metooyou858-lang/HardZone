@@ -14,6 +14,7 @@ import {
 type CheckoutBasketLineProps = {
   line: BasketLine;
   orderLocked: boolean;
+  canCreateSales: boolean;
   lineBusyKey: string | null;
   editingLineDiscountKey: string | null;
   lineDiscountMode: DiscountMode;
@@ -39,6 +40,7 @@ type CheckoutBasketLineProps = {
 export function CheckoutBasketLine({
   line,
   orderLocked,
+  canCreateSales,
   lineBusyKey,
   editingLineDiscountKey,
   lineDiscountMode,
@@ -87,19 +89,22 @@ export function CheckoutBasketLine({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => void removeLine(line)}
-          disabled={busy || orderLocked}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[rgba(248,81,73,0.22)] text-[var(--danger)] transition-colors hover:bg-[rgba(248,81,73,0.1)] disabled:opacity-50"
-          aria-label={`Удалить ${line.name}`}
-        >
-          <CloseIcon />
-        </button>
+        {canCreateSales ? (
+          <button
+            type="button"
+            onClick={() => void removeLine(line)}
+            disabled={busy || orderLocked}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[rgba(248,81,73,0.22)] text-[var(--danger)] transition-colors hover:bg-[rgba(248,81,73,0.1)] disabled:opacity-50"
+            aria-label={`Удалить ${line.name}`}
+          >
+            <CloseIcon />
+          </button>
+        ) : null}
       </div>
 
       <div className="mt-4 flex items-center justify-between gap-3">
-        <div className="inline-flex items-center gap-2 rounded-2xl bg-[var(--bg-panel)] p-1.5">
+        {canCreateSales ? (
+          <div className="inline-flex items-center gap-2 rounded-2xl bg-[var(--bg-panel)] p-1.5">
           <button
             type="button"
             onClick={() => void decrementLine(line)}
@@ -121,7 +126,12 @@ export function CheckoutBasketLine({
           >
             <PlusIcon />
           </button>
-        </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl bg-[var(--bg-panel)] px-4 py-2 text-sm font-semibold text-[var(--text-main)]">
+            {line.quantity} шт.
+          </div>
+        )}
 
         <div className="text-right">
           <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">Итого</p>
@@ -136,6 +146,7 @@ export function CheckoutBasketLine({
         </div>
       </div>
 
+      {canCreateSales ? (
       <div className="mt-3 flex items-center justify-between gap-3">
         <button
           type="button"
@@ -149,8 +160,9 @@ export function CheckoutBasketLine({
           <p className="text-xs text-[var(--accent)]">−{formatMoney(line.discountTotal)}</p>
         )}
       </div>
+      ) : null}
 
-      {isEditingDiscount && (
+      {canCreateSales && isEditingDiscount && (
         <div className="mt-3 rounded-2xl bg-[var(--bg-panel)] p-3">
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -239,7 +251,7 @@ export function CheckoutBasketLine({
               onFocus={() => onMarkingFieldFocusChange(true)}
               onBlur={() => onMarkingFieldFocusChange(false)}
               placeholder="Сканируйте или вставьте код маркировки"
-              disabled={orderLocked || isMarkingSaving}
+              disabled={!canCreateSales || orderLocked || isMarkingSaving}
               className="w-full rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-soft)] disabled:opacity-50"
             />
           </div>

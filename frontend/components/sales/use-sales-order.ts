@@ -27,6 +27,9 @@ import { findByBarcode } from "@/lib/api/products";
 
 type UseSalesOrderOptions = {
   cashViewActive: boolean;
+  canCreateSales: boolean;
+  canPaySales: boolean;
+  canRecoverSalesAqsi: boolean;
   setBanner: Dispatch<SetStateAction<BannerState>>;
   onHistoryChanged?: () => void;
   onBarcodeScanComplete?: () => void;
@@ -34,6 +37,9 @@ type UseSalesOrderOptions = {
 
 export function useSalesOrder({
   cashViewActive,
+  canCreateSales,
+  canPaySales,
+  canRecoverSalesAqsi,
   setBanner,
   onHistoryChanged,
   onBarcodeScanComplete,
@@ -61,6 +67,7 @@ export function useSalesOrder({
   const basketApi = useOrderBasket({
     order,
     orderAwaitingPayment: Boolean(order?.status === "open" && (order?.aqsi_receipt_id || order?.aqsi_sent_at || order?.aqsi_payment_operation_id || order?.aqsi_slip_id || order?.aqsi_receipt_operation_id)),
+    canCreateSales,
     setBanner,
     setOrder,
   });
@@ -68,13 +75,14 @@ export function useSalesOrder({
   const discountApi = useOrderDiscounts({
     order,
     orderAwaitingPayment: Boolean(order?.status === "open" && (order?.aqsi_receipt_id || order?.aqsi_sent_at || order?.aqsi_payment_operation_id || order?.aqsi_slip_id || order?.aqsi_receipt_operation_id)),
+    canCreateSales,
     orderLoading,
     setBanner,
     refreshOrder: basketApi.refreshOrder,
   });
 
   const scannerApi = useOrderScanner({
-    enabled: cashViewActive && !clientApi.clientPickerOpen,
+    enabled: cashViewActive && canCreateSales && !clientApi.clientPickerOpen,
     onScan: (barcode) => void handleBarcodeScan(barcode),
   });
 
@@ -125,6 +133,9 @@ export function useSalesOrder({
   async function ensureOrder() {
     if (order) return order;
     if (orderPromiseRef.current) return orderPromiseRef.current;
+    if (!canCreateSales) {
+      throw new Error("Недостаточно прав для создания чека");
+    }
 
     const pending = (async () => {
       setOrderLoading(true);
@@ -163,7 +174,7 @@ export function useSalesOrder({
   // ── Barcode scan handler ──────────────────────────────────────────────────────
 
   async function handleBarcodeScan(barcode: string) {
-    if (confirming || orderAwaitingPayment) return;
+    if (!canCreateSales || confirming || orderAwaitingPayment) return;
 
     setBanner({ tone: "info", text: `Сканер: ${barcode}` });
 
@@ -237,6 +248,10 @@ export function useSalesOrder({
 
   async function handleConfirmCash() {
     if (confirmingRef.current) return;
+    if (!canPaySales) {
+      setBanner({ tone: "error", text: "Недостаточно прав для оплаты" });
+      return;
+    }
     if (!order || order.items.length === 0) return;
 
     if (serviceRequiresClient && !clientApi.selectedClient?.id && !order.client_id) {
@@ -370,6 +385,7 @@ export function useSalesOrder({
   // Auto-resume polling after page reload if payment was in progress
   useEffect(() => {
     if (!order?.id || !order.aqsi_payment_operation_id || order.status !== "open") return;
+    if (!canPaySales) return;
     if (slipPollIntervalRef.current) return;
 
     setSlipPending(true);
@@ -381,11 +397,12 @@ export function useSalesOrder({
     }
     startSlipPolling(orderId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [order?.id, order?.aqsi_payment_operation_id, order?.aqsi_payment_status]);
+  }, [order?.id, order?.aqsi_payment_operation_id, order?.aqsi_payment_status, canPaySales]);
 
   // Auto-poll when conflicting operation detected — clears automatically once AQSI resolves it
   useEffect(() => {
     if (!conflictingOperationId) return;
+    if (!canRecoverSalesAqsi) return;
     const opId = conflictingOperationId;
     const checkId = setInterval(async () => {
       try {
@@ -398,10 +415,14 @@ export function useSalesOrder({
     }, 30000);
     return () => clearInterval(checkId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conflictingOperationId]);
+  }, [conflictingOperationId, canRecoverSalesAqsi]);
 
   async function handleInitiatePayment() {
     if (confirmingRef.current || slipPending || orderAwaitingPayment) return;
+    if (!canPaySales) {
+      setBanner({ tone: "error", text: "Недостаточно прав для оплаты" });
+      return;
+    }
     if (!order || order.items.length === 0) return;
 
     if (serviceRequiresClient && !clientApi.selectedClient?.id && !order.client_id) {
@@ -459,6 +480,10 @@ export function useSalesOrder({
 
   async function handleSyncV4() {
     if (!order) return;
+    if (!canRecoverSalesAqsi) {
+      setBanner({ tone: "error", text: "Недостаточно прав для восстановления AQSI" });
+      return;
+    }
     setBanner({ tone: "info", text: "Проверяем статус фискализации..." });
     try {
       const result = await syncAqsiV4(order.id);

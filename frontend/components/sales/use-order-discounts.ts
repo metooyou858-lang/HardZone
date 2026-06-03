@@ -22,6 +22,7 @@ import {
 type UseOrderDiscountsOptions = {
   order: OrderDetail | null;
   orderAwaitingPayment: boolean;
+  canCreateSales: boolean;
   orderLoading: boolean;
   setBanner: Dispatch<SetStateAction<BannerState>>;
   refreshOrder: (orderId: string) => Promise<void>;
@@ -30,6 +31,7 @@ type UseOrderDiscountsOptions = {
 export function useOrderDiscounts({
   order,
   orderAwaitingPayment,
+  canCreateSales,
   orderLoading,
   setBanner,
   refreshOrder,
@@ -83,7 +85,7 @@ export function useOrderDiscounts({
     setReceiptDiscountValue(nextValue);
 
     if (receiptDiscountTimerRef.current) clearTimeout(receiptDiscountTimerRef.current);
-    if (!order || orderLoading || orderAwaitingPayment) return;
+    if (!canCreateSales || !order || orderLoading || orderAwaitingPayment) return;
 
     receiptDiscountTimerRef.current = setTimeout(() => {
       void persistReceiptDiscount(order.id, nextMode, nextValue);
@@ -91,6 +93,8 @@ export function useOrderDiscounts({
   }
 
   function openLineDiscountEditor(line: BasketLine) {
+    if (!canCreateSales) return;
+
     const nextMode = detectDiscountMode(line.discountPercent, line.discountMoney);
     setEditingLineDiscountKey((current) => (current === line.key ? null : line.key));
     setLineDiscountMode(nextMode);
@@ -98,7 +102,7 @@ export function useOrderDiscounts({
   }
 
   async function saveLineDiscount(line: BasketLine) {
-    if (!order || orderAwaitingPayment) return;
+    if (!canCreateSales || !order || orderAwaitingPayment) return;
 
     const payload =
       lineDiscountMode === "percent"
@@ -137,7 +141,7 @@ export function useOrderDiscounts({
   }
 
   function flushReceiptDiscount(): Promise<void> | null {
-    if (!receiptDiscountTimerRef.current || !order) return null;
+    if (!canCreateSales || !receiptDiscountTimerRef.current || !order) return null;
     clearTimeout(receiptDiscountTimerRef.current);
     receiptDiscountTimerRef.current = null;
     return persistReceiptDiscount(order.id, receiptDiscountMode, receiptDiscountValue);

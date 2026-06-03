@@ -26,6 +26,7 @@ type CatalogPanelProps = {
   lineBusyKey: string | null;
   orderLoading: boolean;
   orderLocked: boolean;
+  canCreateSales: boolean;
   addCatalogProduct: (product: Product) => unknown;
 };
 
@@ -42,6 +43,7 @@ export function CatalogPanel({
   lineBusyKey,
   orderLoading,
   orderLocked,
+  canCreateSales,
   addCatalogProduct,
 }: CatalogPanelProps) {
   return (          <section className="flex min-h-0 flex-col rounded-[28px] bg-[var(--bg-card)] shadow-[0_4px_32px_rgba(0,0,0,0.22)]">
@@ -108,7 +110,7 @@ export function CatalogPanel({
                 <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
                   {catalog.map((product) => {
                     const lineBusy = lineBusyKey === product.id;
-                    const disabled = !product.sale_price || orderLoading || orderLocked;
+                    const disabled = !canCreateSales || !product.sale_price || orderLoading || orderLocked;
                     const accentMeta = getCatalogAccentMeta(product);
 
                     // Inside a specific category, don't repeat category name — show SKU instead

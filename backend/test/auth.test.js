@@ -248,3 +248,183 @@ test('staff without schedule_cancel cannot cancel a training slot by direct requ
   assert.equal(result.response.status, 403);
   assert.equal(result.body.success, false);
 });
+
+test('staff without sales_create cannot create or edit sales orders by direct request', async () => {
+  const staffUser = await createUser({
+    module_revokes: ['sales_create'],
+  });
+
+  const sessionUser = {
+    id: Number(staffUser.id),
+    name: staffUser.name,
+    username: staffUser.username,
+    role: staffUser.role,
+  };
+
+  const createOrder = await request('/api/orders', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-hardzone-session': createSessionToken(sessionUser) },
+    body: JSON.stringify({ comment: null }),
+  });
+  assert.equal(createOrder.response.status, 403);
+
+  const addItem = await request('/api/orders/00000000-0000-0000-0000-000000000000/items', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-hardzone-session': createSessionToken(sessionUser) },
+    body: JSON.stringify({ quantity: 1 }),
+  });
+  assert.equal(addItem.response.status, 403);
+
+  const patchOrder = await request('/api/orders/00000000-0000-0000-0000-000000000000', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-hardzone-session': createSessionToken(sessionUser) },
+    body: JSON.stringify({ discount_percent: 5 }),
+  });
+  assert.equal(patchOrder.response.status, 403);
+
+  const patchItem = await request('/api/orders/00000000-0000-0000-0000-000000000000/items/ci-item', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-hardzone-session': createSessionToken(sessionUser) },
+    body: JSON.stringify({ quantity: 2 }),
+  });
+  assert.equal(patchItem.response.status, 403);
+
+  const deleteItem = await request('/api/orders/00000000-0000-0000-0000-000000000000/items/ci-item', {
+    method: 'DELETE',
+    headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
+  });
+  assert.equal(deleteItem.response.status, 403);
+
+  const legacyCreate = await request('/api/sales', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-hardzone-session': createSessionToken(sessionUser) },
+    body: JSON.stringify({ product_id: 1, quantity: 1, payment_type: 'cash' }),
+  });
+  assert.equal(legacyCreate.response.status, 403);
+});
+
+test('staff without sales_pay cannot confirm or initiate payments by direct request', async () => {
+  const staffUser = await createUser({
+    module_revokes: ['sales_pay'],
+  });
+
+  const sessionUser = {
+    id: Number(staffUser.id),
+    name: staffUser.name,
+    username: staffUser.username,
+    role: staffUser.role,
+  };
+
+  const confirm = await request('/api/orders/00000000-0000-0000-0000-000000000000/confirm', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-hardzone-session': createSessionToken(sessionUser) },
+    body: JSON.stringify({ payment_type: 'cash' }),
+  });
+  assert.equal(confirm.response.status, 403);
+
+  const initiate = await request('/api/orders/00000000-0000-0000-0000-000000000000/initiate-payment', {
+    method: 'POST',
+    headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
+  });
+  assert.equal(initiate.response.status, 403);
+
+  const sendToAqsi = await request('/api/orders/00000000-0000-0000-0000-000000000000/send-to-aqsi', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-hardzone-session': createSessionToken(sessionUser) },
+    body: JSON.stringify({ client_id: null }),
+  });
+  assert.equal(sendToAqsi.response.status, 403);
+
+  const syncSlip = await request('/api/orders/00000000-0000-0000-0000-000000000000/sync-slip', {
+    method: 'POST',
+    headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
+  });
+  assert.equal(syncSlip.response.status, 403);
+
+  const legacyConfirm = await request('/api/sales/1/confirm', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-hardzone-session': createSessionToken(sessionUser) },
+    body: JSON.stringify({ aqsi_receipt_id: 'ci' }),
+  });
+  assert.equal(legacyConfirm.response.status, 403);
+});
+
+test('staff without sales_refund cannot refund orders by direct request', async () => {
+  const staffUser = await createUser({
+    module_revokes: ['sales_refund'],
+  });
+
+  const sessionUser = {
+    id: Number(staffUser.id),
+    name: staffUser.name,
+    username: staffUser.username,
+    role: staffUser.role,
+  };
+
+  const result = await request('/api/orders/00000000-0000-0000-0000-000000000000/refund', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-hardzone-session': createSessionToken(sessionUser) },
+    body: JSON.stringify({}),
+  });
+
+  assert.equal(result.response.status, 403);
+});
+
+test('staff without sales_aqsi_recovery cannot use recovery endpoints by direct request', async () => {
+  const staffUser = await createUser({
+    module_revokes: ['sales_aqsi_recovery'],
+  });
+
+  const sessionUser = {
+    id: Number(staffUser.id),
+    name: staffUser.name,
+    username: staffUser.username,
+    role: staffUser.role,
+  };
+
+  const sync = await request('/api/orders/00000000-0000-0000-0000-000000000000/sync-aqsi-v4', {
+    method: 'POST',
+    headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
+  });
+  assert.equal(sync.response.status, 403);
+
+  const recover = await request('/api/orders/recover-terminal-blocker', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-hardzone-session': createSessionToken(sessionUser) },
+    body: JSON.stringify({ operation_id: 'ci-operation' }),
+  });
+  assert.equal(recover.response.status, 403);
+
+  const syncLegacy = await request('/api/orders/00000000-0000-0000-0000-000000000000/sync-aqsi', {
+    method: 'POST',
+    headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
+  });
+  assert.equal(syncLegacy.response.status, 403);
+
+  const forceClear = await request('/api/orders/force-clear-blocker', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-hardzone-session': createSessionToken(sessionUser) },
+    body: JSON.stringify({ operation_id: 'ci-operation' }),
+  });
+  assert.equal(forceClear.response.status, 403);
+});
+
+test('staff without sales_cancel cannot cancel legacy sales by direct request', async () => {
+  const staffUser = await createUser({
+    module_revokes: ['sales_cancel'],
+  });
+
+  const sessionUser = {
+    id: Number(staffUser.id),
+    name: staffUser.name,
+    username: staffUser.username,
+    role: staffUser.role,
+  };
+
+  const result = await request('/api/sales/1/cancel', {
+    method: 'POST',
+    headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
+  });
+
+  assert.equal(result.response.status, 403);
+});

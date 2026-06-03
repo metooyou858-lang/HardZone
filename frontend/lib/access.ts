@@ -4,6 +4,11 @@ export type AuthModulePermission =
   | "warehouse"
   | "services"
   | "sales"
+  | "sales_create"
+  | "sales_pay"
+  | "sales_cancel"
+  | "sales_refund"
+  | "sales_aqsi_recovery"
   | "clients"
   | "schedule"
   | "schedule_edit_groups"
@@ -19,6 +24,11 @@ export const ALL_MODULE_PERMISSIONS: AuthModulePermission[] = [
   "warehouse",
   "services",
   "sales",
+  "sales_create",
+  "sales_pay",
+  "sales_cancel",
+  "sales_refund",
+  "sales_aqsi_recovery",
   "clients",
   "schedule",
   "schedule_edit_groups",
@@ -40,6 +50,14 @@ export const SCHEDULE_SUB_PERMISSIONS: AuthModulePermission[] = [
   "schedule_gym",
 ];
 
+export const SALES_SUB_PERMISSIONS: AuthModulePermission[] = [
+  "sales_create",
+  "sales_pay",
+  "sales_cancel",
+  "sales_refund",
+  "sales_aqsi_recovery",
+];
+
 export const roleLabels: Record<AuthUserRole, string> = {
   owner: "Главный администратор",
   admin: "Администратор",
@@ -49,6 +67,11 @@ export const moduleLabels: Record<AuthModulePermission, string> = {
   warehouse: "Склад",
   services: "Услуги",
   sales: "Продажи",
+  sales_create: "Продажи: создание и редактирование чека",
+  sales_pay: "Продажи: оплата",
+  sales_cancel: "Продажи: отмена",
+  sales_refund: "Продажи: возвраты",
+  sales_aqsi_recovery: "Продажи: восстановление AQSI",
   clients: "Клиенты",
   schedule: "Расписание",
   schedule_edit_groups: "Групповые: создание и редактирование",
@@ -84,7 +107,7 @@ export const accessPresets: AccessPreset[] = [
     label: "Дежурный тренер",
     description: "Продажи, клиенты, запись на тренировки и посещаемость без отмен тренировок и системных прав.",
     role_title: "Дежурный тренер",
-    modules: ["sales", "clients", "schedule", "schedule_clients", "schedule_attendance"],
+    modules: ["sales", "sales_create", "sales_pay", "clients", "schedule", "schedule_clients", "schedule_attendance"],
   },
 ];
 

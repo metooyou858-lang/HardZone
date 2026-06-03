@@ -29,6 +29,8 @@ type SalesHistoryPanelProps = {
   detailLoadingId: string | null;
   refundingId: string | null;
   syncingOrderId: string | null;
+  canRefundSales: boolean;
+  canRecoverSalesAqsi: boolean;
   handleToggleOrder: (orderId: string) => void | Promise<void>;
   handleSyncPayment: (orderId: string) => void | Promise<void>;
   handleRefundOrder: (orderId: string, item?: OrderItem) => void | Promise<void>;
@@ -45,6 +47,8 @@ export function SalesHistoryPanel({
   detailLoadingId,
   refundingId,
   syncingOrderId,
+  canRefundSales,
+  canRecoverSalesAqsi,
   handleToggleOrder,
   handleSyncPayment,
   handleRefundOrder,
@@ -103,9 +107,11 @@ export function SalesHistoryPanel({
               const refunding = refundingId === historyOrder.id;
               const syncingHistoryOrder = syncingOrderId === historyOrder.id;
               const canCheckPayment =
+                canRecoverSalesAqsi &&
                 historyOrder.status === "open" && historyOrder.items_count > 0 && !!historyOrder.aqsi_receipt_id;
               const canRefund =
-                historyOrder.status === "confirmed" || historyOrder.status === "partially_refunded";
+                canRefundSales &&
+                (historyOrder.status === "confirmed" || historyOrder.status === "partially_refunded");
 
               return (
                 <div key={historyOrder.id}>

@@ -8,6 +8,7 @@ import {
   getDefaultModulesForRole,
   getDefaultRoleTitle,
   moduleLabels,
+  SALES_SUB_PERMISSIONS,
   roleLabels,
   SCHEDULE_SUB_PERMISSIONS,
   type AuthModulePermission,
@@ -198,6 +199,20 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
           };
         } else {
           const toAdd = (["schedule", ...SCHEDULE_SUB_PERMISSIONS] as AuthModulePermission[]).filter(
+            (m) => !state.modules.includes(m)
+          );
+          return { ...state, modules: [...state.modules, ...toAdd] };
+        }
+      }
+
+      if (module === "sales") {
+        if (hasModule) {
+          return {
+            ...state,
+            modules: state.modules.filter((m) => m !== "sales" && !SALES_SUB_PERMISSIONS.includes(m)),
+          };
+        } else {
+          const toAdd = (["sales", ...SALES_SUB_PERMISSIONS] as AuthModulePermission[]).filter(
             (m) => !state.modules.includes(m)
           );
           return { ...state, modules: [...state.modules, ...toAdd] };
@@ -535,6 +550,56 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
                       {enabled ? (
                         <div className="ml-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
                           {SCHEDULE_SUB_PERMISSIONS.map((sub) => {
+                            const subEnabled = form.modules.includes(sub);
+                            return (
+                              <label
+                                key={sub}
+                                className={`flex items-center justify-between rounded-2xl border px-4 py-2.5 text-xs ${
+                                  subEnabled
+                                    ? "border-[rgba(0,191,165,0.18)] bg-[rgba(0,191,165,0.05)]"
+                                    : "border-[var(--line-soft)] bg-[rgba(255,255,255,0.02)]"
+                                } ${isEditingOwner ? "opacity-70" : ""}`}
+                              >
+                                <span className="text-[var(--text-muted)]">{moduleLabels[sub]}</span>
+                                <input
+                                  type="checkbox"
+                                  checked={subEnabled}
+                                  disabled={isEditingOwner}
+                                  onChange={() => toggleModule(sub)}
+                                  className="h-4 w-4 rounded border-[var(--line-soft)] bg-transparent accent-[var(--accent)]"
+                                />
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                }
+
+                if (module === "sales") {
+                  return (
+                    <div key="sales" className="col-span-full space-y-2">
+                      <label
+                        className={`flex items-center justify-between rounded-2xl border px-4 py-3 text-sm ${
+                          enabled
+                            ? "border-[rgba(0,191,165,0.22)] bg-[rgba(0,191,165,0.08)]"
+                            : "border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)]"
+                        } ${isEditingOwner ? "opacity-70" : ""}`}
+                      >
+                        <span className="text-[var(--text-main)]">Продажи</span>
+                        <input
+                          type="checkbox"
+                          checked={enabled}
+                          disabled={isEditingOwner}
+                          onChange={() => toggleModule("sales")}
+                          className="h-4 w-4 rounded border-[var(--line-soft)] bg-transparent accent-[var(--accent)]"
+                        />
+                      </label>
+
+                      {enabled ? (
+                        <div className="ml-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                          {SALES_SUB_PERMISSIONS.map((sub) => {
                             const subEnabled = form.modules.includes(sub);
                             return (
                               <label

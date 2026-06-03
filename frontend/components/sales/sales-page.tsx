@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 
 import { fetchClient } from "@/lib/api/clients";
 import type { ClientListItem } from "@/lib/api/clients";
+import { hasModuleAccess, type AuthModulePermission } from "@/lib/access";
 
 import { CatalogPanel } from "@/components/sales/catalog-panel";
 import { CheckoutPanel } from "@/components/sales/checkout-panel";
@@ -24,7 +25,27 @@ export default function SalesPage() {
   const [tab, setTab] = useState<SalesTab>("cash");
   const [banner, setBanner] = useState<BannerState>(null);
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
+  const [currentModules, setCurrentModules] = useState<AuthModulePermission[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/auth-api/me", { credentials: "same-origin" })
+      .then(async (response) => {
+        if (!response.ok) return [];
+        const data = (await response.json()) as { data?: { user?: { modules?: AuthModulePermission[] } } };
+        return data.data?.user?.modules ?? [];
+      })
+      .then((modules) => { if (!cancelled) setCurrentModules(modules); })
+      .catch(() => { if (!cancelled) setCurrentModules([]); });
+
+    return () => { cancelled = true; };
+  }, []);
+
+  const canCreateSales = hasModuleAccess(currentModules, "sales_create");
+  const canPaySales = hasModuleAccess(currentModules, "sales_pay");
+  const canRefundSales = hasModuleAccess(currentModules, "sales_refund");
+  const canRecoverSalesAqsi = hasModuleAccess(currentModules, "sales_aqsi_recovery");
 
   const catalogApi = useSalesCatalog({
     enabled: tab === "cash",
@@ -33,6 +54,9 @@ export default function SalesPage() {
 
   const orderApi = useSalesOrder({
     cashViewActive: tab === "cash",
+    canCreateSales,
+    canPaySales,
+    canRecoverSalesAqsi,
     setBanner,
     onHistoryChanged: () => setHistoryRefreshToken((value) => value + 1),
     onBarcodeScanComplete: () => catalogApi.setQuery(""),
@@ -64,6 +88,8 @@ export default function SalesPage() {
     setCurrentOrder: orderApi.setOrder,
     setSelectedClient: orderApi.setSelectedClient,
     setBanner,
+    canRefundSales,
+    canRecoverSalesAqsi,
     onCatalogChanged: catalogApi.reloadCatalog,
   });
 
@@ -131,6 +157,7 @@ export default function SalesPage() {
             lineBusyKey={orderApi.lineBusyKey}
             orderLoading={orderApi.orderLoading}
             orderLocked={orderApi.orderLocked}
+            canCreateSales={canCreateSales}
             addCatalogProduct={orderApi.addCatalogProduct}
           />
 
@@ -188,6 +215,9 @@ export default function SalesPage() {
             conflictingOperationId={orderApi.conflictingOperationId}
             slipPending={orderApi.slipPending}
             paymentBusy={orderApi.paymentBusy}
+            canCreateSales={canCreateSales}
+            canPaySales={canPaySales}
+            canRecoverSalesAqsi={canRecoverSalesAqsi}
             pendingMarkingLineKey={orderApi.pendingMarkingLineKey}
             onMarkingScanned={orderApi.clearPendingMarkingLineKey}
             onMarkingFieldFocusChange={orderApi.setMarkingFieldActive}
@@ -208,6 +238,8 @@ export default function SalesPage() {
           handleToggleOrder={historyApi.handleToggleOrder}
           handleSyncPayment={historyApi.handleSyncPayment}
           handleRefundOrder={historyApi.handleRefundOrder}
+          canRefundSales={canRefundSales}
+          canRecoverSalesAqsi={canRecoverSalesAqsi}
         />
       )}
 

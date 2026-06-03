@@ -22,6 +22,7 @@ import type { Product } from "@/lib/api/products";
 type UseOrderBasketOptions = {
   order: OrderDetail | null;
   orderAwaitingPayment: boolean;
+  canCreateSales: boolean;
   setBanner: Dispatch<SetStateAction<BannerState>>;
   setOrder: Dispatch<SetStateAction<OrderDetail | null>>;
 };
@@ -29,6 +30,7 @@ type UseOrderBasketOptions = {
 export function useOrderBasket({
   order,
   orderAwaitingPayment,
+  canCreateSales,
   setBanner,
   setOrder,
 }: UseOrderBasketOptions) {
@@ -69,6 +71,11 @@ export function useOrderBasket({
     ensureOrder: () => Promise<OrderDetail>,
     options?: { markingCode?: string | null }
   ): Promise<string | null | false> {
+    if (!canCreateSales) {
+      setBanner({ tone: "error", text: "Недостаточно прав для создания чека" });
+      return null;
+    }
+
     if (orderAwaitingPayment) {
       setBanner({
         tone: "info",
@@ -134,7 +141,7 @@ export function useOrderBasket({
   }
 
   async function decrementLine(line: BasketLine) {
-    if (!order || line.itemIds.length === 0 || orderAwaitingPayment) return;
+    if (!canCreateSales || !order || line.itemIds.length === 0 || orderAwaitingPayment) return;
 
     setLineBusyKey(line.key);
     setBanner(null);
@@ -163,7 +170,7 @@ export function useOrderBasket({
   }
 
   async function incrementLine(line: BasketLine) {
-    if (!order || orderAwaitingPayment) return;
+    if (!canCreateSales || !order || orderAwaitingPayment) return;
 
     setLineBusyKey(line.key);
     setBanner(null);
@@ -212,7 +219,7 @@ export function useOrderBasket({
   }
 
   async function removeLine(line: BasketLine) {
-    if (!order || orderAwaitingPayment) return;
+    if (!canCreateSales || !order || orderAwaitingPayment) return;
 
     setLineBusyKey(line.key);
     setBanner(null);

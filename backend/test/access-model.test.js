@@ -45,13 +45,16 @@ test('default role titles match the CRM access model', () => {
   assert.equal(getDefaultRoleTitle('admin'), 'Администратор');
 });
 
-test('duty trainer module set revokes system and schedule cancellation permissions', () => {
-  const dutyTrainerModules = ['sales', 'clients', 'schedule', 'schedule_clients', 'schedule_attendance'];
+test('duty trainer module set revokes system, refunds, recovery, and cancellation permissions', () => {
+  const dutyTrainerModules = ['sales', 'sales_create', 'sales_pay', 'clients', 'schedule', 'schedule_clients', 'schedule_attendance'];
   const access = buildUserAccessPayload('admin', dutyTrainerModules);
 
   assert.deepEqual(access.modules, dutyTrainerModules);
   assert.equal(access.module_grants.length, 0);
   assert.equal(access.module_revokes.includes('users_manage'), true);
+  assert.equal(access.module_revokes.includes('sales_refund'), true);
+  assert.equal(access.module_revokes.includes('sales_aqsi_recovery'), true);
+  assert.equal(access.module_revokes.includes('sales_cancel'), true);
   assert.equal(access.module_revokes.includes('schedule_cancel'), true);
   assert.equal(access.module_revokes.includes('schedule_edit_groups'), true);
   assert.equal(access.module_revokes.includes('schedule_edit_personal'), true);

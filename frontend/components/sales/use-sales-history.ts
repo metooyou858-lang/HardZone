@@ -28,6 +28,8 @@ type UseSalesHistoryOptions = {
   setCurrentOrder: Dispatch<SetStateAction<OrderDetail | null>>;
   setSelectedClient: Dispatch<SetStateAction<ClientListItem | null>>;
   setBanner: Dispatch<SetStateAction<BannerState>>;
+  canRefundSales: boolean;
+  canRecoverSalesAqsi: boolean;
   onCatalogChanged?: () => void;
 };
 
@@ -51,6 +53,8 @@ export function useSalesHistory({
   setCurrentOrder,
   setSelectedClient,
   setBanner,
+  canRefundSales,
+  canRecoverSalesAqsi,
   onCatalogChanged,
 }: UseSalesHistoryOptions) {
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
@@ -96,6 +100,11 @@ export function useSalesHistory({
   }
 
   async function handleSyncPayment(orderId: string) {
+    if (!canRecoverSalesAqsi) {
+      setHistoryError("Недостаточно прав для восстановления AQSI");
+      return;
+    }
+
     const isCurrentOrder = currentOrder?.id === orderId;
 
     if (!orderId) {
@@ -157,6 +166,11 @@ export function useSalesHistory({
   }
 
   async function handleRefundOrder(orderId: string, item?: OrderItem) {
+    if (!canRefundSales) {
+      setHistoryError("Недостаточно прав для возврата");
+      return;
+    }
+
     const isItemRefund = Boolean(item);
     let refundItems: Array<{ item_id: string; quantity: number }> | undefined;
     let confirmMessage = "";

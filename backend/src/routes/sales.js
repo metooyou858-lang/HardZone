@@ -1,7 +1,11 @@
 const express = require('express');
 const { pool } = require('../db');
+const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
+const requireSalesCreate = authMiddleware.requireModule('sales_create');
+const requireSalesPay = authMiddleware.requireModule('sales_pay');
+const requireSalesCancel = authMiddleware.requireModule('sales_cancel');
 
 const VALID_PAYMENT_TYPES = ['cash', 'card'];
 
@@ -37,7 +41,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', requireSalesCreate, async (req, res, next) => {
   let client;
 
   try {
@@ -118,7 +122,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-router.post('/:id/confirm', async (req, res, next) => {
+router.post('/:id/confirm', requireSalesPay, async (req, res, next) => {
   let client;
 
   try {
@@ -216,7 +220,7 @@ router.post('/:id/confirm', async (req, res, next) => {
   }
 });
 
-router.post('/:id/cancel', async (req, res, next) => {
+router.post('/:id/cancel', requireSalesCancel, async (req, res, next) => {
   let client;
 
   try {

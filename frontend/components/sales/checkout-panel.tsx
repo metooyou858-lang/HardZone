@@ -64,6 +64,9 @@ type CheckoutPanelProps = {
   conflictingOperationId: string | null;
   slipPending: boolean;
   paymentBusy: boolean;
+  canCreateSales: boolean;
+  canPaySales: boolean;
+  canRecoverSalesAqsi: boolean;
   pendingMarkingLineKey: string | null;
   onMarkingScanned: () => void;
   onMarkingFieldFocusChange: (active: boolean) => void;
@@ -123,6 +126,9 @@ export function CheckoutPanel({
   conflictingOperationId,
   slipPending,
   paymentBusy,
+  canCreateSales,
+  canPaySales,
+  canRecoverSalesAqsi,
   pendingMarkingLineKey,
   onMarkingScanned,
   onMarkingFieldFocusChange,
@@ -249,6 +255,7 @@ export function CheckoutPanel({
                 key={line.key}
                 line={line}
                 orderLocked={orderLocked}
+                canCreateSales={canCreateSales}
                 lineBusyKey={lineBusyKey}
                 editingLineDiscountKey={editingLineDiscountKey}
                 lineDiscountMode={lineDiscountMode}
@@ -304,6 +311,9 @@ export function CheckoutPanel({
         conflictingOperationId={conflictingOperationId}
         slipPending={slipPending}
         paymentBusy={paymentBusy}
+        canCreateSales={canCreateSales}
+        canPaySales={canPaySales}
+        canRecoverSalesAqsi={canRecoverSalesAqsi}
       />
     </aside>
   );
