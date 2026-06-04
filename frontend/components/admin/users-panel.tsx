@@ -32,6 +32,7 @@ type UsersPanelProps = {
 type UserFormState = {
   name: string;
   email: string;
+  phone: string;
   role_title: string;
   modules: AuthModulePermission[];
   create_trainer_profile: boolean;
@@ -65,6 +66,7 @@ const moduleOrder: AuthModulePermission[] = [
 const initialFormState: UserFormState = {
   name: "",
   email: "",
+  phone: "",
   role_title: accessPresets[0].role_title,
   modules: [...accessPresets[0].modules],
   create_trainer_profile: false,
@@ -89,6 +91,7 @@ function toFormState(user: AuthUser): UserFormState {
   return {
     name: user.name,
     email: user.email || "",
+    phone: user.phone || "",
     role_title: user.role_title || roleLabels[user.role],
     modules: [...user.modules],
     create_trainer_profile: false,
@@ -265,6 +268,7 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
       const payload = {
         name: form.name.trim(),
         email: form.email.trim() || null,
+        phone: form.phone.trim() || null,
         role_title: isEditingOwner ? getDefaultRoleTitle("owner") : form.role_title.trim() || getDefaultRoleTitle("admin"),
         modules: isEditingOwner ? getDefaultModulesForRole("owner") : form.modules,
         is_active: isEditingOwner ? true : form.is_active,
@@ -435,6 +439,17 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
               />
             </label>
           </div>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-[var(--text-main)]">Телефон</span>
+            <input
+              type="tel"
+              value={form.phone}
+              onChange={(event) => setForm((state) => ({ ...state, phone: event.target.value }))}
+              className="w-full rounded-2xl border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[var(--text-main)] outline-none transition focus:border-[var(--accent)]"
+              placeholder="+7 999 123-45-67"
+            />
+          </label>
 
           <div className="grid gap-4 md:grid-cols-2">
             <label className="block">
@@ -844,6 +859,7 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
                       </div>
 
                       <p className="mt-3 text-xs text-[var(--text-muted)]">Email: {user.email || "Не указан"}</p>
+                      <p className="mt-1 text-xs text-[var(--text-muted)]">Телефон: {user.phone || "Не указан"}</p>
                       <p className="mt-1 text-xs text-[var(--text-muted)]">Последний вход: {formatLastLogin(user.last_login_at)}</p>
 
                       <div className="mt-3 flex flex-wrap gap-2">

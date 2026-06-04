@@ -6,6 +6,8 @@ export type AuthUser = {
   name: string;
   username: string;
   email: string | null;
+  phone: string | null;
+  phone_normalized: string | null;
   role: AuthUserRole;
   role_title: string;
   is_active: boolean;
@@ -25,6 +27,7 @@ export type AuthUserPayload = {
   name: string;
   username?: string;
   email?: string | null;
+  phone?: string | null;
   role?: AuthUserRole;
   role_title?: string;
   modules?: AuthModulePermission[];
