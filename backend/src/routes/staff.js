@@ -34,6 +34,116 @@ function parseLimit(value, fallback = 10, max = 25) {
   return Math.min(parsed, max);
 }
 
+async function getSlotBookings(executor, slotId) {
+  const { rows: slotRows } = await executor.query(
+    `
+      SELECT
+        s.id,
+        s.slot_type,
+        s.date,
+        s.start_time,
+        s.duration_minutes,
+        s.capacity,
+        s.booked_count,
+        s.status,
+        tt.name AS training_type_name,
+        tr.first_name || ' ' || tr.last_name AS trainer_name
+      FROM schedule_slots s
+      LEFT JOIN training_types tt ON tt.id = s.training_type_id
+      LEFT JOIN trainers tr ON tr.id = s.trainer_id
+      WHERE s.id = $1
+    `,
+    [slotId]
+  );
+
+  if (!slotRows[0]) {
+    return null;
+  }
+
+  const { rows: bookings } = await executor.query(
+    `
+      SELECT
+        b.id,
+        b.status,
+        b.places_count,
+        b.subscription_id,
+        b.created_at,
+        c.id AS client_id,
+        c.first_name || ' ' || c.last_name AS client_name,
+        c.phone AS client_phone,
+        c.barcode AS client_barcode,
+        cs.type AS subscription_type,
+        cs.status AS subscription_status,
+        cs.visits_left,
+        cs.expires_at,
+        cs.is_family
+      FROM bookings b
+      JOIN clients c ON c.id = b.client_id
+      LEFT JOIN client_subscriptions cs ON cs.id = b.subscription_id
+      WHERE b.slot_id = $1
+        AND b.status IN ('confirmed', 'attended')
+      ORDER BY b.created_at, b.id
+    `,
+    [slotId]
+  );
+
+  return { slot: slotRows[0], bookings };
+}
+
+async function markBookingAsAttended(executor, bookingId, { skipSubscription = false } = {}) {
+  const { rows: bookingRows } = await executor.query(
+    'SELECT * FROM bookings WHERE id = $1 AND status = $2',
+    [bookingId, 'confirmed']
+  );
+  const booking = bookingRows[0];
+
+  if (!booking) {
+    const error = new Error('Booking not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const isCoveredPartner = !!booking.covered_by_booking_id;
+  const effectiveSubscriptionId = (skipSubscription || isCoveredPartner) ? null : booking.subscription_id;
+
+  await executor.query(
+    'UPDATE bookings SET status = $1, subscription_id = $2, updated_at = NOW() WHERE id = $3',
+    ['attended', effectiveSubscriptionId, bookingId]
+  );
+
+  if (effectiveSubscriptionId) {
+    const { rows: subscriptionRows } = await executor.query(
+      'SELECT * FROM client_subscriptions WHERE id = $1',
+      [effectiveSubscriptionId]
+    );
+    const subscription = subscriptionRows[0];
+
+    if (subscription && ['visits', 'single'].includes(subscription.type) && (subscription.visits_left || 0) > 0) {
+      await executor.query(
+        'UPDATE client_subscriptions SET visits_left = visits_left - 1, updated_at = NOW() WHERE id = $1',
+        [effectiveSubscriptionId]
+      );
+
+      if ((subscription.visits_left || 0) - 1 === 0) {
+        await executor.query(
+          'UPDATE client_subscriptions SET status = $1, updated_at = NOW() WHERE id = $2',
+          ['exhausted', effectiveSubscriptionId]
+        );
+      }
+    }
+  }
+
+  await executor.query(
+    `
+      INSERT INTO client_visits (client_id, subscription_id, visit_type, slot_id)
+      VALUES ($1, $2, 'group', $3)
+    `,
+    [booking.client_id, effectiveSubscriptionId, booking.slot_id]
+  );
+
+  return booking;
+}
+
 router.get('/me', async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -167,6 +277,180 @@ router.get('/bookings', requireModule('schedule'), async (req, res) => {
     res.json({ success: true, data: { slot: slotRows[0], bookings } });
   } catch (err) {
     sendInternalError(res, err, { route: 'staff.bookings' });
+  }
+});
+
+router.post('/bookings', requireModule('schedule_clients'), async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const { slot_id, client_id, subscription_id } = req.body || {};
+
+    if (!slot_id || !client_id) {
+      return res.status(422).json({ success: false, error: 'Slot and client are required' });
+    }
+
+    await client.query('BEGIN');
+
+    const { rows: slotRows } = await client.query(
+      'SELECT * FROM schedule_slots WHERE id = $1 AND status = $2',
+      [slot_id, 'active']
+    );
+    const slot = slotRows[0];
+
+    if (!slot) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Slot not found or cancelled' });
+    }
+
+    let placesCount = 1;
+    if (subscription_id) {
+      const { rows: subscriptionRows } = await client.query(
+        'SELECT is_family FROM client_subscriptions WHERE id = $1 AND client_id = $2',
+        [subscription_id, client_id]
+      );
+
+      if (!subscriptionRows[0]) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ success: false, error: 'Subscription not found' });
+      }
+
+      if (subscriptionRows[0].is_family) {
+        placesCount = 2;
+      }
+    }
+
+    if ((slot.booked_count || 0) + placesCount > slot.capacity) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ success: false, error: 'No free places' });
+    }
+
+    const { rows: existingRows } = await client.query(
+      "SELECT id FROM bookings WHERE slot_id = $1 AND client_id = $2 AND status IN ('confirmed', 'attended')",
+      [slot_id, client_id]
+    );
+
+    if (existingRows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ success: false, error: 'Client already booked' });
+    }
+
+    const { rows } = await client.query(
+      `
+        INSERT INTO bookings (slot_id, client_id, subscription_id, places_count, booked_by)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+      `,
+      [slot_id, client_id, subscription_id || null, placesCount, `staff:${req.user.username || req.user.email || req.user.id}`]
+    );
+
+    await client.query(
+      'UPDATE schedule_slots SET booked_count = booked_count + $1, updated_at = NOW() WHERE id = $2',
+      [placesCount, slot_id]
+    );
+
+    const slotBookings = await getSlotBookings(client, slot_id);
+
+    await client.query('COMMIT');
+    res.status(201).json({ success: true, data: { booking: rows[0], ...slotBookings } });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    sendInternalError(res, err, { route: 'staff.bookings.create' });
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/bookings/:id/attend', requireModule('schedule_attendance'), async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+    const booking = await markBookingAsAttended(client, req.params.id, {
+      skipSubscription: req.body?.skip_subscription === true,
+    });
+    const slotBookings = await getSlotBookings(client, booking.slot_id);
+    await client.query('COMMIT');
+
+    res.json({ success: true, data: { booking_id: Number(req.params.id), ...slotBookings } });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    const statusCode = err.statusCode || 500;
+    if (statusCode === 404) {
+      return res.status(404).json({ success: false, error: err.message });
+    }
+    sendInternalError(res, err, { route: 'staff.bookings.attend' });
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/bookings/:id/unattend', requireModule('schedule_attendance'), async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const { rows: bookingRows } = await client.query(
+      'SELECT * FROM bookings WHERE id = $1 AND status = $2',
+      [req.params.id, 'attended']
+    );
+    const booking = bookingRows[0];
+
+    if (!booking) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Booking not found or not attended' });
+    }
+
+    const { rows: visitRows } = await client.query(
+      `DELETE FROM client_visits
+       WHERE id = (
+         SELECT id FROM client_visits
+         WHERE client_id = $1 AND slot_id = $2 AND visit_type = 'group'
+         ORDER BY visited_at DESC
+         LIMIT 1
+       )
+       RETURNING subscription_id`,
+      [booking.client_id, booking.slot_id]
+    );
+
+    const chargedSubscriptionId = visitRows[0]?.subscription_id ?? null;
+    if (chargedSubscriptionId) {
+      const { rows: subRows } = await client.query(
+        'SELECT * FROM client_subscriptions WHERE id = $1',
+        [chargedSubscriptionId]
+      );
+      const sub = subRows[0];
+
+      if (sub && ['visits', 'single'].includes(sub.type)) {
+        await client.query(
+          'UPDATE client_subscriptions SET visits_left = visits_left + 1, updated_at = NOW() WHERE id = $1',
+          [chargedSubscriptionId]
+        );
+        if (sub.status === 'exhausted') {
+          await client.query(
+            "UPDATE client_subscriptions SET status = 'active', updated_at = NOW() WHERE id = $1",
+            [chargedSubscriptionId]
+          );
+        }
+      }
+    }
+
+    await client.query('DELETE FROM bookings WHERE id = $1', [booking.id]);
+    await client.query(
+      'UPDATE schedule_slots SET booked_count = GREATEST(booked_count - $1, 0), updated_at = NOW() WHERE id = $2',
+      [booking.places_count, booking.slot_id]
+    );
+
+    const slotBookings = await getSlotBookings(client, booking.slot_id);
+
+    await client.query('COMMIT');
+    res.json({ success: true, data: { booking_id: Number(req.params.id), ...slotBookings } });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    sendInternalError(res, err, { route: 'staff.bookings.unattend' });
+  } finally {
+    client.release();
   }
 });
 

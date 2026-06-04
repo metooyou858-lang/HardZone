@@ -325,9 +325,9 @@ schedule_attendance
 /api/staff/me
 /api/staff/schedule/today
 /api/staff/bookings
+/api/staff/bookings/:id/attend
+/api/staff/bookings/:id/unattend
 /api/staff/client-search
-/api/staff/book-client
-/api/staff/mark-attendance
 /api/staff/sales
 
 /api/client/me

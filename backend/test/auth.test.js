@@ -308,6 +308,90 @@ test('staff read API returns telegram-ready payloads for authorized staff', asyn
   assert.equal(bookings.body.success, false);
 });
 
+test('staff booking API creates bookings and toggles attendance for authorized staff', async () => {
+  const staffUser = await createUser();
+  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  const { rows: clientRows } = await query(
+    `
+      INSERT INTO clients (first_name, last_name, barcode)
+      VALUES ($1, $2, $3)
+      RETURNING id
+    `,
+    ['CI', 'Telegram Client', `ci-tg-${suffix}`]
+  );
+
+  const { rows: subscriptionRows } = await query(
+    `
+      INSERT INTO client_subscriptions (client_id, type, visits_total, visits_left, started_at, expires_at)
+      VALUES ($1, 'visits', 2, 2, '2026-06-01', '2026-12-31')
+      RETURNING id
+    `,
+    [clientRows[0].id]
+  );
+
+  const { rows: slotRows } = await query(
+    `
+      INSERT INTO schedule_slots (date, start_time, capacity)
+      VALUES ('2026-06-04', '10:00', 2)
+      RETURNING id
+    `
+  );
+
+  const sessionUser = {
+    id: Number(staffUser.id),
+    name: staffUser.name,
+    username: staffUser.username,
+    role: staffUser.role,
+  };
+  const headers = {
+    'content-type': 'application/json',
+    'x-hardzone-session': createSessionToken(sessionUser),
+  };
+
+  const create = await request('/api/staff/bookings', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      slot_id: slotRows[0].id,
+      client_id: clientRows[0].id,
+      subscription_id: subscriptionRows[0].id,
+    }),
+  });
+
+  assert.equal(create.response.status, 201);
+  assert.equal(create.body.success, true);
+  assert.equal(create.body.data.bookings.length, 1);
+  assert.equal(create.body.data.bookings[0].status, 'confirmed');
+
+  const bookingId = create.body.data.booking.id;
+  const attend = await request(`/api/staff/bookings/${bookingId}/attend`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({}),
+  });
+
+  assert.equal(attend.response.status, 200);
+  assert.equal(attend.body.success, true);
+  assert.equal(attend.body.data.bookings[0].status, 'attended');
+
+  const afterAttend = await query('SELECT visits_left FROM client_subscriptions WHERE id = $1', [subscriptionRows[0].id]);
+  assert.equal(afterAttend.rows[0].visits_left, 1);
+
+  const unattend = await request(`/api/staff/bookings/${bookingId}/unattend`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({}),
+  });
+
+  assert.equal(unattend.response.status, 200);
+  assert.equal(unattend.body.success, true);
+  assert.equal(unattend.body.data.bookings.length, 0);
+
+  const afterUnattend = await query('SELECT visits_left FROM client_subscriptions WHERE id = $1', [subscriptionRows[0].id]);
+  assert.equal(afterUnattend.rows[0].visits_left, 2);
+});
+
 test('staff without client sub-permissions cannot create, edit, or import clients by direct request', async () => {
   const staffUser = await createUser({
     module_revokes: ['clients_create', 'clients_update', 'clients_import'],
@@ -362,6 +446,52 @@ test('staff without schedule cannot use staff schedule endpoints by direct reque
     headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
   });
   assert.equal(bookings.response.status, 403);
+});
+
+test('staff without staff booking permissions cannot mutate staff bookings by direct request', async () => {
+  const withoutClients = await createUser({
+    module_revokes: ['schedule_clients'],
+  });
+  const withoutAttendance = await createUser({
+    module_revokes: ['schedule_attendance'],
+  });
+
+  const createSession = (user) => createSessionToken({
+    id: Number(user.id),
+    name: user.name,
+    username: user.username,
+    role: user.role,
+  });
+
+  const create = await request('/api/staff/bookings', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-hardzone-session': createSession(withoutClients),
+    },
+    body: JSON.stringify({ slot_id: 1, client_id: 1 }),
+  });
+  assert.equal(create.response.status, 403);
+
+  const attend = await request('/api/staff/bookings/1/attend', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-hardzone-session': createSession(withoutAttendance),
+    },
+    body: JSON.stringify({}),
+  });
+  assert.equal(attend.response.status, 403);
+
+  const unattend = await request('/api/staff/bookings/1/unattend', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-hardzone-session': createSession(withoutAttendance),
+    },
+    body: JSON.stringify({}),
+  });
+  assert.equal(unattend.response.status, 403);
 });
 
 test('staff without schedule_cancel cannot cancel a training slot by direct request', async () => {
