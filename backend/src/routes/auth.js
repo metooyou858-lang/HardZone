@@ -7,6 +7,7 @@ const { isMailConfigured, sendTemporaryPasswordEmail } = require('../services/ma
 const { normalizeEmail, serializeUser } = require('../services/user-auth');
 const { sendInternalError } = require('../utils/http-response');
 const { createTemporaryPassword, hashPassword, normalizeUsername, verifyPassword } = require('../utils/passwords');
+const { normalizePhone } = require('../utils/phones');
 const { createResetToken, hashResetToken } = require('../utils/reset-tokens');
 
 const router = express.Router();
@@ -69,6 +70,8 @@ async function fetchUserWithTrainer(client, userId) {
         u.role_title,
         u.username,
         u.email,
+        u.phone,
+        u.phone_normalized,
         u.is_active,
         u.created_at,
         u.updated_at,
@@ -163,7 +166,7 @@ router.post('/login', async (req, res) => {
 
     const { rows } = await query(
       `
-        SELECT id, name, role, role_title, username, email, password_hash, is_active, last_login_at, module_grants, module_revokes
+        SELECT id, name, role, role_title, username, email, phone, phone_normalized, password_hash, is_active, last_login_at, module_grants, module_revokes
         FROM users
         WHERE LOWER(username) = $1 OR LOWER(COALESCE(email, '')) = $1
         LIMIT 1
@@ -190,7 +193,7 @@ router.post('/login', async (req, res) => {
         UPDATE users
         SET last_login_at = NOW(), updated_at = NOW()
         WHERE id = $1
-        RETURNING id, name, role, role_title, username, email, is_active, last_login_at, module_grants, module_revokes
+        RETURNING id, name, role, role_title, username, email, phone, phone_normalized, is_active, last_login_at, module_grants, module_revokes
       `,
       [user.id]
     );
@@ -221,6 +224,8 @@ router.get('/me', authMiddleware, async (req, res) => {
           u.role_title,
           u.username,
           u.email,
+          u.phone,
+          u.phone_normalized,
           u.is_active,
           u.last_login_at,
           u.module_grants,
@@ -258,6 +263,8 @@ router.get('/users', authMiddleware, requireModule('users_manage'), async (req, 
           u.role_title,
           u.username,
           u.email,
+          u.phone,
+          u.phone_normalized,
           u.is_active,
           u.created_at,
           u.updated_at,
@@ -287,6 +294,8 @@ router.post('/users', authMiddleware, requireModule('users_manage'), async (req,
   try {
     const name = String(req.body?.name || '').trim();
     const email = normalizeEmail(req.body?.email);
+    const phone = String(req.body?.phone || '').trim() || null;
+    const phoneNormalized = normalizePhone(phone);
     const username = normalizeUsername(email);
     const providedPassword = String(req.body?.password || '').trim();
     const generatedPassword = !providedPassword;
@@ -309,21 +318,21 @@ router.post('/users', authMiddleware, requireModule('users_manage'), async (req,
     const createdUser = await withTransaction(async (client) => {
       const { rows } = await client.query(
         `
-          INSERT INTO users (name, role, role_title, username, email, password_hash, is_active, module_grants, module_revokes, updated_at)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+          INSERT INTO users (name, role, role_title, username, email, phone, phone_normalized, password_hash, is_active, module_grants, module_revokes, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
           RETURNING id
         `,
-        [name, role, roleTitle, username, email, passwordHash, isActive, accessPayload.module_grants, accessPayload.module_revokes]
+        [name, role, roleTitle, username, email, phone, phoneNormalized, passwordHash, isActive, accessPayload.module_grants, accessPayload.module_revokes]
       );
 
       if (createTrainerProfile) {
         const { firstName, lastName } = splitTrainerName(name);
         await client.query(
           `
-            INSERT INTO trainers (user_id, first_name, last_name, email)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO trainers (user_id, first_name, last_name, email, phone)
+            VALUES ($1, $2, $3, $4, $5)
           `,
-          [rows[0].id, firstName, lastName, email]
+          [rows[0].id, firstName, lastName, email, phone]
         );
       }
 
@@ -416,6 +425,14 @@ router.patch('/users/:id', authMiddleware, requireModule('users_manage'), async 
     } else if (req.body?.username !== undefined) {
       values.push(normalizeUsername(req.body.username));
       updates.push(`username = $${values.length}`);
+    }
+
+    if (req.body?.phone !== undefined) {
+      const nextPhone = String(req.body.phone || '').trim() || null;
+      values.push(nextPhone);
+      updates.push(`phone = $${values.length}`);
+      values.push(normalizePhone(nextPhone));
+      updates.push(`phone_normalized = $${values.length}`);
     }
 
     let nextRole = existingUser.role;

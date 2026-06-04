@@ -60,11 +60,13 @@ async function createUser(overrides = {}) {
         password_hash,
       is_active,
       telegram_id,
+      phone,
+      phone_normalized,
       module_grants,
       module_revokes,
       updated_at
     )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
       RETURNING id, name, role, username, email, is_active, module_grants, module_revokes
     `,
     [
@@ -76,6 +78,8 @@ async function createUser(overrides = {}) {
       passwordHash,
       overrides.is_active !== undefined ? overrides.is_active : true,
       overrides.telegram_id || null,
+      overrides.phone || null,
+      overrides.phone_normalized || null,
       overrides.module_grants || [],
       overrides.module_revokes || [],
     ]
@@ -310,6 +314,62 @@ test('telegram webhook validates secret and accepts linked staff updates', async
 
   const { rows } = await query('SELECT id FROM users WHERE telegram_id = $1', ['123456789']);
   assert.equal(Number(rows[0].id), Number(staffUser.id));
+});
+
+test('telegram webhook links staff by own shared phone contact', async () => {
+  const staffUser = await createUser({
+    phone: '+7 (999) 111-22-33',
+    phone_normalized: '79991112233',
+  });
+
+  const result = await request('/api/telegram/webhook/test-telegram-secret', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      message: {
+        chat: { id: 2 },
+        from: { id: 987654321 },
+        contact: {
+          user_id: 987654321,
+          phone_number: '8 (999) 111-22-33',
+        },
+      },
+    }),
+  });
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.success, true);
+
+  const { rows } = await query('SELECT telegram_id FROM users WHERE id = $1', [staffUser.id]);
+  assert.equal(rows[0].telegram_id, '987654321');
+});
+
+test('telegram webhook does not link staff by forwarded contact', async () => {
+  const staffUser = await createUser({
+    phone: '+7 (999) 444-55-66',
+    phone_normalized: '79994445566',
+  });
+
+  const result = await request('/api/telegram/webhook/test-telegram-secret', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      message: {
+        chat: { id: 3 },
+        from: { id: 111111111 },
+        contact: {
+          user_id: 222222222,
+          phone_number: '+7 999 444-55-66',
+        },
+      },
+    }),
+  });
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.success, true);
+
+  const { rows } = await query('SELECT telegram_id FROM users WHERE id = $1', [staffUser.id]);
+  assert.equal(rows[0].telegram_id, null);
 });
 
 test('staff read API returns telegram-ready payloads for authorized staff', async () => {

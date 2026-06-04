@@ -19,6 +19,8 @@ function serializeUser(row) {
     name: row.name,
     username: row.username,
     email: row.email || null,
+    phone: row.phone || null,
+    phone_normalized: row.phone_normalized || null,
     role: row.role,
     role_title: row.role_title || getDefaultRoleTitle(row.role),
     is_active: row.is_active,
@@ -53,7 +55,7 @@ async function ensureBootstrapUser() {
   const roleTitle = getDefaultRoleTitle(role);
 
   const { rows: existingRows } = await query(
-    'SELECT id, name, role, role_title, username, email, password_hash, is_active, last_login_at, module_grants, module_revokes FROM users WHERE LOWER(username) = $1 LIMIT 1',
+    'SELECT id, name, role, role_title, username, email, phone, phone_normalized, password_hash, is_active, last_login_at, module_grants, module_revokes FROM users WHERE LOWER(username) = $1 LIMIT 1',
     [username]
   );
 
@@ -63,7 +65,7 @@ async function ensureBootstrapUser() {
       `
         INSERT INTO users (name, role, role_title, username, email, password_hash, is_active, updated_at)
         VALUES ($1, $2, $3, $4, $5, $6, true, NOW())
-        RETURNING id, name, username, email, role, role_title, is_active, last_login_at, module_grants, module_revokes
+        RETURNING id, name, username, email, phone, phone_normalized, role, role_title, is_active, last_login_at, module_grants, module_revokes
       `,
       [name, role, roleTitle, username, email, passwordHash]
     );
@@ -81,7 +83,7 @@ async function ensureBootstrapUser() {
             role_title = COALESCE(role_title, $3),
             updated_at = NOW()
         WHERE id = $4
-        RETURNING id, name, username, email, role, role_title, is_active, last_login_at, module_grants, module_revokes
+        RETURNING id, name, username, email, phone, phone_normalized, role, role_title, is_active, last_login_at, module_grants, module_revokes
       `,
       [passwordHash, email, roleTitle, existingRows[0].id]
     );

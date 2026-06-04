@@ -1,5 +1,6 @@
 const { resolveModules, hasModuleAccess } = require('../authz');
 const { pool } = require('../db');
+const { normalizePhone } = require('../utils/phones');
 
 const CLUB_TIME_ZONE = process.env.APP_TIMEZONE || 'Asia/Vladivostok';
 const TELEGRAM_API_BASE = 'https://api.telegram.org/bot';
@@ -68,6 +69,14 @@ function sendMessage(chatId, text, replyMarkup = null) {
   });
 }
 
+function buildContactKeyboard() {
+  return {
+    keyboard: [[{ text: 'Поделиться телефоном', request_contact: true }]],
+    resize_keyboard: true,
+    one_time_keyboard: true,
+  };
+}
+
 function editMessage(chatId, messageId, text, replyMarkup = null) {
   return telegramRequest('editMessageText', {
     chat_id: chatId,
@@ -108,6 +117,57 @@ async function findStaffByTelegramId(telegramId) {
     role: user.role,
     username: user.username,
     modules: resolveModules(user.role, user.module_grants, user.module_revokes),
+  };
+}
+
+async function linkStaffByPhone(telegramId, phone) {
+  const phoneNormalized = normalizePhone(phone);
+
+  if (!phoneNormalized) {
+    return { status: 'invalid_phone' };
+  }
+
+  const { rows } = await pool.query(
+    `
+      SELECT id, name, role, username, is_active, module_grants, module_revokes
+      FROM users
+      WHERE phone_normalized = $1
+        AND is_active = true
+      ORDER BY id
+    `,
+    [phoneNormalized]
+  );
+
+  if (rows.length === 0) {
+    return { status: 'not_found', phone_normalized: phoneNormalized };
+  }
+
+  if (rows.length > 1) {
+    return { status: 'duplicate', phone_normalized: phoneNormalized };
+  }
+
+  const user = rows[0];
+  await pool.query(
+    `
+      UPDATE users
+      SET telegram_id = $1,
+          phone = COALESCE(NULLIF(phone, ''), $2),
+          phone_normalized = $3,
+          updated_at = NOW()
+      WHERE id = $4
+    `,
+    [String(telegramId), phone, phoneNormalized, user.id]
+  );
+
+  return {
+    status: 'linked',
+    staff: {
+      id: Number(user.id),
+      name: user.name,
+      role: user.role,
+      username: user.username,
+      modules: resolveModules(user.role, user.module_grants, user.module_revokes),
+    },
   };
 }
 
@@ -564,6 +624,44 @@ async function sendUnauthorized(chatId, telegramId) {
   );
 }
 
+async function sendPhoneLinkRequest(chatId, telegramId) {
+  return sendMessage(
+    chatId,
+    `Telegram не привязан к сотруднику HardZone.\n\nНажмите кнопку ниже и поделитесь телефоном. Если этот номер есть в CRM у активного сотрудника, бот привяжет аккаунт автоматически.\n\nВаш Telegram ID: <code>${escapeHtml(telegramId)}</code>`,
+    buildContactKeyboard()
+  );
+}
+
+async function handleContactMessage(message) {
+  const chatId = message.chat?.id;
+  const telegramId = message.from?.id;
+  const contact = message.contact;
+
+  if (!chatId || !telegramId || !contact?.phone_number) {
+    return;
+  }
+
+  if (Number(contact.user_id) !== Number(telegramId)) {
+    await sendMessage(chatId, 'Нужно поделиться своим телефоном через кнопку, а не переслать чужой контакт.', buildContactKeyboard());
+    return;
+  }
+
+  const result = await linkStaffByPhone(telegramId, contact.phone_number);
+
+  if (result.status === 'linked') {
+    const menu = renderMainMenu(result.staff);
+    await sendMessage(chatId, `Телефон подтвержден. ${menu.text}`, menu.keyboard);
+    return;
+  }
+
+  if (result.status === 'duplicate') {
+    await sendMessage(chatId, 'В CRM найдено несколько активных сотрудников с таким телефоном. Автоматическая привязка остановлена, обратитесь к администратору.');
+    return;
+  }
+
+  await sendMessage(chatId, 'Телефон не найден среди активных сотрудников CRM. Проверьте номер в карточке сотрудника или обратитесь к администратору.', buildContactKeyboard());
+}
+
 async function handleMessage(message) {
   const chatId = message.chat?.id;
   const telegramId = message.from?.id;
@@ -571,9 +669,14 @@ async function handleMessage(message) {
     return;
   }
 
+  if (message.contact) {
+    await handleContactMessage(message);
+    return;
+  }
+
   const staff = await findStaffByTelegramId(telegramId);
   if (!staff) {
-    await sendUnauthorized(chatId, telegramId);
+    await sendPhoneLinkRequest(chatId, telegramId);
     return;
   }
 
@@ -612,7 +715,7 @@ async function handleCallback(callbackQuery) {
   const staff = await findStaffByTelegramId(telegramId);
   if (!staff) {
     await answerCallback(callbackQuery.id, 'Telegram не привязан');
-    await sendUnauthorized(chatId, telegramId);
+    await sendPhoneLinkRequest(chatId, telegramId);
     return;
   }
 
