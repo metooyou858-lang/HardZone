@@ -24,7 +24,7 @@
 | 16. SSH hardening | Done | Host key must be in `known_hosts`; password login disabled |
 | 17. Node version policy | Done | `.nvmrc`, `.node-version`, Node `24.14.1` |
 | 18. Domain migration | Done | DNS, nginx and Let's Encrypt are configured for `hardzone.space` and `www.hardzone.space`; certificate expires on `2026-09-01` |
-| 19. Access model | Draft | `docs/ACCESS_MODEL.md`; code implementation pending |
+| 19. Access model | In progress | Backend guards and access presets implemented for sales, schedule and clients; frontend/session tests and Telegram API pending |
 
 ## Current Safety Gates
 
@@ -39,9 +39,9 @@ Before production work:
 ## Remaining Work
 
 1. Continue cleaning older archive docs mojibake gradually if they are still needed.
-2. Verify access presets and backend guards from `docs/ACCESS_MODEL.md` on critical staff scenarios.
-3. Review `npm audit` findings.
-4. Extend auth tests to frontend cookie/session route flow.
+2. Review `npm audit` findings.
+3. Extend auth tests to frontend cookie/session route flow.
+4. Design Telegram staff API contracts from `docs/ACCESS_MODEL.md`.
 
 ## Stop Rule
 
