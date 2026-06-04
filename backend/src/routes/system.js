@@ -104,9 +104,9 @@ function buildOperationalChecks({ dbOk, backupFiles, stuckOrdersCount, terminalB
     {
       key: 'domain',
       label: 'Домен и HTTPS',
-      status: 'warning',
-      detail: `DNS для ${PRIMARY_DOMAIN} настроен на ${PRODUCTION_IP}; nginx и Let\\'s Encrypt нужно завершить после распространения DNS.`,
-      command: 'После DNS: обновить nginx server_name и выпустить сертификат на hardzone.space www.hardzone.space.',
+      status: 'ok',
+      detail: `DNS для ${PRIMARY_DOMAIN} настроен на ${PRODUCTION_IP}; nginx обслуживает hardzone.space и www.hardzone.space по HTTPS.`,
+      command: "Контролировать автообновление сертификата Let's Encrypt для hardzone.space и www.hardzone.space.",
     },
   ];
 }
@@ -209,16 +209,16 @@ router.get('/status', async (req, res, next) => {
         },
       },
       domain: {
-        status: 'dns_configured_server_pending',
+        status: 'configured_https',
         records: [
           { host: '@', type: 'A', value: PRODUCTION_IP },
           { host: 'www', type: 'A', value: PRODUCTION_IP },
         ],
         next_steps: [
-          'Дождаться распространения DNS.',
-          'Добавить hardzone.space и www.hardzone.space в nginx server_name.',
-          "Выпустить сертификат Let's Encrypt.",
-          'Прогнать production smoke-check.',
+          'DNS hardzone.space и www.hardzone.space указывает на production IP.',
+          'Nginx обслуживает оба домена по HTTPS.',
+          "Сертификат Let's Encrypt выпущен для hardzone.space и www.hardzone.space.",
+          'Следить за автообновлением сертификата и production smoke-check после инфраструктурных изменений.',
         ],
       },
       operational_checks: operationalChecks,

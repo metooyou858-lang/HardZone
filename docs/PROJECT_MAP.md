@@ -28,7 +28,7 @@ HardZone - monorepo CRM для CrossFit-клуба:
 ## Production
 
 - Server: `79.137.162.55`.
-- Domain in progress: `hardzone.space`, `www.hardzone.space`.
+- Domain configured: `hardzone.space`, `www.hardzone.space`.
 - SSH user: `root`.
 - SSH key: `~/.ssh/hardzone_deploy`.
 - App user: `app`.
