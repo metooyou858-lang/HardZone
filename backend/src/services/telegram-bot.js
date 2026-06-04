@@ -629,17 +629,10 @@ async function renderSlotForStaff(staff, slotId) {
   return renderSlot(data);
 }
 
-async function sendUnauthorized(chatId, telegramId) {
+async function sendPhoneLinkRequest(chatId) {
   return sendMessage(
     chatId,
-    `Telegram не привязан к сотруднику HardZone.\n\nВаш Telegram ID: <code>${escapeHtml(telegramId)}</code>\nПередайте его администратору CRM.`
-  );
-}
-
-async function sendPhoneLinkRequest(chatId, telegramId) {
-  return sendMessage(
-    chatId,
-    `Telegram не привязан к сотруднику HardZone.\n\nНажмите кнопку ниже и поделитесь телефоном. Если этот номер есть в CRM у активного сотрудника, бот привяжет аккаунт автоматически.\n\nВаш Telegram ID: <code>${escapeHtml(telegramId)}</code>`,
+    'Для входа в бот HardZone нажмите кнопку ниже и поделитесь телефоном.\n\nЕсли этот номер есть в CRM у активного сотрудника, бот привяжет аккаунт автоматически.',
     buildContactKeyboard()
   );
 }
@@ -688,7 +681,7 @@ async function handleMessage(message) {
 
   const staff = await findStaffByTelegramId(telegramId);
   if (!staff) {
-    await sendPhoneLinkRequest(chatId, telegramId);
+    await sendPhoneLinkRequest(chatId);
     return;
   }
 
@@ -727,7 +720,7 @@ async function handleCallback(callbackQuery) {
   const staff = await findStaffByTelegramId(telegramId);
   if (!staff) {
     await answerCallback(callbackQuery.id, 'Telegram не привязан');
-    await sendPhoneLinkRequest(chatId, telegramId);
+    await sendPhoneLinkRequest(chatId);
     return;
   }
 
