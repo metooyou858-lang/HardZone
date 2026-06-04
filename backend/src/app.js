@@ -22,6 +22,7 @@ const trainersRouter = require('./routes/trainers');
 const scheduleRouter = require('./routes/schedule');
 const bookingsRouter = require('./routes/bookings');
 const webhooksRouter = require('./routes/webhooks');
+const telegramRouter = require('./routes/telegram');
 const systemRouter = require('./routes/system');
 const staffRouter = require('./routes/staff');
 const { startDelayedAqsiSyncScheduler } = require('./services/order-sync');
@@ -85,6 +86,7 @@ app.use('/api/schedule', authMiddleware, requireModule('schedule'), scheduleRout
 app.use('/api/bookings', authMiddleware, requireModule('schedule'), bookingsRouter);
 app.use('/api/staff', authMiddleware, staffRouter);
 app.use('/api/webhooks', webhooksRouter);
+app.use('/api/telegram', telegramRouter);
 app.use('/api/system', authMiddleware, systemRouter);
 
 app.use((req, res) => {

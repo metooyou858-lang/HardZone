@@ -1,5 +1,8 @@
 process.env.HARDZONE_SESSION_SECRET = process.env.HARDZONE_SESSION_SECRET || 'test-session-secret';
 process.env.BACKEND_API_TOKEN = process.env.BACKEND_API_TOKEN || 'test-api-token';
+process.env.TELEGRAM_ENABLED = 'true';
+process.env.TELEGRAM_WEBHOOK_SECRET = 'test-telegram-secret';
+process.env.TELEGRAM_BOT_TOKEN = '';
 process.env.NODE_ENV = 'test';
 
 const { createHmac } = require('node:crypto');
@@ -55,12 +58,13 @@ async function createUser(overrides = {}) {
         username,
         email,
         password_hash,
-        is_active,
-        module_grants,
-        module_revokes,
-        updated_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+      is_active,
+      telegram_id,
+      module_grants,
+      module_revokes,
+      updated_at
+    )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
       RETURNING id, name, role, username, email, is_active, module_grants, module_revokes
     `,
     [
@@ -71,6 +75,7 @@ async function createUser(overrides = {}) {
       overrides.email || username,
       passwordHash,
       overrides.is_active !== undefined ? overrides.is_active : true,
+      overrides.telegram_id || null,
       overrides.module_grants || [],
       overrides.module_revokes || [],
     ]
@@ -273,6 +278,38 @@ test('staff without clients cannot use staff client search by direct request', a
   });
 
   assert.equal(result.response.status, 403);
+});
+
+test('telegram webhook validates secret and accepts linked staff updates', async () => {
+  const staffUser = await createUser({
+    telegram_id: '123456789',
+  });
+
+  const wrongSecret = await request('/api/telegram/webhook/wrong-secret', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: { chat: { id: 1 }, from: { id: 123456789 }, text: '/start' } }),
+  });
+
+  assert.equal(wrongSecret.response.status, 404);
+
+  const start = await request('/api/telegram/webhook/test-telegram-secret', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      message: {
+        chat: { id: 1 },
+        from: { id: 123456789 },
+        text: '/start',
+      },
+    }),
+  });
+
+  assert.equal(start.response.status, 200);
+  assert.equal(start.body.success, true);
+
+  const { rows } = await query('SELECT id FROM users WHERE telegram_id = $1', ['123456789']);
+  assert.equal(Number(rows[0].id), Number(staffUser.id));
 });
 
 test('staff read API returns telegram-ready payloads for authorized staff', async () => {

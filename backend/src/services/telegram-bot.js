@@ -1,0 +1,683 @@
+const { resolveModules, hasModuleAccess } = require('../authz');
+const { pool } = require('../db');
+
+const CLUB_TIME_ZONE = process.env.APP_TIMEZONE || 'Asia/Vladivostok';
+const TELEGRAM_API_BASE = 'https://api.telegram.org/bot';
+
+function getClubDate(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: CLUB_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
+  const parts = Object.fromEntries(
+    formatter
+      .formatToParts(date)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value])
+  );
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function formatTime(value) {
+  return String(value || '').slice(0, 5);
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+}
+
+function buildKeyboard(rows) {
+  return { inline_keyboard: rows };
+}
+
+async function telegramRequest(method, payload) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    return null;
+  }
+
+  const response = await fetch(`${TELEGRAM_API_BASE}${token}/${method}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Telegram ${method} failed: ${response.status} ${text.slice(0, 300)}`);
+  }
+
+  return response.json();
+}
+
+function sendMessage(chatId, text, replyMarkup = null) {
+  return telegramRequest('sendMessage', {
+    chat_id: chatId,
+    text,
+    parse_mode: 'HTML',
+    disable_web_page_preview: true,
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+  });
+}
+
+function editMessage(chatId, messageId, text, replyMarkup = null) {
+  return telegramRequest('editMessageText', {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    parse_mode: 'HTML',
+    disable_web_page_preview: true,
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+  });
+}
+
+function answerCallback(callbackQueryId, text = null) {
+  return telegramRequest('answerCallbackQuery', {
+    callback_query_id: callbackQueryId,
+    ...(text ? { text } : {}),
+  });
+}
+
+async function findStaffByTelegramId(telegramId) {
+  const { rows } = await pool.query(
+    `
+      SELECT id, name, role, username, is_active, module_grants, module_revokes
+      FROM users
+      WHERE telegram_id = $1
+      LIMIT 1
+    `,
+    [String(telegramId)]
+  );
+
+  const user = rows[0];
+  if (!user || !user.is_active) {
+    return null;
+  }
+
+  return {
+    id: Number(user.id),
+    name: user.name,
+    role: user.role,
+    username: user.username,
+    modules: resolveModules(user.role, user.module_grants, user.module_revokes),
+  };
+}
+
+function requireStaffModule(staff, permission) {
+  if (!hasModuleAccess(staff, permission)) {
+    const error = new Error('Недостаточно прав');
+    error.statusCode = 403;
+    throw error;
+  }
+}
+
+async function getTodaySlots(staff) {
+  requireStaffModule(staff, 'schedule');
+  const date = getClubDate();
+
+  const { rows } = await pool.query(
+    `
+      SELECT
+        s.id,
+        s.slot_type,
+        s.date,
+        s.start_time,
+        s.duration_minutes,
+        s.capacity,
+        s.booked_count,
+        tt.name AS training_type_name,
+        tr.first_name || ' ' || tr.last_name AS trainer_name,
+        (
+          SELECT COUNT(*)::INT
+          FROM bookings b
+          WHERE b.slot_id = s.id AND b.status = 'confirmed'
+        ) AS confirmed_count,
+        (
+          SELECT COUNT(*)::INT
+          FROM bookings b
+          WHERE b.slot_id = s.id AND b.status = 'attended'
+        ) AS attended_count
+      FROM schedule_slots s
+      LEFT JOIN training_types tt ON tt.id = s.training_type_id
+      LEFT JOIN trainers tr ON tr.id = s.trainer_id
+      WHERE s.date = $1::date
+        AND s.status != 'cancelled'
+      ORDER BY s.start_time, s.id
+    `,
+    [date]
+  );
+
+  return { date, slots: rows };
+}
+
+async function getSlotBookings(staff, slotId) {
+  requireStaffModule(staff, 'schedule');
+
+  const { rows: slotRows } = await pool.query(
+    `
+      SELECT
+        s.id,
+        s.date,
+        s.start_time,
+        s.duration_minutes,
+        s.capacity,
+        s.booked_count,
+        tt.name AS training_type_name,
+        tr.first_name || ' ' || tr.last_name AS trainer_name
+      FROM schedule_slots s
+      LEFT JOIN training_types tt ON tt.id = s.training_type_id
+      LEFT JOIN trainers tr ON tr.id = s.trainer_id
+      WHERE s.id = $1
+      LIMIT 1
+    `,
+    [slotId]
+  );
+
+  if (!slotRows[0]) {
+    return null;
+  }
+
+  const { rows: bookings } = await pool.query(
+    `
+      SELECT
+        b.id,
+        b.status,
+        b.subscription_id,
+        c.id AS client_id,
+        c.first_name || ' ' || c.last_name AS client_name,
+        c.phone AS client_phone,
+        cs.type AS subscription_type,
+        cs.status AS subscription_status,
+        cs.visits_left,
+        cs.expires_at
+      FROM bookings b
+      JOIN clients c ON c.id = b.client_id
+      LEFT JOIN client_subscriptions cs ON cs.id = b.subscription_id
+      WHERE b.slot_id = $1
+        AND b.status IN ('confirmed', 'attended')
+      ORDER BY b.created_at, b.id
+    `,
+    [slotId]
+  );
+
+  return { slot: slotRows[0], bookings };
+}
+
+async function searchClients(staff, search, limit = 5) {
+  requireStaffModule(staff, 'clients');
+  const tokens = String(search || '').trim().split(/\s+/).filter(Boolean);
+  if (tokens.join('').length < 2) {
+    return [];
+  }
+
+  const params = [];
+  const conditions = [];
+
+  tokens.forEach((token) => {
+    params.push(`%${token}%`);
+    const index = params.length;
+    conditions.push(`
+      (
+        c.first_name ILIKE $${index}
+        OR c.last_name ILIKE $${index}
+        OR COALESCE(c.middle_name, '') ILIKE $${index}
+        OR CONCAT_WS(' ', c.last_name, c.first_name, c.middle_name) ILIKE $${index}
+        OR CONCAT_WS(' ', c.first_name, c.middle_name, c.last_name) ILIKE $${index}
+        OR COALESCE(c.phone, '') ILIKE $${index}
+        OR COALESCE(c.barcode, '') ILIKE $${index}
+      )
+    `);
+  });
+
+  params.push(limit);
+
+  const { rows } = await pool.query(
+    `
+      SELECT
+        c.id,
+        c.first_name,
+        c.last_name,
+        c.phone,
+        cs.id AS subscription_id,
+        cs.type AS subscription_type,
+        cs.status AS subscription_status,
+        cs.visits_left,
+        cs.expires_at
+      FROM clients c
+      LEFT JOIN client_subscriptions cs
+        ON cs.client_id = c.id
+        AND cs.status IN ('active', 'frozen')
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY c.last_name, c.first_name
+      LIMIT $${params.length}
+    `,
+    params
+  );
+
+  return rows;
+}
+
+async function createBooking(staff, slotId, clientId, subscriptionId = null) {
+  requireStaffModule(staff, 'schedule_clients');
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const { rows: slotRows } = await client.query(
+      'SELECT * FROM schedule_slots WHERE id = $1 AND status = $2',
+      [slotId, 'active']
+    );
+    const slot = slotRows[0];
+    if (!slot) {
+      await client.query('ROLLBACK');
+      throw new Error('Занятие не найдено или отменено');
+    }
+
+    let placesCount = 1;
+    if (subscriptionId) {
+      const { rows: subscriptionRows } = await client.query(
+        'SELECT is_family FROM client_subscriptions WHERE id = $1 AND client_id = $2',
+        [subscriptionId, clientId]
+      );
+      if (!subscriptionRows[0]) {
+        await client.query('ROLLBACK');
+        throw new Error('Абонемент не найден');
+      }
+      if (subscriptionRows[0].is_family) {
+        placesCount = 2;
+      }
+    }
+
+    if ((slot.booked_count || 0) + placesCount > slot.capacity) {
+      await client.query('ROLLBACK');
+      throw new Error('Нет свободных мест');
+    }
+
+    const { rows: existingRows } = await client.query(
+      "SELECT id FROM bookings WHERE slot_id = $1 AND client_id = $2 AND status IN ('confirmed', 'attended')",
+      [slotId, clientId]
+    );
+
+    if (existingRows.length > 0) {
+      await client.query('ROLLBACK');
+      throw new Error('Клиент уже записан');
+    }
+
+    await client.query(
+      `
+        INSERT INTO bookings (slot_id, client_id, subscription_id, places_count, booked_by)
+        VALUES ($1, $2, $3, $4, $5)
+      `,
+      [slotId, clientId, subscriptionId || null, placesCount, `telegram:${staff.username || staff.id}`]
+    );
+
+    await client.query(
+      'UPDATE schedule_slots SET booked_count = booked_count + $1, updated_at = NOW() WHERE id = $2',
+      [placesCount, slotId]
+    );
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function markBookingAsAttended(staff, bookingId) {
+  requireStaffModule(staff, 'schedule_attendance');
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const { rows: bookingRows } = await client.query(
+      'SELECT * FROM bookings WHERE id = $1 AND status = $2',
+      [bookingId, 'confirmed']
+    );
+    const booking = bookingRows[0];
+    if (!booking) {
+      await client.query('ROLLBACK');
+      throw new Error('Запись не найдена');
+    }
+
+    await client.query(
+      'UPDATE bookings SET status = $1, updated_at = NOW() WHERE id = $2',
+      ['attended', bookingId]
+    );
+
+    if (booking.subscription_id) {
+      const { rows: subscriptionRows } = await client.query(
+        'SELECT * FROM client_subscriptions WHERE id = $1',
+        [booking.subscription_id]
+      );
+      const subscription = subscriptionRows[0];
+
+      if (subscription && ['visits', 'single'].includes(subscription.type) && (subscription.visits_left || 0) > 0) {
+        await client.query(
+          'UPDATE client_subscriptions SET visits_left = visits_left - 1, updated_at = NOW() WHERE id = $1',
+          [booking.subscription_id]
+        );
+
+        if ((subscription.visits_left || 0) - 1 === 0) {
+          await client.query(
+            'UPDATE client_subscriptions SET status = $1, updated_at = NOW() WHERE id = $2',
+            ['exhausted', booking.subscription_id]
+          );
+        }
+      }
+    }
+
+    await client.query(
+      `
+        INSERT INTO client_visits (client_id, subscription_id, visit_type, slot_id, created_by)
+        VALUES ($1, $2, 'group', $3, $4)
+      `,
+      [booking.client_id, booking.subscription_id || null, booking.slot_id, `telegram:${staff.username || staff.id}`]
+    );
+
+    await client.query('COMMIT');
+    return booking.slot_id;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function markBookingAsUnattended(staff, bookingId) {
+  requireStaffModule(staff, 'schedule_attendance');
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const { rows: bookingRows } = await client.query(
+      'SELECT * FROM bookings WHERE id = $1 AND status = $2',
+      [bookingId, 'attended']
+    );
+    const booking = bookingRows[0];
+    if (!booking) {
+      await client.query('ROLLBACK');
+      throw new Error('Запись не найдена или посещение не отмечено');
+    }
+
+    const { rows: visitRows } = await client.query(
+      `DELETE FROM client_visits
+       WHERE id = (
+         SELECT id FROM client_visits
+         WHERE client_id = $1 AND slot_id = $2 AND visit_type = 'group'
+         ORDER BY visited_at DESC
+         LIMIT 1
+       )
+       RETURNING subscription_id`,
+      [booking.client_id, booking.slot_id]
+    );
+
+    const chargedSubscriptionId = visitRows[0]?.subscription_id ?? null;
+    if (chargedSubscriptionId) {
+      const { rows: subRows } = await client.query(
+        'SELECT * FROM client_subscriptions WHERE id = $1',
+        [chargedSubscriptionId]
+      );
+      const sub = subRows[0];
+
+      if (sub && ['visits', 'single'].includes(sub.type)) {
+        await client.query(
+          'UPDATE client_subscriptions SET visits_left = visits_left + 1, updated_at = NOW() WHERE id = $1',
+          [chargedSubscriptionId]
+        );
+        if (sub.status === 'exhausted') {
+          await client.query(
+            "UPDATE client_subscriptions SET status = 'active', updated_at = NOW() WHERE id = $1",
+            [chargedSubscriptionId]
+          );
+        }
+      }
+    }
+
+    await client.query(
+      "UPDATE bookings SET status = 'confirmed', updated_at = NOW() WHERE id = $1",
+      [booking.id]
+    );
+
+    await client.query('COMMIT');
+    return booking.slot_id;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+function renderMainMenu(staff) {
+  return {
+    text: `Привет, ${escapeHtml(staff.name)}.\n\nВыбери действие:`,
+    keyboard: buildKeyboard([
+      [{ text: 'Сегодня', callback_data: 'today' }],
+    ]),
+  };
+}
+
+function renderToday(date, slots) {
+  if (slots.length === 0) {
+    return {
+      text: `На ${escapeHtml(date)} занятий нет.`,
+      keyboard: buildKeyboard([[{ text: 'Обновить', callback_data: 'today' }]]),
+    };
+  }
+
+  return {
+    text: `Занятия на ${escapeHtml(date)}:`,
+    keyboard: buildKeyboard(
+      slots.map((slot) => [{
+        text: `${formatTime(slot.start_time)} ${slot.training_type_name || 'Занятие'} (${slot.confirmed_count}/${slot.capacity})`,
+        callback_data: `slot:${slot.id}`,
+      }])
+    ),
+  };
+}
+
+function renderSlot(data) {
+  const slot = data.slot;
+  const lines = [
+    `<b>${escapeHtml(slot.training_type_name || 'Занятие')}</b>`,
+    `${escapeHtml(slot.date)} ${formatTime(slot.start_time)}`,
+    slot.trainer_name ? `Тренер: ${escapeHtml(slot.trainer_name)}` : null,
+    `Записано: ${data.bookings.length}/${slot.capacity}`,
+    '',
+    'Чтобы найти и записать клиента:',
+    `<code>/find ${slot.id} фамилия или телефон</code>`,
+  ].filter(Boolean);
+
+  const rows = data.bookings.map((booking) => {
+    const icon = booking.status === 'attended' ? '✓' : '•';
+    const action = booking.status === 'attended'
+      ? { text: 'Снять', callback_data: `unatt:${booking.id}` }
+      : { text: 'Отметить', callback_data: `att:${booking.id}` };
+
+    return [
+      { text: `${icon} ${booking.client_name}`, callback_data: `noop:${booking.id}` },
+      action,
+    ];
+  });
+
+  rows.push([{ text: 'Назад', callback_data: 'today' }]);
+
+  return {
+    text: lines.join('\n'),
+    keyboard: buildKeyboard(rows),
+  };
+}
+
+function renderClientSearch(slotId, clients) {
+  if (clients.length === 0) {
+    return {
+      text: 'Клиенты не найдены.',
+      keyboard: buildKeyboard([[{ text: 'К занятию', callback_data: `slot:${slotId}` }]]),
+    };
+  }
+
+  return {
+    text: 'Выбери клиента для записи:',
+    keyboard: buildKeyboard([
+      ...clients.map((client) => {
+        const sub = client.subscription_id || 0;
+        const visits = client.visits_left === null || client.visits_left === undefined ? '' : `, ${client.visits_left} виз.`;
+        return [{
+          text: `${client.last_name} ${client.first_name}${visits}`,
+          callback_data: `book:${slotId}:${client.id}:${sub}`,
+        }];
+      }),
+      [{ text: 'К занятию', callback_data: `slot:${slotId}` }],
+    ]),
+  };
+}
+
+async function renderSlotForStaff(staff, slotId) {
+  const data = await getSlotBookings(staff, slotId);
+  if (!data) {
+    return {
+      text: 'Занятие не найдено.',
+      keyboard: buildKeyboard([[{ text: 'Сегодня', callback_data: 'today' }]]),
+    };
+  }
+  return renderSlot(data);
+}
+
+async function sendUnauthorized(chatId, telegramId) {
+  return sendMessage(
+    chatId,
+    `Telegram не привязан к сотруднику HardZone.\n\nВаш Telegram ID: <code>${escapeHtml(telegramId)}</code>\nПередайте его администратору CRM.`
+  );
+}
+
+async function handleMessage(message) {
+  const chatId = message.chat?.id;
+  const telegramId = message.from?.id;
+  if (!chatId || !telegramId) {
+    return;
+  }
+
+  const staff = await findStaffByTelegramId(telegramId);
+  if (!staff) {
+    await sendUnauthorized(chatId, telegramId);
+    return;
+  }
+
+  const text = String(message.text || '').trim();
+
+  if (text.startsWith('/find')) {
+    const [, slotIdRaw, ...searchParts] = text.split(/\s+/);
+    const slotId = Number.parseInt(slotIdRaw, 10);
+    const search = searchParts.join(' ');
+
+    if (!Number.isInteger(slotId) || !search) {
+      await sendMessage(chatId, 'Формат поиска: <code>/find ID_занятия фамилия или телефон</code>');
+      return;
+    }
+
+    const clients = await searchClients(staff, search);
+    const view = renderClientSearch(slotId, clients);
+    await sendMessage(chatId, view.text, view.keyboard);
+    return;
+  }
+
+  const menu = renderMainMenu(staff);
+  await sendMessage(chatId, menu.text, menu.keyboard);
+}
+
+async function handleCallback(callbackQuery) {
+  const chatId = callbackQuery.message?.chat?.id;
+  const messageId = callbackQuery.message?.message_id;
+  const telegramId = callbackQuery.from?.id;
+  const data = String(callbackQuery.data || '');
+
+  if (!chatId || !messageId || !telegramId) {
+    return;
+  }
+
+  const staff = await findStaffByTelegramId(telegramId);
+  if (!staff) {
+    await answerCallback(callbackQuery.id, 'Telegram не привязан');
+    await sendUnauthorized(chatId, telegramId);
+    return;
+  }
+
+  if (data === 'today') {
+    const today = await getTodaySlots(staff);
+    const view = renderToday(today.date, today.slots);
+    await editMessage(chatId, messageId, view.text, view.keyboard);
+    await answerCallback(callbackQuery.id);
+    return;
+  }
+
+  if (data.startsWith('slot:')) {
+    const slotId = Number.parseInt(data.split(':')[1], 10);
+    const view = await renderSlotForStaff(staff, slotId);
+    await editMessage(chatId, messageId, view.text, view.keyboard);
+    await answerCallback(callbackQuery.id);
+    return;
+  }
+
+  if (data.startsWith('att:')) {
+    const bookingId = Number.parseInt(data.split(':')[1], 10);
+    const slotId = await markBookingAsAttended(staff, bookingId);
+    const view = await renderSlotForStaff(staff, slotId);
+    await editMessage(chatId, messageId, view.text, view.keyboard);
+    await answerCallback(callbackQuery.id, 'Посещение отмечено');
+    return;
+  }
+
+  if (data.startsWith('book:')) {
+    const [, slotIdRaw, clientIdRaw, subscriptionIdRaw] = data.split(':');
+    const slotId = Number.parseInt(slotIdRaw, 10);
+    const clientId = Number.parseInt(clientIdRaw, 10);
+    const subscriptionId = Number.parseInt(subscriptionIdRaw, 10);
+    await createBooking(staff, slotId, clientId, subscriptionId > 0 ? subscriptionId : null);
+    const view = await renderSlotForStaff(staff, slotId);
+    await editMessage(chatId, messageId, view.text, view.keyboard);
+    await answerCallback(callbackQuery.id, 'Клиент записан');
+    return;
+  }
+
+  if (data.startsWith('unatt:')) {
+    const bookingId = Number.parseInt(data.split(':')[1], 10);
+    const slotId = await markBookingAsUnattended(staff, bookingId);
+    const view = await renderSlotForStaff(staff, slotId);
+    await editMessage(chatId, messageId, view.text, view.keyboard);
+    await answerCallback(callbackQuery.id, 'Посещение снято');
+    return;
+  }
+
+  await answerCallback(callbackQuery.id);
+}
+
+async function handleTelegramUpdate(update) {
+  if (update.message) {
+    await handleMessage(update.message);
+    return;
+  }
+
+  if (update.callback_query) {
+    await handleCallback(update.callback_query);
+  }
+}
+
+module.exports = {
+  handleTelegramUpdate,
+  findStaffByTelegramId,
+  getTodaySlots,
+};
