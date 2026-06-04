@@ -28,6 +28,11 @@ Backend/integration tests:
 
 Run in CI or remotely on server `79.137.162.55` with an isolated temporary PostgreSQL database. Do not depend on local Docker/PostgreSQL on the current Windows machine.
 
+```powershell
+.\scripts\test-backend-remote.ps1
+.\scripts\test-backend-remote.ps1 -Branch stabilize/worktree-audit
+```
+
 Frontend:
 
 ```powershell

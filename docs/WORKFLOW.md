@@ -87,6 +87,10 @@ Backend tests:
 
 Backend/integration tests must be reproducible remotely, not tied to the current local workstation. Run them in CI or on server `79.137.162.55` with an isolated temporary PostgreSQL database. Do not require local Docker or local PostgreSQL for the HardZone verification path.
 
+```powershell
+.\scripts\test-backend-remote.ps1
+```
+
 ## Encoding
 
 The project has a Russian-language interface. Text files with Cyrillic must stay UTF-8.
