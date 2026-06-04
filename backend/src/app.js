@@ -23,6 +23,7 @@ const scheduleRouter = require('./routes/schedule');
 const bookingsRouter = require('./routes/bookings');
 const webhooksRouter = require('./routes/webhooks');
 const systemRouter = require('./routes/system');
+const staffRouter = require('./routes/staff');
 const { startDelayedAqsiSyncScheduler } = require('./services/order-sync');
 const { markMissedBookings } = require('./jobs/schedule-cleanup');
 const { ensureBootstrapUser } = require('./services/user-auth');
@@ -82,6 +83,7 @@ app.use('/api/training-types', authMiddleware, requireModule('services', 'schedu
 app.use('/api/trainers', authMiddleware, requireModule('schedule', 'services'), trainersRouter);
 app.use('/api/schedule', authMiddleware, requireModule('schedule'), scheduleRouter);
 app.use('/api/bookings', authMiddleware, requireModule('schedule'), bookingsRouter);
+app.use('/api/staff', authMiddleware, staffRouter);
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/system', authMiddleware, systemRouter);
 

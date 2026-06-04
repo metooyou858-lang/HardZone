@@ -325,9 +325,9 @@ schedule_attendance
 /api/staff/me
 /api/staff/schedule/today
 /api/staff/bookings
+/api/staff/client-search
 /api/staff/book-client
 /api/staff/mark-attendance
-/api/staff/client-search
 /api/staff/sales
 
 /api/client/me
@@ -383,6 +383,9 @@ schedule_attendance
    - `clients_create`;
    - `clients_update`;
    - `clients_import`;
+   - staff `client-search`;
+   - staff `schedule/today`;
+   - staff `bookings`;
    - `schedule_cancel`;
    - `schedule_edit_groups`;
    - `schedule_edit_personal`;
@@ -395,8 +398,8 @@ schedule_attendance
 
 Следующий кодовый шаг:
 
-1. Расширить frontend/session тесты на cookie-flow.
-2. После этого проектировать Telegram staff API.
+1. Добавить mutating staff API для записи клиента и отметки посещения.
+2. Расширить frontend/session тесты на cookie-flow.
 
 ## Открытые вопросы
 

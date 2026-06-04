@@ -256,6 +256,58 @@ test('staff without clients cannot read clients by direct request', async () => 
   assert.equal(byId.response.status, 403);
 });
 
+test('staff without clients cannot use staff client search by direct request', async () => {
+  const staffUser = await createUser({
+    module_revokes: ['clients'],
+  });
+
+  const sessionUser = {
+    id: Number(staffUser.id),
+    name: staffUser.name,
+    username: staffUser.username,
+    role: staffUser.role,
+  };
+
+  const result = await request('/api/staff/client-search?q=ci', {
+    headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
+  });
+
+  assert.equal(result.response.status, 403);
+});
+
+test('staff read API returns telegram-ready payloads for authorized staff', async () => {
+  const staffUser = await createUser();
+
+  const sessionUser = {
+    id: Number(staffUser.id),
+    name: staffUser.name,
+    username: staffUser.username,
+    role: staffUser.role,
+  };
+
+  const headers = { 'x-hardzone-session': createSessionToken(sessionUser) };
+
+  const me = await request('/api/staff/me', { headers });
+  assert.equal(me.response.status, 200);
+  assert.equal(me.body.success, true);
+  assert.equal(me.body.data.user.id, Number(staffUser.id));
+
+  const today = await request('/api/staff/schedule/today?date=2026-06-04', { headers });
+  assert.equal(today.response.status, 200);
+  assert.equal(today.body.success, true);
+  assert.equal(today.body.data.date, '2026-06-04');
+  assert.equal(Array.isArray(today.body.data.slots), true);
+
+  const clientSearch = await request('/api/staff/client-search?q=zz', { headers });
+  assert.equal(clientSearch.response.status, 200);
+  assert.equal(clientSearch.body.success, true);
+  assert.equal(Array.isArray(clientSearch.body.data), true);
+
+  const bookings = await request('/api/staff/bookings?slot_id=1', { headers });
+  assert.equal(bookings.response.status, 404);
+  assert.equal(bookings.body.success, false);
+});
+
 test('staff without client sub-permissions cannot create, edit, or import clients by direct request', async () => {
   const staffUser = await createUser({
     module_revokes: ['clients_create', 'clients_update', 'clients_import'],
@@ -287,6 +339,29 @@ test('staff without client sub-permissions cannot create, edit, or import client
     headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
   });
   assert.equal(importClients.response.status, 403);
+});
+
+test('staff without schedule cannot use staff schedule endpoints by direct request', async () => {
+  const staffUser = await createUser({
+    module_revokes: ['schedule'],
+  });
+
+  const sessionUser = {
+    id: Number(staffUser.id),
+    name: staffUser.name,
+    username: staffUser.username,
+    role: staffUser.role,
+  };
+
+  const today = await request('/api/staff/schedule/today', {
+    headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
+  });
+  assert.equal(today.response.status, 403);
+
+  const bookings = await request('/api/staff/bookings?slot_id=1', {
+    headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
+  });
+  assert.equal(bookings.response.status, 403);
 });
 
 test('staff without schedule_cancel cannot cancel a training slot by direct request', async () => {
