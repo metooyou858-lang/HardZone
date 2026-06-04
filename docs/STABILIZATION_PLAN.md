@@ -23,7 +23,7 @@
 | 15. Production error hygiene | Done | 500 responses no longer expose raw errors in covered backend routes |
 | 16. SSH hardening | Done | Host key must be in `known_hosts`; password login disabled |
 | 17. Node version policy | Done | `.nvmrc`, `.node-version`, Node `24.14.1` |
-| 18. Domain migration | In progress | DNS for `hardzone.space` points to `79.137.162.55`; nginx/HTTPS pending DNS propagation |
+| 18. Domain migration | Done | DNS, nginx and Let's Encrypt are configured for `hardzone.space` and `www.hardzone.space`; certificate expires on `2026-09-01` |
 | 19. Access model | Draft | `docs/ACCESS_MODEL.md`; code implementation pending |
 
 ## Current Safety Gates
@@ -38,14 +38,10 @@ Before production work:
 
 ## Remaining Work
 
-1. Finish domain setup:
-   - add `hardzone.space www.hardzone.space` to nginx;
-   - issue Let's Encrypt certificate;
-   - run production smoke-check.
-2. Continue cleaning older archive docs mojibake gradually if they are still needed.
-3. Verify access presets and backend guards from `docs/ACCESS_MODEL.md` on critical staff scenarios.
-4. Review `npm audit` findings.
-5. Extend auth tests to frontend cookie/session route flow.
+1. Continue cleaning older archive docs mojibake gradually if they are still needed.
+2. Verify access presets and backend guards from `docs/ACCESS_MODEL.md` on critical staff scenarios.
+3. Review `npm audit` findings.
+4. Extend auth tests to frontend cookie/session route flow.
 
 ## Stop Rule
 

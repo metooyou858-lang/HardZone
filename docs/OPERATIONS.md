@@ -78,14 +78,12 @@ DNS records should point to production:
 www    A      79.137.162.55
 ```
 
-After DNS resolves:
+Domain setup is complete:
 
-1. Add `hardzone.space www.hardzone.space` to nginx `server_name`.
-2. Issue a Let's Encrypt certificate for both names.
-3. Update nginx redirect/default server behavior.
-4. Check HTTPS, login, `/health`, PM2, and the sales flow.
-
-Temporary IP certificate expires on `2026-06-06`; after domain setup, use a domain certificate.
+1. `hardzone.space` and `www.hardzone.space` resolve to `79.137.162.55`.
+2. Nginx serves both names.
+3. Let's Encrypt certificate `hardzone.space` covers both names and expires on `2026-09-01`.
+4. HTTP redirects to HTTPS; HTTPS serves the CRM and `/health`.
 
 ## Health Checks
 

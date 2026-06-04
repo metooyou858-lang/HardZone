@@ -49,7 +49,7 @@ HardZone - monorepo CRM для CrossFit-клуба:
 | Backup | Production backup script and restore-smoke exist | Run backup before risky production work |
 | Checks | Smoke scripts exist for local, staging, production | Run the relevant smoke-check before handoff |
 | Payments | AQSI flow documented in `docs/PAYMENTS.md` | Compare endpoint/payload changes with `swagger (3).json` |
-| Domain | DNS records for `hardzone.space` point to production | Finish nginx and Let's Encrypt after DNS propagation |
+| Domain | DNS, nginx and Let's Encrypt are configured for `hardzone.space` and `www.hardzone.space` | Monitor certificate renewal |
 
 ## Critical Areas
 
