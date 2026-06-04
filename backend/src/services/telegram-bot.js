@@ -92,6 +92,11 @@ function editMessage(chatId, messageId, text, replyMarkup = null) {
     parse_mode: 'HTML',
     disable_web_page_preview: true,
     ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+  }).catch((error) => {
+    if (error.message.includes('message is not modified')) {
+      return null;
+    }
+    throw error;
   });
 }
 
