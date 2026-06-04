@@ -1,6 +1,7 @@
 const express = require('express');
 
 const { handleTelegramUpdate } = require('../services/telegram-bot');
+const logger = require('../services/logger');
 const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
@@ -22,8 +23,15 @@ router.post('/webhook/:secret', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Route not found' });
     }
 
-    await handleTelegramUpdate(req.body || {});
-    return res.json({ success: true });
+    res.json({ success: true });
+
+    handleTelegramUpdate(req.body || {}).catch((error) => {
+      logger.error('telegram', {
+        action: 'handle_update_failed',
+        message: error.message,
+        stack: error.stack,
+      });
+    });
   } catch (error) {
     return sendInternalError(res, error, { route: 'telegram.webhook' });
   }
