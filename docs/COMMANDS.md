@@ -24,6 +24,10 @@ Backend syntax:
 Get-ChildItem backend\src -Recurse -Filter *.js | ForEach-Object { node --check $_.FullName }
 ```
 
+Backend/integration tests:
+
+Run in CI or remotely on server `79.137.162.55` with an isolated temporary PostgreSQL database. Do not depend on local Docker/PostgreSQL on the current Windows machine.
+
 Frontend:
 
 ```powershell

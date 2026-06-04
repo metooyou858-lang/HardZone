@@ -21,6 +21,7 @@
 - Проект использует русскоязычный интерфейс; файлы с кириллицей сохранять в UTF-8.
 - Для ручных правок использовать `apply_patch`, не PowerShell redirection и не `Set-Content` без явного контроля кодировки.
 - После frontend/backend-правок проверять mojibake или запускать `.\scripts\smoke-local.ps1 -SkipFrontendLint -SkipFrontendBuild -SkipBackendMigrate`.
+- Backend/integration-проверки HardZone выполнять удалённо на сервере `79.137.162.55` или в CI. Не завязывать тестовый процесс на локальный компьютер, локальный Docker или локальный PostgreSQL.
 - Production-сервер: `79.137.162.55`; старый `80.66.87.178` не использовать без явной просьбы.
 - Домен в настройке: `hardzone.space`, `www.hardzone.space`.
 - Деплой с Windows запускать через `.\deploy.ps1`, подробности в `docs/OPERATIONS.md`.
