@@ -105,6 +105,35 @@ PM2:
 ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "su - app -c 'pm2 status'"
 ```
 
+## Telegram Staff Bot
+
+The staff bot is served by the production backend webhook:
+
+```text
+/api/telegram/webhook/<TELEGRAM_WEBHOOK_SECRET>
+```
+
+Production env variables live in `/srv/HardZone/backend/.env` and must not be committed:
+
+```text
+TELEGRAM_ENABLED=true
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_WEBHOOK_SECRET=...
+```
+
+After changing Telegram env values, restart backend with updated PM2 env:
+
+```powershell
+ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "su - app -c 'pm2 restart inventory-backend --update-env'"
+```
+
+Staff access is controlled by `users.telegram_id` plus the existing CRM modules:
+
+- `schedule` for today's schedule and slot lists;
+- `clients` for client search;
+- `schedule_clients` for booking a client;
+- `schedule_attendance` for attendance actions.
+
 Logs:
 
 ```powershell
