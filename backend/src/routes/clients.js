@@ -9,7 +9,7 @@ const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
 const upload = multer({ dest: '/tmp/' });
-const requireClientsRead = authMiddleware.requireRole('owner', 'admin');
+const requireClientsRead = authMiddleware.requireModule('clients');
 const requireClientsManage = authMiddleware.requireModule('clients');
 
 async function generateClientBarcode() {

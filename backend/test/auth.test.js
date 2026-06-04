@@ -228,6 +228,48 @@ test('staff without users_manage cannot open system diagnostics', async () => {
   assert.equal(result.body.success, false);
 });
 
+test('staff without clients cannot read or edit clients by direct request', async () => {
+  const staffUser = await createUser({
+    module_revokes: ['clients'],
+  });
+
+  const sessionUser = {
+    id: Number(staffUser.id),
+    name: staffUser.name,
+    username: staffUser.username,
+    role: staffUser.role,
+  };
+
+  const list = await request('/api/clients', {
+    headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
+  });
+  assert.equal(list.response.status, 403);
+
+  const byBarcode = await request('/api/clients/barcode/ci-barcode', {
+    headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
+  });
+  assert.equal(byBarcode.response.status, 403);
+
+  const byId = await request('/api/clients/1', {
+    headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
+  });
+  assert.equal(byId.response.status, 403);
+
+  const create = await request('/api/clients', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-hardzone-session': createSessionToken(sessionUser) },
+    body: JSON.stringify({ first_name: 'CI', last_name: 'Client' }),
+  });
+  assert.equal(create.response.status, 403);
+
+  const update = await request('/api/clients/1', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-hardzone-session': createSessionToken(sessionUser) },
+    body: JSON.stringify({ comment: 'blocked' }),
+  });
+  assert.equal(update.response.status, 403);
+});
+
 test('staff without schedule_cancel cannot cancel a training slot by direct request', async () => {
   const staffUser = await createUser({
     module_revokes: ['schedule_cancel'],
@@ -247,6 +289,66 @@ test('staff without schedule_cancel cannot cancel a training slot by direct requ
 
   assert.equal(result.response.status, 403);
   assert.equal(result.body.success, false);
+});
+
+test('staff without schedule edit permissions cannot create training slots by direct request', async () => {
+  const staffUser = await createUser({
+    module_revokes: ['schedule_edit_groups', 'schedule_edit_personal'],
+  });
+
+  const sessionUser = {
+    id: Number(staffUser.id),
+    name: staffUser.name,
+    username: staffUser.username,
+    role: staffUser.role,
+  };
+
+  const groupSlot = await request('/api/schedule/slots', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-hardzone-session': createSessionToken(sessionUser) },
+    body: JSON.stringify({ slot_type: 'group', date: '2026-06-04', start_time: '10:00' }),
+  });
+  assert.equal(groupSlot.response.status, 403);
+
+  const personalSlot = await request('/api/schedule/slots', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-hardzone-session': createSessionToken(sessionUser) },
+    body: JSON.stringify({ slot_type: 'personal', date: '2026-06-04', start_time: '10:00' }),
+  });
+  assert.equal(personalSlot.response.status, 403);
+});
+
+test('staff without schedule_gym cannot change open gym state by direct request', async () => {
+  const staffUser = await createUser({
+    module_revokes: ['schedule_gym'],
+  });
+
+  const sessionUser = {
+    id: Number(staffUser.id),
+    name: staffUser.name,
+    username: staffUser.username,
+    role: staffUser.role,
+  };
+
+  const updateHours = await request('/api/schedule/gym-hours', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'x-hardzone-session': createSessionToken(sessionUser) },
+    body: JSON.stringify({ days: [] }),
+  });
+  assert.equal(updateHours.response.status, 403);
+
+  const checkIn = await request('/api/schedule/open-gym/check-in', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-hardzone-session': createSessionToken(sessionUser) },
+    body: JSON.stringify({ client_id: 1 }),
+  });
+  assert.equal(checkIn.response.status, 403);
+
+  const deleteVisit = await request('/api/schedule/open-gym/visits/1', {
+    method: 'DELETE',
+    headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
+  });
+  assert.equal(deleteVisit.response.status, 403);
 });
 
 test('staff without sales_create cannot create or edit sales orders by direct request', async () => {
