@@ -37,6 +37,18 @@ async function request(path, options = {}) {
   return { response, body };
 }
 
+async function waitFor(predicate, { attempts = 20, delayMs = 25 } = {}) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const result = await predicate();
+    if (result) {
+      return result;
+    }
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+
+  return null;
+}
+
 async function cleanupUsers() {
   await query("DELETE FROM users WHERE username LIKE 'ci-auth-%'");
 }
@@ -340,8 +352,12 @@ test('telegram webhook links staff by own shared phone contact', async () => {
   assert.equal(result.response.status, 200);
   assert.equal(result.body.success, true);
 
-  const { rows } = await query('SELECT telegram_id FROM users WHERE id = $1', [staffUser.id]);
-  assert.equal(rows[0].telegram_id, '987654321');
+  const linkedTelegramId = await waitFor(async () => {
+    const { rows } = await query('SELECT telegram_id FROM users WHERE id = $1', [staffUser.id]);
+    return rows[0].telegram_id;
+  });
+
+  assert.equal(linkedTelegramId, '987654321');
 });
 
 test('telegram webhook does not link staff by forwarded contact', async () => {
