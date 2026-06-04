@@ -17,14 +17,15 @@
 | 9. Git remote/upstream | Done | GitHub `origin`; production `server` не использовать случайно |
 | 10. AQSI Swagger in Git | Done | `swagger (3).json` хранится в репозитории |
 | 11. CI | Done | GitHub Actions: frontend lint/build, backend migrate/test, mojibake scan |
-| 12. Backup/restore procedure | Done | `docs/BACKUP_RESTORE.md`, `scripts/backup-production.ps1`, `scripts/test-restore-production-backup.ps1`; latest production backup restored successfully: `/srv/backups/hardzone/hardzone_20260603_044731.dump` |
+| 12. Backup/restore procedure | Done | `docs/BACKUP_RESTORE.md`, `scripts/backup-production.ps1`, `scripts/test-restore-production-backup.ps1`; latest production backup restored successfully before Telegram phone migration: `/srv/backups/hardzone/hardzone_20260604_061113.dump` |
 | 13. Staging contour | Done | `/srv/HardZone-staging`, DB `hardzone_staging`, ports `3100/3101`, separate PM2 processes |
 | 14. Auth/access test coverage | Done | `backend/test/auth.test.js`, runs in CI |
 | 15. Production error hygiene | Done | 500 responses no longer expose raw errors in covered backend routes |
 | 16. SSH hardening | Done | Host key must be in `known_hosts`; password login disabled |
 | 17. Node version policy | Done | `.nvmrc`, `.node-version`, Node `24.14.1` |
 | 18. Domain migration | Done | DNS, nginx and Let's Encrypt are configured for `hardzone.space` and `www.hardzone.space`; certificate expires on `2026-09-01` |
-| 19. Access model | In progress | Backend guards and access presets implemented for sales, schedule and clients; frontend/session tests and Telegram API pending |
+| 19. Access model | In progress | Backend guards, access presets, staff API and Telegram staff bot implemented; frontend/session tests still pending |
+| 20. Telegram staff bot | Done | Phone-based staff linking, schedule/client/booking/attendance actions, production polling process `hardzone-telegram-poller` |
 
 ## Current Safety Gates
 
@@ -41,7 +42,16 @@ Before production work:
 1. Continue cleaning older archive docs mojibake gradually if they are still needed.
 2. Review `npm audit` findings.
 3. Extend auth tests to frontend cookie/session route flow.
-4. Design Telegram staff API contracts from `docs/ACCESS_MODEL.md`.
+4. Extend Telegram staff bot UX after live staff feedback.
+
+## Current Production Notes
+
+- Production backend: `inventory-backend`, PM2, port `3000`.
+- Production frontend: `hardzone-frontend`, PM2, port `3001`.
+- Telegram bot runs by polling process `hardzone-telegram-poller`; webhook is intentionally not active because Telegram delivery to the server timed out.
+- Server `/etc/hosts` pins `api.telegram.org` to a working Telegram API IP after DNS-selected Telegram IP timed out from `79.137.162.55`.
+- Telegram staff auth links by shared phone contact against `users.phone_normalized`; forwarded/other contacts are rejected.
+- Remote backend tests are the source of truth for backend/integration checks: `.\scripts\test-backend-remote.ps1`.
 
 ## Stop Rule
 
