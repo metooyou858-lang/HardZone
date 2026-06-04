@@ -10,7 +10,9 @@ const { sendInternalError } = require('../utils/http-response');
 const router = express.Router();
 const upload = multer({ dest: '/tmp/' });
 const requireClientsRead = authMiddleware.requireModule('clients');
-const requireClientsManage = authMiddleware.requireModule('clients');
+const requireClientsCreate = authMiddleware.requireModule('clients_create');
+const requireClientsUpdate = authMiddleware.requireModule('clients_update');
+const requireClientsImport = authMiddleware.requireModule('clients_import');
 
 async function generateClientBarcode() {
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -92,7 +94,7 @@ router.get('/', requireClientsRead, async (req, res) => {
   }
 });
 
-router.post('/import', requireClientsManage, upload.single('file'), async (req, res) => {
+router.post('/import', requireClientsImport, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(422).json({ success: false, error: 'Файл не загружен' });
@@ -257,7 +259,7 @@ router.get('/:id', requireClientsRead, async (req, res) => {
   }
 });
 
-router.post('/', requireClientsManage, async (req, res) => {
+router.post('/', requireClientsCreate, async (req, res) => {
   try {
     const {
       first_name,
@@ -317,7 +319,7 @@ router.post('/', requireClientsManage, async (req, res) => {
   }
 });
 
-router.patch('/:id', requireClientsManage, async (req, res) => {
+router.patch('/:id', requireClientsUpdate, async (req, res) => {
   try {
     const fields = [
       'first_name',

@@ -144,6 +144,9 @@ warehouse
 services
 sales
 clients
+clients_create
+clients_update
+clients_import
 schedule
 schedule_edit_groups
 schedule_edit_personal
@@ -180,6 +183,9 @@ warehouse
 services
 sales
 clients
+clients_create
+clients_update
+clients_import
 schedule
 schedule_edit_groups
 schedule_edit_personal
@@ -202,6 +208,7 @@ users_manage
 ```text
 sales
 clients
+clients_create
 schedule
 schedule_clients
 schedule_attendance
@@ -219,6 +226,8 @@ warehouse
 ```text
 users_manage
 analytics
+clients_update
+clients_import
 schedule_edit_groups
 schedule_edit_personal
 schedule_cancel
@@ -267,6 +276,14 @@ schedule_attendance
   - `sales_cancel` - отмена pending-продаж в legacy sales API.
   - `sales_refund` - возвраты по оплаченным заказам.
   - `sales_aqsi_recovery` - ручная синхронизация и восстановление AQSI-операций.
+
+### Клиенты
+
+- `clients` - просмотр, поиск и открытие карточек клиентов.
+- `clients_create` - создание новой карточки клиента.
+- `clients_update` - редактирование существующей карточки клиента.
+- `clients_import` - массовый CSV-импорт клиентов.
+- Дежурный тренер получает `clients` и `clients_create`, чтобы завести клиента на смене, но не получает `clients_update` и `clients_import` без явной выдачи.
 
 ### AQSI-зависания
 
@@ -359,10 +376,13 @@ schedule_attendance
 6. При создании сотрудника можно явно создать карточку тренера; пресет `Дежурный тренер` включает этот чекбокс по умолчанию.
 7. В настройках тренеров можно привязать или отвязать существующую карточку тренера от сотрудника без изменения прав доступа.
 8. Права продаж раздроблены на `sales_create`, `sales_pay`, `sales_cancel`, `sales_refund`, `sales_aqsi_recovery`.
-9. Чтение и изменение клиентов на backend закрыто модулем `clients`, а не только ролью `admin`.
+9. Клиентские права раздроблены на `clients`, `clients_create`, `clients_update`, `clients_import`.
 10. Регрессионные backend-тесты покрывают прямые запросы без критичных модулей:
    - `users_manage`;
    - `clients`;
+   - `clients_create`;
+   - `clients_update`;
+   - `clients_import`;
    - `schedule_cancel`;
    - `schedule_edit_groups`;
    - `schedule_edit_personal`;
@@ -375,13 +395,12 @@ schedule_attendance
 
 Следующий кодовый шаг:
 
-1. Продолжить дробление прав клиентов, если нужно разделить просмотр, создание, редактирование и импорт.
-2. Расширить frontend/session тесты на cookie-flow.
-3. После этого проектировать Telegram staff API.
+1. Расширить frontend/session тесты на cookie-flow.
+2. После этого проектировать Telegram staff API.
 
 ## Открытые вопросы
 
-1. Может ли дежурный тренер создавать нового клиента или только выбирать существующего?
+1. Может ли дежурный тренер редактировать существующего клиента, или только создавать новую карточку при продаже/записи?
 2. Нужен ли дежурному тренеру склад целиком или только продажа товаров на баре?
 3. Может ли дежурный тренер делать возврат?
 4. Может ли дежурный тренер продлевать абонемент вручную?

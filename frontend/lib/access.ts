@@ -10,6 +10,9 @@ export type AuthModulePermission =
   | "sales_refund"
   | "sales_aqsi_recovery"
   | "clients"
+  | "clients_create"
+  | "clients_update"
+  | "clients_import"
   | "schedule"
   | "schedule_edit_groups"
   | "schedule_edit_personal"
@@ -30,6 +33,9 @@ export const ALL_MODULE_PERMISSIONS: AuthModulePermission[] = [
   "sales_refund",
   "sales_aqsi_recovery",
   "clients",
+  "clients_create",
+  "clients_update",
+  "clients_import",
   "schedule",
   "schedule_edit_groups",
   "schedule_edit_personal",
@@ -58,6 +64,12 @@ export const SALES_SUB_PERMISSIONS: AuthModulePermission[] = [
   "sales_aqsi_recovery",
 ];
 
+export const CLIENT_SUB_PERMISSIONS: AuthModulePermission[] = [
+  "clients_create",
+  "clients_update",
+  "clients_import",
+];
+
 export const roleLabels: Record<AuthUserRole, string> = {
   owner: "Главный администратор",
   admin: "Администратор",
@@ -73,6 +85,9 @@ export const moduleLabels: Record<AuthModulePermission, string> = {
   sales_refund: "Продажи: возвраты",
   sales_aqsi_recovery: "Продажи: восстановление AQSI",
   clients: "Клиенты",
+  clients_create: "Клиенты: создание",
+  clients_update: "Клиенты: редактирование",
+  clients_import: "Клиенты: импорт",
   schedule: "Расписание",
   schedule_edit_groups: "Групповые: создание и редактирование",
   schedule_edit_personal: "Персоналки: создание и редактирование",
@@ -107,7 +122,7 @@ export const accessPresets: AccessPreset[] = [
     label: "Дежурный тренер",
     description: "Продажи, клиенты, запись на тренировки и посещаемость без отмен тренировок и системных прав.",
     role_title: "Дежурный тренер",
-    modules: ["sales", "sales_create", "sales_pay", "clients", "schedule", "schedule_clients", "schedule_attendance"],
+    modules: ["sales", "sales_create", "sales_pay", "clients", "clients_create", "schedule", "schedule_clients", "schedule_attendance"],
   },
 ];
 

@@ -11,6 +11,7 @@ import {
   unfreezeSubscription,
   updateClient,
 } from "@/lib/api/clients";
+import { hasModuleAccess, type AuthModulePermission } from "@/lib/access";
 import {
   BarcodeVisual,
   clientInputCls,
@@ -46,6 +47,7 @@ export default function ClientDetailsPage() {
   const clientId = String(params.id);
 
   const [client, setClient] = useState<ClientDetail | null>(null);
+  const [currentModules, setCurrentModules] = useState<AuthModulePermission[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -63,6 +65,41 @@ export default function ClientDetailsPage() {
     discount: "",
     comment: "",
   });
+
+  const canUpdateClient = hasModuleAccess(currentModules, "clients_update");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCurrentUser() {
+      try {
+        const response = await fetch("/auth-api/me");
+        if (!response.ok) {
+          return;
+        }
+        const data = (await response.json()) as { data?: { user?: { modules?: AuthModulePermission[] } } };
+        if (!cancelled) {
+          setCurrentModules(data.data?.user?.modules ?? []);
+        }
+      } catch {
+        if (!cancelled) {
+          setCurrentModules([]);
+        }
+      }
+    }
+
+    void loadCurrentUser();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!canUpdateClient && editing) {
+      setEditing(false);
+    }
+  }, [canUpdateClient, editing]);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,6 +157,11 @@ export default function ClientDetailsPage() {
 
   async function handleSave() {
     if (!client) {
+      return;
+    }
+
+    if (!canUpdateClient) {
+      setError("Недостаточно прав доступа");
       return;
     }
 
@@ -237,7 +279,7 @@ export default function ClientDetailsPage() {
                 <p className="mt-1 text-sm text-[var(--text-muted)]">Контакты и персональная скидка</p>
               </div>
 
-              {!editing ? (
+              {!editing && canUpdateClient ? (
                 <button
                   type="button"
                   onClick={() => setEditing(true)}
@@ -245,7 +287,7 @@ export default function ClientDetailsPage() {
                 >
                   Редактировать
                 </button>
-              ) : (
+              ) : editing ? (
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -266,7 +308,7 @@ export default function ClientDetailsPage() {
                     Отмена
                   </button>
                 </div>
-              )}
+              ) : null}
             </div>
 
             {editing ? (

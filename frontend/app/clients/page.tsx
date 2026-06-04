@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { ClientListItem, createClient, fetchClients, importClientsCsv } from "@/lib/api/clients";
+import { hasModuleAccess, type AuthModulePermission } from "@/lib/access";
 import {
   clientInputCls,
   clientLabelCls,
@@ -75,6 +76,7 @@ function ArrowRightIcon() {
 
 export default function ClientsPage() {
   const [tab, setTab] = useState<ClientsTab>("clients");
+  const [currentModules, setCurrentModules] = useState<AuthModulePermission[]>([]);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [clients, setClients] = useState<ClientListItem[]>([]);
@@ -96,6 +98,46 @@ export default function ClientsPage() {
     errors: string[];
   } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+
+  const canCreateClient = hasModuleAccess(currentModules, "clients_create");
+  const canImportClients = hasModuleAccess(currentModules, "clients_import");
+  const tabs: Array<{ id: ClientsTab; label: string }> = [
+    { id: "clients", label: "Клиенты" },
+    ...(canImportClients ? [{ id: "import" as const, label: "Импорт" }] : []),
+  ];
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCurrentUser() {
+      try {
+        const response = await fetch("/auth-api/me");
+        if (!response.ok) {
+          return;
+        }
+        const data = (await response.json()) as { data?: { user?: { modules?: AuthModulePermission[] } } };
+        if (!cancelled) {
+          setCurrentModules(data.data?.user?.modules ?? []);
+        }
+      } catch {
+        if (!cancelled) {
+          setCurrentModules([]);
+        }
+      }
+    }
+
+    void loadCurrentUser();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (tab === "import" && !canImportClients) {
+      setTab("clients");
+    }
+  }, [canImportClients, tab]);
 
   useEffect(() => {
     if (tab !== "clients") {
@@ -209,10 +251,7 @@ export default function ClientsPage() {
         </div>
 
         <div className="inline-flex rounded-full border border-[var(--line-soft)] bg-[var(--bg-card)] p-1">
-          {([
-            { id: "clients", label: "Клиенты" },
-            { id: "import", label: "Импорт" },
-          ] as const).map((item) => (
+          {tabs.map((item) => (
             <button
               key={item.id}
               type="button"
@@ -250,18 +289,20 @@ export default function ClientsPage() {
               </label>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setError(null);
-                  setShowCreate(true);
-                }}
-                className="rounded-[18px] bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110"
-              >
-                Новый клиент
-              </button>
-            </div>
+            {canCreateClient ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError(null);
+                    setShowCreate(true);
+                  }}
+                  className="rounded-[18px] bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110"
+                >
+                  Новый клиент
+                </button>
+              </div>
+            ) : null}
           </div>
 
           <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)]">
@@ -293,16 +334,18 @@ export default function ClientsPage() {
                 </div>
                 <p className="mt-4 text-base font-medium text-[var(--text-main)]">Клиенты не найдены</p>
                 <p className="mt-2 text-sm text-[var(--text-muted)]">Измените запрос или создайте новую карточку вручную</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setError(null);
-                    setShowCreate(true);
-                  }}
-                  className="mt-5 rounded-[18px] bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110"
-                >
-                  Создать клиента
-                </button>
+                {canCreateClient ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError(null);
+                      setShowCreate(true);
+                    }}
+                    className="mt-5 rounded-[18px] bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110"
+                  >
+                    Создать клиента
+                  </button>
+                ) : null}
               </div>
             ) : (
               <div>
@@ -481,7 +524,7 @@ export default function ClientsPage() {
         </section>
       )}
 
-      {showCreate && (
+      {showCreate && canCreateClient && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-10">
           <div className="w-full max-w-2xl rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-6">
             <div className="flex items-start justify-between gap-4">

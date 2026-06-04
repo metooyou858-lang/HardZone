@@ -228,7 +228,7 @@ test('staff without users_manage cannot open system diagnostics', async () => {
   assert.equal(result.body.success, false);
 });
 
-test('staff without clients cannot read or edit clients by direct request', async () => {
+test('staff without clients cannot read clients by direct request', async () => {
   const staffUser = await createUser({
     module_revokes: ['clients'],
   });
@@ -254,6 +254,19 @@ test('staff without clients cannot read or edit clients by direct request', asyn
     headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
   });
   assert.equal(byId.response.status, 403);
+});
+
+test('staff without client sub-permissions cannot create, edit, or import clients by direct request', async () => {
+  const staffUser = await createUser({
+    module_revokes: ['clients_create', 'clients_update', 'clients_import'],
+  });
+
+  const sessionUser = {
+    id: Number(staffUser.id),
+    name: staffUser.name,
+    username: staffUser.username,
+    role: staffUser.role,
+  };
 
   const create = await request('/api/clients', {
     method: 'POST',
@@ -268,6 +281,12 @@ test('staff without clients cannot read or edit clients by direct request', asyn
     body: JSON.stringify({ comment: 'blocked' }),
   });
   assert.equal(update.response.status, 403);
+
+  const importClients = await request('/api/clients/import', {
+    method: 'POST',
+    headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
+  });
+  assert.equal(importClients.response.status, 403);
 });
 
 test('staff without schedule_cancel cannot cancel a training slot by direct request', async () => {

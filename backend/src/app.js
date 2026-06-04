@@ -76,7 +76,7 @@ app.use('/api/import', authMiddleware, requireModule('warehouse'), importRouter)
 app.use('/api/sales', authMiddleware, requireModule('sales'), salesRouter);
 app.use('/api/orders', authMiddleware, requireModule('sales'), aqsiV4Router);
 app.use('/api/orders', authMiddleware, requireModule('sales'), ordersRouter);
-app.use('/api/clients', authMiddleware, requireModule('clients', 'sales', 'schedule'), clientsRouter);
+app.use('/api/clients', authMiddleware, requireModule('clients', 'clients_create', 'clients_update', 'clients_import', 'sales', 'schedule'), clientsRouter);
 app.use('/api/subscriptions', authMiddleware, requireModule('clients'), subscriptionsRouter);
 app.use('/api/training-types', authMiddleware, requireModule('services', 'schedule'), trainingTypesRouter);
 app.use('/api/trainers', authMiddleware, requireModule('schedule', 'services'), trainersRouter);
