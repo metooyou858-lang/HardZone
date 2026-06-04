@@ -121,6 +121,19 @@ TELEGRAM_BOT_TOKEN=...
 TELEGRAM_WEBHOOK_SECRET=...
 ```
 
+If Telegram cannot reach the server webhook or the server cannot use the DNS-selected Telegram API address, run the bot as a server-side polling process:
+
+```powershell
+ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "su - app -c 'cd /srv/HardZone/backend && pm2 start src/telegram-poller.js --name hardzone-telegram-poller && pm2 save'"
+```
+
+Polling requires:
+
+```text
+TELEGRAM_ENABLED=true
+TELEGRAM_POLLING_ENABLED=true
+```
+
 After changing Telegram env values, restart backend with updated PM2 env:
 
 ```powershell

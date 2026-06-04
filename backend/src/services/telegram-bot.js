@@ -3,7 +3,7 @@ const { pool } = require('../db');
 const { normalizePhone } = require('../utils/phones');
 
 const CLUB_TIME_ZONE = process.env.APP_TIMEZONE || 'Asia/Vladivostok';
-const TELEGRAM_API_BASE = 'https://api.telegram.org/bot';
+const TELEGRAM_API_BASE = process.env.TELEGRAM_API_BASE || 'https://api.telegram.org/bot';
 
 function getClubDate(date = new Date()) {
   const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -39,16 +39,18 @@ function buildKeyboard(rows) {
   return { inline_keyboard: rows };
 }
 
-async function telegramRequest(method, payload) {
+async function telegramRequest(method, payload, options = {}) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
     return null;
   }
 
+  const timeoutMs = options.timeoutMs || 30000;
   const response = await fetch(`${TELEGRAM_API_BASE}${token}/${method}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (!response.ok) {
@@ -56,7 +58,12 @@ async function telegramRequest(method, payload) {
     throw new Error(`Telegram ${method} failed: ${response.status} ${text.slice(0, 300)}`);
   }
 
-  return response.json();
+  const body = await response.json();
+  if (body && body.ok === false) {
+    throw new Error(`Telegram ${method} failed: ${body.description || 'unknown error'}`);
+  }
+
+  return body;
 }
 
 function sendMessage(chatId, text, replyMarkup = null) {
@@ -783,4 +790,5 @@ module.exports = {
   handleTelegramUpdate,
   findStaffByTelegramId,
   getTodaySlots,
+  telegramRequest,
 };
