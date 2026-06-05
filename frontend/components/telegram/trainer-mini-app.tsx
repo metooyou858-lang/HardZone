@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import {
   attendStaffBooking,
@@ -31,6 +31,7 @@ declare global {
 
 type AppTab = "home" | "schedule" | "clients" | "profile";
 type ScheduleMode = "list" | "detail";
+type AuthMode = "checking" | "linked" | "phone" | "telegram";
 
 const tabLabels: Record<AppTab, string> = {
   home: "Главная",
@@ -683,6 +684,77 @@ function ProfileScreen({ staff, onRefresh }: { staff: StaffMe | null; onRefresh:
   );
 }
 
+function TelegramAuthScreen({
+  mode,
+  phone,
+  error,
+  loading,
+  onPhoneChange,
+  onSubmit,
+}: {
+  mode: AuthMode;
+  phone: string;
+  error: string;
+  loading: boolean;
+  onPhoneChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  const canEnterPhone = mode === "phone";
+
+  return (
+    <main className="flex min-h-screen items-center bg-[var(--bg-app)] px-4 py-8 text-[var(--text-main)]">
+      <section className="mx-auto w-full max-w-md rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] p-5 shadow-[0_18px_42px_rgba(0,0,0,0.32)]">
+        <div className="mb-6">
+          <p className="font-[family:var(--font-mono)] text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">
+            HardZone
+          </p>
+          <h1 className="mt-2 text-2xl font-semibold leading-tight text-[var(--text-main)]">Вход тренера</h1>
+          <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+            {canEnterPhone
+              ? "Введите телефон из карточки сотрудника. Почта для Telegram-приложения не нужна."
+              : "Откройте это приложение из Telegram, чтобы мы получили защищённые данные запуска."}
+          </p>
+        </div>
+
+        {canEnterPhone ? (
+          <form
+            className="space-y-3"
+            onSubmit={(event: FormEvent<HTMLFormElement>) => {
+              event.preventDefault();
+              onSubmit();
+            }}
+          >
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-[var(--text-main)]">Телефон сотрудника</span>
+              <input
+                value={phone}
+                onChange={(event) => onPhoneChange(event.target.value)}
+                inputMode="tel"
+                autoComplete="tel"
+                placeholder="+7 999 000-00-00"
+                className="h-12 w-full rounded-lg border border-[var(--line-soft)] bg-[rgba(255,255,255,0.04)] px-3 text-base text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={loading}
+              className="h-12 w-full rounded-lg bg-[var(--accent)] text-sm font-semibold text-[var(--text-inverse)] disabled:opacity-60"
+            >
+              {loading ? "Проверяем..." : "Продолжить"}
+            </button>
+          </form>
+        ) : null}
+
+        {error ? (
+          <div className="mt-4 rounded-lg border border-[rgba(255,116,57,0.32)] bg-[rgba(255,116,57,0.10)] p-3 text-sm text-[#ffb599]">
+            {error}
+          </div>
+        ) : null}
+      </section>
+    </main>
+  );
+}
+
 export function TrainerMiniApp() {
   const [activeTab, setActiveTab] = useState<AppTab>("home");
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("list");
@@ -700,6 +772,11 @@ export function TrainerMiniApp() {
   const [clientSearching, setClientSearching] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [authMode, setAuthMode] = useState<AuthMode>("checking");
+  const [telegramInitData, setTelegramInitData] = useState("");
+  const [phone, setPhone] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState("");
 
   const selectedSlotId = selected?.slot.id ?? null;
 
@@ -709,7 +786,24 @@ export function TrainerMiniApp() {
     webApp?.expand?.();
 
     const initData = webApp?.initData || "";
-    if (!initData) return true;
+    setTelegramInitData(initData);
+
+    if (!initData) {
+      const sessionResponse = await fetch("/auth-api/me", {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+
+      if (sessionResponse.ok) {
+        setAuthMode("linked");
+        return true;
+      }
+
+      setAuthMode("telegram");
+      setAuthError("Telegram не передал данные запуска. Откройте Mini App из кнопки в боте HardZone.");
+      return false;
+    }
 
     const response = await fetch("/auth-api/telegram-miniapp-login", {
       method: "POST",
@@ -718,11 +812,49 @@ export function TrainerMiniApp() {
       body: JSON.stringify({ init_data: initData }),
     });
 
-    if (response.ok) return true;
+    if (response.ok) {
+      setAuthMode("linked");
+      return true;
+    }
 
     const data = (await response.json().catch(() => null)) as { error?: string } | null;
-    setError(data?.error || "Не удалось войти через Telegram");
+    if (response.status === 403) {
+      setAuthMode("phone");
+      setAuthError("");
+      return false;
+    }
+
+    setAuthMode("telegram");
+    setAuthError(data?.error || "Не удалось войти через Telegram");
     return false;
+  }
+
+  async function linkPhoneAndEnter() {
+    setAuthLoading(true);
+    setAuthError("");
+
+    try {
+      const response = await fetch("/auth-api/telegram-miniapp-link-phone", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ init_data: telegramInitData, phone }),
+      });
+
+      const data = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        setAuthError(data?.error || "Не удалось привязать Telegram по телефону");
+        return;
+      }
+
+      setAuthMode("linked");
+      setPhone("");
+      await Promise.all([loadStaff(), loadSchedule(date)]);
+    } catch (linkError) {
+      setAuthError(linkError instanceof Error ? linkError.message : "Не удалось привязать Telegram по телефону");
+    } finally {
+      setAuthLoading(false);
+    }
   }
 
   async function loadStaff() {
@@ -863,7 +995,9 @@ export function TrainerMiniApp() {
       try {
         const authenticated = await authenticateTelegram();
         if (!authenticated || cancelled) {
-          if (!cancelled) setLoading(false);
+          if (!cancelled) {
+            setLoading(false);
+          }
           return;
         }
 
@@ -887,6 +1021,19 @@ export function TrainerMiniApp() {
   const title = activeTab === "schedule" && scheduleMode === "detail"
     ? "Занятие"
     : tabLabels[activeTab];
+
+  if (authMode === "phone" || authMode === "telegram") {
+    return (
+      <TelegramAuthScreen
+        mode={authMode}
+        phone={phone}
+        error={authError}
+        loading={authLoading}
+        onPhoneChange={setPhone}
+        onSubmit={() => void linkPhoneAndEnter()}
+      />
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[var(--bg-app)] text-[var(--text-main)]">

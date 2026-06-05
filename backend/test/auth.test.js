@@ -440,6 +440,77 @@ test('telegram mini app login accepts signed init data for linked active staff',
   }
 });
 
+test('telegram mini app phone link signs in active staff by phone', async () => {
+  const previousToken = process.env.TELEGRAM_BOT_TOKEN;
+  process.env.TELEGRAM_BOT_TOKEN = 'test-telegram-bot-token';
+
+  try {
+    const staffUser = await createUser({
+      phone: '+7 (999) 222-33-44',
+      phone_normalized: '79992223344',
+    });
+
+    const result = await request('/api/telegram/miniapp-link-phone', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        init_data: createTelegramInitData({ id: 444555666, first_name: 'CI' }),
+        phone: '8 (999) 222-33-44',
+      }),
+    });
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.success, true);
+    assert.equal(result.body.data.user.id, Number(staffUser.id));
+    assert.equal(result.body.data.user.username, staffUser.username);
+
+    const { rows } = await query('SELECT telegram_id FROM users WHERE id = $1', [staffUser.id]);
+    assert.equal(rows[0].telegram_id, '444555666');
+  } finally {
+    process.env.TELEGRAM_BOT_TOKEN = previousToken;
+  }
+});
+
+test('telegram mini app phone link rejects unknown and duplicate phones', async () => {
+  const previousToken = process.env.TELEGRAM_BOT_TOKEN;
+  process.env.TELEGRAM_BOT_TOKEN = 'test-telegram-bot-token';
+
+  try {
+    const unknown = await request('/api/telegram/miniapp-link-phone', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        init_data: createTelegramInitData({ id: 777888999, first_name: 'CI' }),
+        phone: '+7 999 333-44-55',
+      }),
+    });
+
+    assert.equal(unknown.response.status, 404);
+
+    await createUser({
+      phone: '+7 (999) 666-77-88',
+      phone_normalized: '79996667788',
+    });
+    await createUser({
+      phone: '+7 (999) 666-77-88',
+      phone_normalized: '79996667788',
+    });
+
+    const duplicate = await request('/api/telegram/miniapp-link-phone', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        init_data: createTelegramInitData({ id: 777888999, first_name: 'CI' }),
+        phone: '+7 999 666-77-88',
+      }),
+    });
+
+    assert.equal(duplicate.response.status, 409);
+  } finally {
+    process.env.TELEGRAM_BOT_TOKEN = previousToken;
+  }
+});
+
 test('staff read API returns telegram-ready payloads for authorized staff', async () => {
   const staffUser = await createUser();
 
