@@ -63,6 +63,30 @@ export type StaffClientSearchResult = {
   is_family: boolean | null;
 };
 
+export type StaffMe = {
+  user: {
+    id: number;
+    name: string;
+    username: string;
+    role: string;
+    role_title?: string | null;
+    modules?: string[];
+  };
+  trainer_profile: {
+    id: string | number;
+    first_name: string;
+    last_name: string;
+    phone: string | null;
+    email: string | null;
+    is_active: boolean;
+  } | null;
+};
+
+export async function fetchStaffMe(): Promise<StaffMe> {
+  const response = await apiFetch<ApiEnvelope<StaffMe>>("/staff/me");
+  return response.data;
+}
+
 export async function fetchStaffToday(date?: string): Promise<{ date: string; slots: StaffSlot[] }> {
   const query = new URLSearchParams();
   if (date) query.set("date", date);
