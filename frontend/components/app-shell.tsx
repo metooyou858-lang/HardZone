@@ -171,6 +171,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [user, setUser] = useState<SessionUser | null>(null);
   const isAuthScreen = pathname === "/login" || pathname === "/reset-password";
+  const isTelegramMiniApp = pathname.startsWith("/telegram/");
 
   useEffect(() => {
     const stored = window.localStorage.getItem("hardzone.sidebar-collapsed");
@@ -182,7 +183,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [collapsed]);
 
   useEffect(() => {
-    if (isAuthScreen) return;
+    if (isAuthScreen || isTelegramMiniApp) return;
 
     let cancelled = false;
 
@@ -200,7 +201,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       });
 
     return () => { cancelled = true; };
-  }, [isAuthScreen]);
+  }, [isAuthScreen, isTelegramMiniApp]);
 
   async function handleLogout() {
     await fetch("/auth-api/logout", { method: "POST", credentials: "same-origin" });
@@ -212,7 +213,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     [user?.modules]
   );
 
-  if (isAuthScreen) {
+  if (isAuthScreen || isTelegramMiniApp) {
     return <>{children}</>;
   }
 

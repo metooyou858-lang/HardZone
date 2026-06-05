@@ -387,7 +387,7 @@ router.patch('/users/:id', authMiddleware, requireModule('users_manage'), async 
   try {
     const { rows: existingRows } = await query(
       `
-        SELECT id, role, role_title, module_grants, module_revokes
+        SELECT id, name, email, phone, role, role_title, module_grants, module_revokes
         FROM users
         WHERE id = $1
         LIMIT 1
@@ -476,28 +476,60 @@ router.patch('/users/:id', authMiddleware, requireModule('users_manage'), async 
       updates.push(`password_hash = $${values.length}`);
     }
 
-    if (!updates.length) {
+    const createTrainerProfile = Boolean(req.body?.create_trainer_profile);
+
+    if (!updates.length && !createTrainerProfile) {
       return res.status(422).json({ success: false, error: 'Нет данных для обновления' });
     }
 
-    values.push(req.params.id);
-    const { rows } = await query(
-      `
-        UPDATE users
-        SET ${updates.join(', ')}, updated_at = NOW()
-        WHERE id = $${values.length}
-        RETURNING id
-      `,
-      values
-    );
+    const updatedUser = await withTransaction(async (client) => {
+      let userRow = existingUser;
 
-    if (!rows[0]) {
+      if (updates.length) {
+        values.push(req.params.id);
+        const { rows } = await client.query(
+          `
+            UPDATE users
+            SET ${updates.join(', ')}, updated_at = NOW()
+            WHERE id = $${values.length}
+            RETURNING id, name, email, phone
+          `,
+          values
+        );
+
+        if (!rows[0]) {
+          return null;
+        }
+
+        userRow = rows[0];
+      }
+
+      if (createTrainerProfile) {
+        const { rows: trainerRows } = await client.query(
+          'SELECT id FROM trainers WHERE user_id = $1 LIMIT 1',
+          [req.params.id]
+        );
+
+        if (!trainerRows[0]) {
+          const { firstName, lastName } = splitTrainerName(userRow.name);
+          await client.query(
+            `
+              INSERT INTO trainers (user_id, first_name, last_name, email, phone)
+              VALUES ($1, $2, $3, $4, $5)
+            `,
+            [req.params.id, firstName, lastName, userRow.email || null, userRow.phone || null]
+          );
+        }
+      }
+
+      return fetchUserWithTrainer(client, req.params.id);
+    });
+
+    if (!updatedUser) {
       return res.status(404).json({ success: false, error: 'Пользователь не найден' });
     }
 
-    const userWithTrainer = await fetchUserWithTrainer({ query }, rows[0].id);
-
-    return res.json({ success: true, data: { user: serializeUser(userWithTrainer) } });
+    return res.json({ success: true, data: { user: serializeUser(updatedUser) } });
   } catch (error) {
     if (isUniqueViolation(error, 'idx_users_username_lower') || isUniqueViolation(error, 'users_username_key')) {
       return res.status(409).json({ success: false, error: 'Такой email уже используется' });

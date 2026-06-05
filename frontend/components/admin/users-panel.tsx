@@ -299,6 +299,7 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
       } else {
         await updateAuthUser(editingUserId, {
           ...payload,
+          create_trainer_profile: !editingUser?.trainer_profile ? form.create_trainer_profile : undefined,
           password: form.password.trim() ? form.password : undefined,
         });
         setOnboarding(null);
@@ -529,7 +530,7 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
                 <span className="rounded-full border border-[rgba(0,191,165,0.18)] bg-[rgba(0,191,165,0.08)] px-3 py-1 text-xs text-[var(--accent)]">
                   {editingUser.trainer_profile.first_name} {editingUser.trainer_profile.last_name}
                 </span>
-              ) : editingUserId === null ? (
+              ) : (
                 <label className="flex min-h-[42px] items-center gap-3 rounded-2xl border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] px-4 py-2 text-sm text-[var(--text-main)]">
                   <input
                     type="checkbox"
@@ -539,8 +540,6 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
                   />
                   Создать карточку
                 </label>
-              ) : (
-                <span className="text-xs text-[var(--text-muted)]">Карточка не привязана</span>
               )}
             </div>
           </div>

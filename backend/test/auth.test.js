@@ -29,6 +29,22 @@ function createSessionToken(user, exp = Date.now() + 60 * 60 * 1000) {
   return `${encodedPayload}.${signature}`;
 }
 
+function createTelegramInitData(user, token = 'test-telegram-bot-token', authDate = Math.floor(Date.now() / 1000)) {
+  const params = new URLSearchParams({
+    auth_date: String(authDate),
+    query_id: 'ci-query',
+    user: JSON.stringify(user),
+  });
+  const dataCheckString = Array.from(params.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n');
+  const secretKey = createHmac('sha256', 'WebAppData').update(token).digest();
+  const hash = createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+  params.set('hash', hash);
+  return params.toString();
+}
+
 async function request(path, options = {}) {
   const response = await fetch(`${baseUrl}${path}`, options);
   const text = await response.text();
@@ -386,6 +402,42 @@ test('telegram webhook does not link staff by forwarded contact', async () => {
 
   const { rows } = await query('SELECT telegram_id FROM users WHERE id = $1', [staffUser.id]);
   assert.equal(rows[0].telegram_id, null);
+});
+
+test('telegram mini app login accepts signed init data for linked active staff', async () => {
+  const previousToken = process.env.TELEGRAM_BOT_TOKEN;
+  process.env.TELEGRAM_BOT_TOKEN = 'test-telegram-bot-token';
+
+  try {
+    const staffUser = await createUser({
+      telegram_id: '555777999',
+    });
+
+    const valid = await request('/api/telegram/miniapp-login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        init_data: createTelegramInitData({ id: 555777999, first_name: 'CI' }),
+      }),
+    });
+
+    assert.equal(valid.response.status, 200);
+    assert.equal(valid.body.success, true);
+    assert.equal(valid.body.data.user.id, Number(staffUser.id));
+    assert.equal(valid.body.data.user.username, staffUser.username);
+
+    const tampered = await request('/api/telegram/miniapp-login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        init_data: createTelegramInitData({ id: 555777999, first_name: 'CI' }).replace('CI', 'Bad'),
+      }),
+    });
+
+    assert.equal(tampered.response.status, 401);
+  } finally {
+    process.env.TELEGRAM_BOT_TOKEN = previousToken;
+  }
 });
 
 test('staff read API returns telegram-ready payloads for authorized staff', async () => {

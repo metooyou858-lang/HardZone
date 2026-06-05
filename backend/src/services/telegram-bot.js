@@ -39,6 +39,11 @@ function buildKeyboard(rows) {
   return { inline_keyboard: rows };
 }
 
+function getMiniAppUrl() {
+  const baseUrl = process.env.FRONTEND_BASE_URL || process.env.APP_BASE_URL || 'https://hardzone.space';
+  return `${String(baseUrl).replace(/\/+$/, '')}/telegram/trainer`;
+}
+
 async function telegramRequest(method, payload, options = {}) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
@@ -538,6 +543,7 @@ function renderMainMenu(staff) {
   return {
     text: `Привет, ${escapeHtml(staff.name)}.\n\nВыбери действие:`,
     keyboard: buildKeyboard([
+      [{ text: 'Открыть HardZone', web_app: { url: getMiniAppUrl() } }],
       [{ text: 'Сегодня', callback_data: 'today' }],
     ]),
   };
