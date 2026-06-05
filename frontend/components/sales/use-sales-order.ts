@@ -32,6 +32,7 @@ type UseSalesOrderOptions = {
   canRecoverSalesAqsi: boolean;
   setBanner: Dispatch<SetStateAction<BannerState>>;
   onHistoryChanged?: () => void;
+  onBarcodeScanStart?: () => void;
   onBarcodeScanComplete?: () => void;
 };
 
@@ -42,6 +43,7 @@ export function useSalesOrder({
   canRecoverSalesAqsi,
   setBanner,
   onHistoryChanged,
+  onBarcodeScanStart,
   onBarcodeScanComplete,
 }: UseSalesOrderOptions) {
   const [order, setOrder] = useState<OrderDetail | null>(null);
@@ -176,6 +178,7 @@ export function useSalesOrder({
   async function handleBarcodeScan(barcode: string) {
     if (!canCreateSales || confirming || orderAwaitingPayment) return;
 
+    onBarcodeScanStart?.();
     setBanner({ tone: "info", text: `Сканер: ${barcode}` });
 
     try {

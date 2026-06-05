@@ -49,7 +49,17 @@ async function proxyRequest(request: NextRequest, context: RouteContext) {
     init.body = bodyBuffer.byteLength > 0 ? Buffer.from(bodyBuffer) : undefined;
   }
 
-  const backendResponse = await fetch(backendUrl, init);
+  let backendResponse: Response;
+
+  try {
+    backendResponse = await fetch(backendUrl, init);
+  } catch {
+    return NextResponse.json(
+      { error: "Backend HardZone временно недоступен" },
+      { status: 502 }
+    );
+  }
+
   const responseBuffer = await backendResponse.arrayBuffer();
   const responseHeaders = new Headers();
 

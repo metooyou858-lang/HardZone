@@ -59,6 +59,7 @@ export default function SalesPage() {
     canRecoverSalesAqsi,
     setBanner,
     onHistoryChanged: () => setHistoryRefreshToken((value) => value + 1),
+    onBarcodeScanStart: () => catalogApi.setQuery(""),
     onBarcodeScanComplete: () => catalogApi.setQuery(""),
   });
 
