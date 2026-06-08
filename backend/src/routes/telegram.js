@@ -239,6 +239,24 @@ async function buildClientMiniAppPayload(clientId) {
 
   const { rows: availableSlots } = await query(
     `
+      WITH candidate_slots AS (
+        SELECT ss.id
+        FROM schedule_slots ss
+        WHERE ss.status = 'active'
+          AND ss.slot_type = 'group'
+          AND ss.date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '14 days'
+      ),
+      nearest_day AS (
+        SELECT MIN(ss.date) AS date
+        FROM schedule_slots ss
+        JOIN candidate_slots candidate ON candidate.id = ss.id
+        LEFT JOIN bookings b ON b.slot_id = ss.id AND b.status IN ('confirmed', 'attended')
+        GROUP BY ss.id
+        HAVING ss.capacity > COALESCE(SUM(b.places_count), 0)
+          AND NOT COALESCE(BOOL_OR(b.client_id = $1 AND b.status IN ('confirmed', 'attended')), false)
+        ORDER BY ss.date
+        LIMIT 1
+      )
       SELECT
         ss.id,
         ss.date,
@@ -264,7 +282,7 @@ async function buildClientMiniAppPayload(clientId) {
       LEFT JOIN bookings b ON b.slot_id = ss.id
       WHERE ss.status = 'active'
         AND ss.slot_type = 'group'
-        AND ss.date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '14 days'
+        AND ss.date = (SELECT date FROM nearest_day)
       GROUP BY ss.id, tt.name, tt.color, tr.first_name, tr.last_name
       ORDER BY ss.date, ss.start_time
       LIMIT 40

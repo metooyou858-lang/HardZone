@@ -43,6 +43,7 @@ Before production work:
 2. Review `npm audit` findings.
 3. Extend auth tests to frontend cookie/session route flow.
 4. Extend Telegram staff bot UX after live staff feedback.
+5. Fix effective subscription validity: expired `active` subscriptions must not appear usable in CRM, Telegram Mini Apps, or booking flows.
 
 ## Current Production Notes
 
