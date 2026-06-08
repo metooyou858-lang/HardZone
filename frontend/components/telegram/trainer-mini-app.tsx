@@ -164,23 +164,20 @@ function tabIcon(tab: AppTab, active: boolean) {
 
 function Metric({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-lg border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] p-3">
+    <div className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] px-3 py-2.5">
       <p className="text-xl font-semibold leading-none text-[var(--text-main)]">{value}</p>
-      <p className="mt-1 text-xs text-[var(--text-muted)]">{label}</p>
+      <p className="mt-1.5 text-[11px] leading-none text-[var(--text-muted)]">{label}</p>
     </div>
   );
 }
 
 function AppHeader({ title, action }: { title?: string; action?: React.ReactNode }) {
   return (
-    <header className="sticky top-0 z-20 border-b border-[var(--line-soft)] bg-[rgba(11,14,20,0.92)] px-4 pb-3 pt-4 backdrop-blur">
+    <header className="sticky top-0 z-20 bg-[rgba(8,11,16,0.9)] px-4 py-2 backdrop-blur">
       <div className="mx-auto flex max-w-md items-center justify-between gap-3">
         <div className="h-9 w-9" />
         <div className="text-center">
-          <p className="font-[family:var(--font-mono)] text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">
-            HardZone
-          </p>
-          {title ? <h1 className="text-lg font-semibold text-[var(--text-main)]">{title}</h1> : null}
+          {title ? <h1 className="text-base font-semibold leading-tight text-[var(--text-main)]">{title}</h1> : null}
         </div>
         <div className="flex h-9 w-9 items-center justify-end">{action}</div>
       </div>
@@ -192,8 +189,8 @@ function BottomNav({ active, onChange }: { active: AppTab; onChange: (tab: AppTa
   const tabs: AppTab[] = ["home", "schedule", "clients", "profile"];
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--line-soft)] bg-[rgba(11,14,20,0.96)] px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2 backdrop-blur">
-      <div className="mx-auto grid max-w-md grid-cols-4 gap-1">
+    <nav className="sticky bottom-[max(8px,env(safe-area-inset-bottom))] z-30 px-4 pb-3">
+      <div className="mx-auto grid max-w-md grid-cols-4 gap-1 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(12,15,21,0.94)] p-1 shadow-[0_14px_30px_rgba(0,0,0,0.34)] backdrop-blur">
         {tabs.map((tab) => {
           const activeTab = active === tab;
           return (
@@ -201,12 +198,14 @@ function BottomNav({ active, onChange }: { active: AppTab; onChange: (tab: AppTa
               key={tab}
               type="button"
               onClick={() => onChange(tab)}
-              className={`flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-lg text-xs transition ${
-                activeTab ? "text-[var(--text-main)]" : "text-[var(--text-muted)] active:bg-[rgba(255,255,255,0.04)]"
+              className={`flex min-h-[46px] min-w-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md px-1 text-[10px] transition [&_svg]:h-5 [&_svg]:w-5 ${
+                activeTab
+                  ? "bg-[rgba(94,244,216,0.12)] text-[var(--text-main)]"
+                  : "text-[var(--text-muted)] active:bg-[rgba(255,255,255,0.04)]"
               }`}
             >
               {tabIcon(tab, activeTab)}
-              <span>{tabLabels[tab]}</span>
+              <span className="block max-w-full truncate leading-tight">{tabLabels[tab]}</span>
             </button>
           );
         })}
@@ -223,9 +222,11 @@ function TrainerCard({ staff }: { staff: StaffMe | null }) {
   const contact = staff?.trainer_profile?.phone || staff?.trainer_profile?.email || staff?.user.username || "Telegram";
 
   return (
-    <section className="overflow-hidden rounded-lg border border-[var(--line-soft)] bg-[linear-gradient(120deg,#050608_0%,#050608_56%,#2b2d32_56%,#22252d_100%)] p-5 shadow-[0_18px_42px_rgba(0,0,0,0.35)]">
-      <div className="flex items-start gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[rgba(255,255,255,0.92)] text-lg font-semibold text-[var(--text-inverse)]">
+    <section className="relative overflow-hidden rounded-lg border border-[rgba(255,255,255,0.08)] bg-[linear-gradient(135deg,#11151d_0%,#121923_100%)] p-4 shadow-[0_14px_34px_rgba(0,0,0,0.24)]">
+      <div className="absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,#5ef4d8,#f6d46b,#ff7a59)]" />
+      <div className="pointer-events-none absolute -right-16 -top-16 h-32 w-32 rounded-full bg-[rgba(94,244,216,0.10)] blur-2xl" />
+      <div className="relative flex items-center gap-3">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[rgba(255,255,255,0.92)] text-lg font-semibold text-[var(--text-inverse)] shadow-[0_8px_20px_rgba(0,0,0,0.24)]">
           {trainerName.trim().slice(0, 1).toUpperCase()}
         </div>
         <div className="min-w-0 flex-1">
@@ -233,15 +234,9 @@ function TrainerCard({ staff }: { staff: StaffMe | null }) {
           <p className="mt-1 text-sm text-[var(--text-muted)]">HardZone · {role}</p>
           <p className="mt-2 truncate font-[family:var(--font-mono)] text-xs text-[var(--text-muted)]">{contact}</p>
         </div>
-      </div>
-      <div className="mt-12 flex justify-end">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[rgba(255,255,255,0.9)] ring-8 ring-[rgba(255,255,255,0.14)]">
-          <div className="flex h-9 items-stretch gap-0.5">
-            {[3, 1, 4, 2, 5, 1, 3, 2, 4].map((height, index) => (
-              <span key={index} className="w-1 bg-black" style={{ height: `${height * 7}px` }} />
-            ))}
-          </div>
-        </div>
+        <span className="shrink-0 rounded-full border border-[rgba(94,244,216,0.28)] bg-[rgba(94,244,216,0.10)] px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[#9ffbed]">
+          CRM
+        </span>
       </div>
     </section>
   );
@@ -385,7 +380,7 @@ function HomeScreen({
   const nextSlots = slots.slice(0, 3);
 
   return (
-    <div className="space-y-5 px-4 pb-24 pt-4">
+    <div className="space-y-4 px-4 pb-4 pt-3">
       <TrainerCard staff={staff} />
 
       <section className="grid grid-cols-3 gap-2">
@@ -394,26 +389,26 @@ function HomeScreen({
         <Metric label="пришли" value={loading ? "..." : totalAttended} />
       </section>
 
-      <section>
-        <div className="mb-3 flex items-center justify-between">
+      <section className="rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.025)] p-3">
+        <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-[var(--text-main)]">Мои занятия</h2>
             <p className="text-xs text-[var(--text-muted)]">{date ? formatDateLabel(date) : "Сегодня"}</p>
           </div>
-          <button type="button" onClick={onOpenSchedule} className="rounded-lg border border-[var(--line-soft)] px-3 py-2 text-xs text-[var(--text-main)]">
+          <button type="button" onClick={onOpenSchedule} className="h-9 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 text-xs font-medium text-[var(--text-main)] active:bg-[rgba(255,255,255,0.08)]">
             Все
           </button>
         </div>
 
         {loading ? (
-          <div className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] p-5 text-sm text-[var(--text-muted)]">
+          <div className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-5 text-sm text-[var(--text-muted)]">
             Загружаем занятия...
           </div>
         ) : nextSlots.length === 0 ? (
-          <div className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] p-5 text-center">
+          <div className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-5 text-center">
             <p className="font-semibold text-[var(--text-main)]">Занятий нет</p>
             <p className="mt-1 text-sm text-[var(--text-muted)]">На сегодня занятий не найдено</p>
-            <button type="button" onClick={onOpenSchedule} className="mt-4 h-11 rounded-lg bg-[var(--accent)] px-5 text-sm font-semibold text-[var(--text-inverse)]">
+            <button type="button" onClick={onOpenSchedule} className="mt-4 h-11 rounded-md bg-[var(--accent)] px-5 text-sm font-semibold text-[var(--text-inverse)]">
               Перейти в расписание
             </button>
           </div>
@@ -455,7 +450,7 @@ function ScheduleScreen({
   onOpenSlot: (slot: StaffSlot) => void;
 }) {
   return (
-    <div className="pb-24">
+    <div className="pb-4">
       <DateStrip selectedDate={date} onSelect={onDateChange} />
       <section className="mx-auto max-w-md px-4">
         {loading ? (
@@ -506,7 +501,7 @@ function LessonDetailsScreen({
   const freePlaces = Math.max(0, capacity - confirmed - attended);
 
   return (
-    <div className="px-4 pb-24 pt-4">
+    <div className="px-4 pb-4 pt-4">
       <button
         type="button"
         onClick={onBack}
@@ -608,7 +603,7 @@ function ClientsScreen({
   onSearch: () => void;
 }) {
   return (
-    <div className="space-y-4 px-4 pb-24 pt-4">
+    <div className="space-y-4 px-4 pb-4 pt-4">
       <section className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] p-3">
         <input
           value={query}
@@ -654,7 +649,7 @@ function ProfileScreen({ staff, onRefresh }: { staff: StaffMe | null; onRefresh:
     : staff?.user.name || "Тренер HardZone";
 
   return (
-    <div className="space-y-4 px-4 pb-24 pt-4">
+    <div className="space-y-4 px-4 pb-4 pt-4">
       <TrainerCard staff={staff} />
       <section className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] p-4">
         <h2 className="text-lg font-semibold text-[var(--text-main)]">{trainerName}</h2>
@@ -1043,7 +1038,7 @@ export function TrainerMiniApp() {
           <button
             type="button"
             onClick={() => void Promise.all([loadStaff(), loadSchedule(date)])}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line-soft)] text-sm text-[var(--text-main)]"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] text-sm text-[var(--text-main)]"
             aria-label="Обновить"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>

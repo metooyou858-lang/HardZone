@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 
 import { AppShell } from "@/components/app-shell";
 import { NumberInputScrollGuard } from "@/components/number-input-scroll-guard";
@@ -27,6 +28,7 @@ export default function RootLayout({
   return (
     <html lang="ru" className="h-full antialiased">
       <body className="min-h-full bg-[var(--bg-app)] text-[var(--text-main)]">
+        <Script src="https://telegram.org/js/telegram-web-app.js" strategy="beforeInteractive" />
         <NumberInputScrollGuard />
         <AppShell>{children}</AppShell>
       </body>
