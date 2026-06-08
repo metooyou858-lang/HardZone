@@ -173,7 +173,7 @@ function Metric({ label, value }: { label: string; value: string | number }) {
 
 function AppHeader({ title, action }: { title?: string; action?: React.ReactNode }) {
   return (
-    <header className="sticky top-0 z-20 bg-[rgba(8,11,16,0.9)] px-4 py-2 backdrop-blur">
+    <header className="z-20 shrink-0 bg-[rgba(8,11,16,0.9)] px-4 py-2 backdrop-blur">
       <div className="mx-auto flex max-w-md items-center justify-between gap-3">
         <div className="h-9 w-9" />
         <div className="text-center">
@@ -189,7 +189,7 @@ function BottomNav({ active, onChange }: { active: AppTab; onChange: (tab: AppTa
   const tabs: AppTab[] = ["home", "schedule", "clients", "profile"];
 
   return (
-    <nav className="sticky bottom-[max(8px,env(safe-area-inset-bottom))] z-30 px-4 pb-3">
+    <nav className="z-30 shrink-0 px-4 pb-[max(10px,env(safe-area-inset-bottom))] pt-2">
       <div className="mx-auto grid max-w-md grid-cols-4 gap-1 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(12,15,21,0.94)] p-1 shadow-[0_14px_30px_rgba(0,0,0,0.34)] backdrop-blur">
         {tabs.map((tab) => {
           const activeTab = active === tab;
@@ -1031,7 +1031,7 @@ export function TrainerMiniApp() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--bg-app)] text-[var(--text-main)]">
+    <main className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[var(--bg-app)] text-[var(--text-main)]">
       <AppHeader
         title={title}
         action={
@@ -1049,7 +1049,7 @@ export function TrainerMiniApp() {
         }
       />
 
-      <div className="mx-auto max-w-md">
+      <div className="mx-auto min-h-0 w-full max-w-md flex-1 overflow-y-auto">
         {error ? (
           <div className="mx-4 mt-4 rounded-lg border border-[rgba(255,116,57,0.32)] bg-[rgba(255,116,57,0.10)] p-3 text-sm text-[#ffb599]">
             {error}
