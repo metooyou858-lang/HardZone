@@ -3,7 +3,7 @@ const { createHmac, timingSafeEqual } = require('node:crypto');
 
 const { handleTelegramUpdate } = require('../services/telegram-bot');
 const { resolveModules } = require('../authz');
-const { query } = require('../db');
+const { pool, query } = require('../db');
 const logger = require('../services/logger');
 const { sendInternalError } = require('../utils/http-response');
 const { normalizePhone } = require('../utils/phones');
@@ -22,6 +22,10 @@ function getBotToken() {
   return String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
 }
 
+function getClientBotToken() {
+  return String(process.env.TELEGRAM_CLIENT_BOT_TOKEN || '').trim();
+}
+
 function isSafeEqual(left, right) {
   const leftBuffer = Buffer.from(String(left || ''), 'hex');
   const rightBuffer = Buffer.from(String(right || ''), 'hex');
@@ -29,11 +33,11 @@ function isSafeEqual(left, right) {
   return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-function parseTelegramInitData(initData) {
+function parseTelegramInitData(initData, botToken = getBotToken()) {
   const params = new URLSearchParams(String(initData || ''));
   const hash = params.get('hash');
 
-  if (!hash) {
+  if (!hash || !botToken) {
     return null;
   }
 
@@ -43,7 +47,7 @@ function parseTelegramInitData(initData) {
     .map(([key, value]) => `${key}=${value}`)
     .join('\n');
 
-  const secretKey = createHmac('sha256', 'WebAppData').update(getBotToken()).digest();
+  const secretKey = createHmac('sha256', 'WebAppData').update(botToken).digest();
   const expectedHash = createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
   if (!isSafeEqual(expectedHash, hash)) {
@@ -137,6 +141,413 @@ async function linkSessionUserByPhone(telegramId, phone) {
   };
 }
 
+function toClientIdentity(client) {
+  return {
+    id: Number(client.id),
+    first_name: client.first_name,
+    last_name: client.last_name,
+    middle_name: client.middle_name,
+    phone: client.phone,
+    email: client.email,
+    barcode: client.barcode,
+    status: client.status,
+  };
+}
+
+async function buildClientMiniAppPayload(clientId) {
+  const { rows: clientRows } = await query(
+    `
+      SELECT id, first_name, last_name, middle_name, phone, email, barcode, status
+      FROM clients
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [clientId]
+  );
+
+  const client = clientRows[0];
+  if (!client) {
+    return null;
+  }
+
+  const { rows: subscriptions } = await query(
+    `
+      SELECT
+        cs.id,
+        cs.type,
+        cs.status,
+        cs.visits_total,
+        cs.visits_left,
+        cs.started_at,
+        cs.expires_at,
+        cs.is_family,
+        p.name AS product_name
+      FROM client_subscriptions cs
+      LEFT JOIN products p ON p.id = cs.product_id
+      WHERE cs.client_id = $1
+      ORDER BY
+        CASE cs.status WHEN 'active' THEN 0 WHEN 'frozen' THEN 1 ELSE 2 END,
+        cs.expires_at NULLS LAST,
+        cs.created_at DESC
+      LIMIT 5
+    `,
+    [client.id]
+  );
+
+  const { rows: bookings } = await query(
+    `
+      SELECT
+        b.id,
+        b.status,
+        ss.date,
+        ss.start_time,
+        ss.duration_minutes,
+        tt.name AS training_type_name,
+        tr.first_name || ' ' || tr.last_name AS trainer_name
+      FROM bookings b
+      JOIN schedule_slots ss ON ss.id = b.slot_id
+      LEFT JOIN training_types tt ON tt.id = ss.training_type_id
+      LEFT JOIN trainers tr ON tr.id = ss.trainer_id
+      WHERE b.client_id = $1
+        AND b.status IN ('confirmed', 'attended')
+        AND ss.status = 'active'
+        AND ss.date >= CURRENT_DATE
+      ORDER BY ss.date, ss.start_time
+      LIMIT 8
+    `,
+    [client.id]
+  );
+
+  const { rows: visits } = await query(
+    `
+      SELECT
+        cv.id,
+        cv.visit_type,
+        cv.visited_at,
+        ss.date,
+        ss.start_time,
+        tt.name AS training_type_name
+      FROM client_visits cv
+      LEFT JOIN schedule_slots ss ON ss.id = cv.slot_id
+      LEFT JOIN training_types tt ON tt.id = ss.training_type_id
+      WHERE cv.client_id = $1
+      ORDER BY cv.visited_at DESC
+      LIMIT 8
+    `,
+    [client.id]
+  );
+
+  const { rows: availableSlots } = await query(
+    `
+      SELECT
+        ss.id,
+        ss.date,
+        ss.start_time,
+        ss.duration_minutes,
+        ss.capacity,
+        ss.slot_type,
+        ss.is_free,
+        ss.block_if_empty_hours,
+        tt.name AS training_type_name,
+        tt.color AS training_type_color,
+        tr.first_name || ' ' || tr.last_name AS trainer_name,
+        COALESCE(SUM(
+          CASE
+            WHEN b.status IN ('confirmed', 'attended') THEN b.places_count
+            ELSE 0
+          END
+        ), 0)::INT AS booked_count,
+        BOOL_OR(b.client_id = $1 AND b.status IN ('confirmed', 'attended')) AS is_booked
+      FROM schedule_slots ss
+      LEFT JOIN training_types tt ON tt.id = ss.training_type_id
+      LEFT JOIN trainers tr ON tr.id = ss.trainer_id
+      LEFT JOIN bookings b ON b.slot_id = ss.id
+      WHERE ss.status = 'active'
+        AND ss.slot_type = 'group'
+        AND ss.date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '14 days'
+      GROUP BY ss.id, tt.name, tt.color, tr.first_name, tr.last_name
+      ORDER BY ss.date, ss.start_time
+      LIMIT 40
+    `,
+    [client.id]
+  );
+
+  const { rows: debtRows } = await query(
+    `
+      SELECT COUNT(*)::INT AS unpaid_missed_count
+      FROM bookings
+      WHERE client_id = $1
+        AND status = 'missed'
+        AND subscription_id IS NULL
+    `,
+    [client.id]
+  );
+
+  return {
+    client: toClientIdentity(client),
+    subscriptions,
+    bookings,
+    visits,
+    available_slots: availableSlots.map((slot) => ({
+      ...slot,
+      free_places: Math.max(0, Number(slot.capacity || 0) - Number(slot.booked_count || 0)),
+      is_booked: Boolean(slot.is_booked),
+    })),
+    debt: {
+      unpaid_missed_count: Number(debtRows[0]?.unpaid_missed_count || 0),
+    },
+  };
+}
+
+async function findClientIdByTelegramId(telegramId) {
+  const { rows } = await query(
+    `
+      SELECT id
+      FROM clients
+      WHERE telegram_id = $1
+        AND status <> 'inactive'
+      LIMIT 1
+    `,
+    [String(telegramId)]
+  );
+
+  if (!rows[0]) {
+    return null;
+  }
+
+  return rows[0].id;
+}
+
+async function findClientByTelegramId(telegramId) {
+  const clientId = await findClientIdByTelegramId(telegramId);
+  if (!clientId) {
+    return null;
+  }
+
+  return buildClientMiniAppPayload(clientId);
+}
+
+async function linkClientByPhone(telegramId, phone) {
+  const phoneNormalized = normalizePhone(phone);
+
+  if (!phoneNormalized) {
+    return { status: 'invalid_phone' };
+  }
+
+  const { rows } = await query(
+    `
+      SELECT id
+      FROM clients
+      WHERE phone_normalized = $1
+        AND status <> 'inactive'
+      ORDER BY id
+    `,
+    [phoneNormalized]
+  );
+
+  if (rows.length === 0) {
+    return { status: 'not_found', phone_normalized: phoneNormalized };
+  }
+
+  if (rows.length > 1) {
+    return { status: 'duplicate', phone_normalized: phoneNormalized };
+  }
+
+  await query(
+    `
+      UPDATE clients
+      SET telegram_id = $1,
+          phone = COALESCE(NULLIF(phone, ''), $2),
+          phone_normalized = $3,
+          updated_at = NOW()
+      WHERE id = $4
+    `,
+    [String(telegramId), phone, phoneNormalized, rows[0].id]
+  );
+
+  return {
+    status: 'linked',
+    data: await buildClientMiniAppPayload(rows[0].id),
+  };
+}
+
+function combineSlotDateTime(dateValue, timeValue) {
+  return new Date(`${String(dateValue).slice(0, 10)}T${String(timeValue).slice(0, 8)}`);
+}
+
+async function bookClientSlot(telegramId, slotId) {
+  const clientId = await findClientIdByTelegramId(telegramId);
+  if (!clientId) {
+    return { status: 'not_linked' };
+  }
+
+  const dbClient = await pool.connect();
+
+  try {
+    await dbClient.query('BEGIN');
+
+    const { rows: slotRows } = await dbClient.query(
+      `
+        SELECT *
+        FROM schedule_slots
+        WHERE id = $1
+          AND status = 'active'
+          AND slot_type = 'group'
+        LIMIT 1
+      `,
+      [slotId]
+    );
+
+    const slot = slotRows[0];
+    if (!slot) {
+      await dbClient.query('ROLLBACK');
+      return { status: 'slot_not_found' };
+    }
+
+    const slotDateTime = combineSlotDateTime(slot.date, slot.start_time);
+    if (slotDateTime <= new Date()) {
+      await dbClient.query('ROLLBACK');
+      return { status: 'slot_started' };
+    }
+
+    if (slot.block_if_empty_hours && Number(slot.booked_count || 0) === 0) {
+      const hoursUntil = (slotDateTime.getTime() - Date.now()) / 3600000;
+      if (hoursUntil <= slot.block_if_empty_hours) {
+        await dbClient.query('ROLLBACK');
+        return { status: 'booking_closed' };
+      }
+    }
+
+    const { rows: subscriptionRows } = await dbClient.query(
+      `
+        SELECT *
+        FROM client_subscriptions
+        WHERE client_id = $1
+          AND status = 'active'
+          AND (
+            type IN ('period', 'unlimited')
+            OR COALESCE(visits_left, 0) > 0
+          )
+        ORDER BY expires_at NULLS LAST, created_at DESC
+        LIMIT 1
+      `,
+      [clientId]
+    );
+
+    const subscription = subscriptionRows[0];
+    if (!subscription) {
+      await dbClient.query('ROLLBACK');
+      return { status: 'no_subscription' };
+    }
+
+    const placesCount = subscription.is_family ? 2 : 1;
+
+    const { rows: countRows } = await dbClient.query(
+      `
+        SELECT COALESCE(SUM(places_count), 0)::INT AS booked_count
+        FROM bookings
+        WHERE slot_id = $1
+          AND status IN ('confirmed', 'attended')
+      `,
+      [slot.id]
+    );
+
+    if (Number(countRows[0]?.booked_count || 0) + placesCount > Number(slot.capacity || 0)) {
+      await dbClient.query('ROLLBACK');
+      return { status: 'no_places' };
+    }
+
+    const { rows: existingRows } = await dbClient.query(
+      `
+        SELECT id
+        FROM bookings
+        WHERE slot_id = $1
+          AND client_id = $2
+          AND status IN ('confirmed', 'attended')
+        LIMIT 1
+      `,
+      [slot.id, clientId]
+    );
+
+    if (existingRows.length > 0) {
+      await dbClient.query('ROLLBACK');
+      return { status: 'already_booked' };
+    }
+
+    await dbClient.query(
+      `
+        INSERT INTO bookings (slot_id, client_id, subscription_id, places_count, booked_by)
+        VALUES ($1, $2, $3, $4, $5)
+      `,
+      [slot.id, clientId, subscription.id, placesCount, `telegram-client:${telegramId}`]
+    );
+
+    await dbClient.query(
+      'UPDATE schedule_slots SET booked_count = booked_count + $1, updated_at = NOW() WHERE id = $2',
+      [placesCount, slot.id]
+    );
+
+    await dbClient.query('COMMIT');
+    return { status: 'booked', data: await buildClientMiniAppPayload(clientId) };
+  } catch (error) {
+    await dbClient.query('ROLLBACK');
+    throw error;
+  } finally {
+    dbClient.release();
+  }
+}
+
+async function cancelClientBooking(telegramId, bookingId) {
+  const clientId = await findClientIdByTelegramId(telegramId);
+  if (!clientId) {
+    return { status: 'not_linked' };
+  }
+
+  const dbClient = await pool.connect();
+
+  try {
+    await dbClient.query('BEGIN');
+
+    const { rows: bookingRows } = await dbClient.query(
+      `
+        SELECT b.*, ss.date, ss.start_time
+        FROM bookings b
+        JOIN schedule_slots ss ON ss.id = b.slot_id
+        WHERE b.id = $1
+          AND b.client_id = $2
+          AND b.status = 'confirmed'
+        LIMIT 1
+      `,
+      [bookingId, clientId]
+    );
+
+    const booking = bookingRows[0];
+    if (!booking) {
+      await dbClient.query('ROLLBACK');
+      return { status: 'booking_not_found' };
+    }
+
+    if (combineSlotDateTime(booking.date, booking.start_time) <= new Date()) {
+      await dbClient.query('ROLLBACK');
+      return { status: 'slot_started' };
+    }
+
+    await dbClient.query('DELETE FROM bookings WHERE id = $1', [booking.id]);
+    await dbClient.query(
+      'UPDATE schedule_slots SET booked_count = GREATEST(booked_count - $1, 0), updated_at = NOW() WHERE id = $2',
+      [booking.places_count, booking.slot_id]
+    );
+
+    await dbClient.query('COMMIT');
+    return { status: 'cancelled', data: await buildClientMiniAppPayload(clientId) };
+  } catch (error) {
+    await dbClient.query('ROLLBACK');
+    throw error;
+  } finally {
+    dbClient.release();
+  }
+}
+
 router.post('/miniapp-login', async (req, res) => {
   try {
     if (!getBotToken()) {
@@ -189,6 +600,135 @@ router.post('/miniapp-link-phone', async (req, res) => {
     return res.json({ success: true, data: { user: result.user } });
   } catch (error) {
     return sendInternalError(res, error, { route: 'telegram.miniapp_link_phone' });
+  }
+});
+
+router.post('/client-miniapp-login', async (req, res) => {
+  try {
+    const clientBotToken = getClientBotToken();
+    if (!clientBotToken) {
+      return res.status(503).json({ success: false, error: 'Telegram client bot token is not configured' });
+    }
+
+    const telegramUser = parseTelegramInitData(req.body?.init_data, clientBotToken);
+    if (!telegramUser?.id) {
+      return res.status(401).json({ success: false, error: 'Telegram авторизация недействительна' });
+    }
+
+    const data = await findClientByTelegramId(telegramUser.id);
+    if (!data) {
+      return res.status(403).json({ success: false, error: 'Telegram не привязан к клиенту HardZone' });
+    }
+
+    return res.json({ success: true, data });
+  } catch (error) {
+    return sendInternalError(res, error, { route: 'telegram.client_miniapp_login' });
+  }
+});
+
+router.post('/client-miniapp-link-phone', async (req, res) => {
+  try {
+    const clientBotToken = getClientBotToken();
+    if (!clientBotToken) {
+      return res.status(503).json({ success: false, error: 'Telegram client bot token is not configured' });
+    }
+
+    const telegramUser = parseTelegramInitData(req.body?.init_data, clientBotToken);
+    if (!telegramUser?.id) {
+      return res.status(401).json({ success: false, error: 'Telegram авторизация недействительна' });
+    }
+
+    const result = await linkClientByPhone(telegramUser.id, req.body?.phone);
+    if (result.status === 'invalid_phone') {
+      return res.status(422).json({ success: false, error: 'Укажите корректный номер телефона' });
+    }
+
+    if (result.status === 'not_found') {
+      return res.status(404).json({ success: false, error: 'Номер не найден среди клиентов HardZone' });
+    }
+
+    if (result.status === 'duplicate') {
+      return res.status(409).json({
+        success: false,
+        error: 'В CRM найдено несколько клиентов с таким номером. Обратитесь к администратору.',
+      });
+    }
+
+    return res.json({ success: true, data: result.data });
+  } catch (error) {
+    return sendInternalError(res, error, { route: 'telegram.client_miniapp_link_phone' });
+  }
+});
+
+router.post('/client-miniapp-book', async (req, res) => {
+  try {
+    const clientBotToken = getClientBotToken();
+    if (!clientBotToken) {
+      return res.status(503).json({ success: false, error: 'Telegram client bot token is not configured' });
+    }
+
+    const telegramUser = parseTelegramInitData(req.body?.init_data, clientBotToken);
+    if (!telegramUser?.id) {
+      return res.status(401).json({ success: false, error: 'Telegram авторизация недействительна' });
+    }
+
+    if (!req.body?.slot_id) {
+      return res.status(422).json({ success: false, error: 'Укажите занятие' });
+    }
+
+    const result = await bookClientSlot(telegramUser.id, req.body.slot_id);
+    const errorByStatus = {
+      not_linked: [403, 'Telegram не привязан к клиенту HardZone'],
+      slot_not_found: [404, 'Занятие не найдено или отменено'],
+      slot_started: [409, 'Запись закрыта после начала занятия'],
+      booking_closed: [409, 'Запись закрыта'],
+      no_subscription: [409, 'Нет активного абонемента для записи'],
+      no_places: [409, 'Нет свободных мест'],
+      already_booked: [409, 'Вы уже записаны на это занятие'],
+    };
+
+    if (result.status !== 'booked') {
+      const [status, message] = errorByStatus[result.status] || [500, 'Не удалось записаться'];
+      return res.status(status).json({ success: false, error: message });
+    }
+
+    return res.status(201).json({ success: true, data: result.data });
+  } catch (error) {
+    return sendInternalError(res, error, { route: 'telegram.client_miniapp_book' });
+  }
+});
+
+router.post('/client-miniapp-cancel-booking', async (req, res) => {
+  try {
+    const clientBotToken = getClientBotToken();
+    if (!clientBotToken) {
+      return res.status(503).json({ success: false, error: 'Telegram client bot token is not configured' });
+    }
+
+    const telegramUser = parseTelegramInitData(req.body?.init_data, clientBotToken);
+    if (!telegramUser?.id) {
+      return res.status(401).json({ success: false, error: 'Telegram авторизация недействительна' });
+    }
+
+    if (!req.body?.booking_id) {
+      return res.status(422).json({ success: false, error: 'Укажите запись' });
+    }
+
+    const result = await cancelClientBooking(telegramUser.id, req.body.booking_id);
+    const errorByStatus = {
+      not_linked: [403, 'Telegram не привязан к клиенту HardZone'],
+      booking_not_found: [404, 'Запись не найдена'],
+      slot_started: [409, 'Нельзя отменить запись после начала занятия'],
+    };
+
+    if (result.status !== 'cancelled') {
+      const [status, message] = errorByStatus[result.status] || [500, 'Не удалось отменить запись'];
+      return res.status(status).json({ success: false, error: message });
+    }
+
+    return res.json({ success: true, data: result.data });
+  } catch (error) {
+    return sendInternalError(res, error, { route: 'telegram.client_miniapp_cancel_booking' });
   }
 });
 
