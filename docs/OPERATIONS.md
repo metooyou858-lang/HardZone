@@ -105,9 +105,9 @@ PM2:
 ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "su - app -c 'pm2 status'"
 ```
 
-## Telegram Staff Bot
+## Telegram Bots
 
-The staff bot is served by the production backend webhook:
+The staff bot can be served by the production backend webhook:
 
 ```text
 /api/telegram/webhook/<TELEGRAM_WEBHOOK_SECRET>
@@ -122,10 +122,11 @@ TELEGRAM_CLIENT_BOT_TOKEN=...
 TELEGRAM_WEBHOOK_SECRET=...
 ```
 
-If Telegram cannot reach the server webhook or the server cannot use the DNS-selected Telegram API address, run the bot as a server-side polling process:
+If Telegram cannot reach the server webhook or the server cannot use the DNS-selected Telegram API address, run the bots as server-side polling processes:
 
 ```powershell
 ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "su - app -c 'cd /srv/HardZone/backend && pm2 start src/telegram-poller.js --name hardzone-telegram-poller && pm2 save'"
+ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "su - app -c 'cd /srv/HardZone/backend && pm2 start src/telegram-client-poller.js --name hardzone-telegram-client-poller && pm2 save'"
 ```
 
 Polling requires:
@@ -134,6 +135,8 @@ Polling requires:
 TELEGRAM_ENABLED=true
 TELEGRAM_POLLING_ENABLED=true
 ```
+
+The client bot opens the Mini App at `/telegram/client`.
 
 After changing Telegram env values, restart backend with updated PM2 env:
 
