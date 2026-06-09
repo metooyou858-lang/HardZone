@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, type RefObject, useEffect, useRef, useState } from "react";
 
 import {
   bookClientMiniAppSlot,
@@ -82,6 +82,62 @@ function useLockedMiniAppBody() {
       document.documentElement.style.overscrollBehavior = previousHtmlOverscroll;
     };
   }, []);
+}
+
+function usePreventMiniAppRubberBand(scrollRef: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const scrollRoot = scrollRef.current;
+    if (!scrollRoot) return;
+    const root = scrollRoot;
+
+    let startY = 0;
+
+    function findScrollableElement(target: EventTarget | null) {
+      let element = target instanceof HTMLElement ? target : null;
+
+      while (element && root.contains(element)) {
+        const style = window.getComputedStyle(element);
+        const canScrollY = /(auto|scroll)/.test(style.overflowY) && element.scrollHeight > element.clientHeight;
+        if (canScrollY) return element;
+        element = element.parentElement;
+      }
+
+      return root;
+    }
+
+    function handleTouchStart(event: TouchEvent) {
+      startY = event.touches[0]?.clientY || 0;
+    }
+
+    function handleTouchMove(event: TouchEvent) {
+      if (event.touches.length !== 1) return;
+
+      const currentY = event.touches[0]?.clientY || 0;
+      const deltaY = currentY - startY;
+      const scrollable = findScrollableElement(event.target);
+      const canScroll = scrollable.scrollHeight > scrollable.clientHeight;
+
+      if (!canScroll) {
+        event.preventDefault();
+        return;
+      }
+
+      const atTop = scrollable.scrollTop <= 0;
+      const atBottom = Math.ceil(scrollable.scrollTop + scrollable.clientHeight) >= scrollable.scrollHeight;
+
+      if ((atTop && deltaY > 0) || (atBottom && deltaY < 0)) {
+        event.preventDefault();
+      }
+    }
+
+    root.addEventListener("touchstart", handleTouchStart, { passive: true });
+    root.addEventListener("touchmove", handleTouchMove, { passive: false });
+
+    return () => {
+      root.removeEventListener("touchstart", handleTouchStart);
+      root.removeEventListener("touchmove", handleTouchMove);
+    };
+  });
 }
 
 const tabLabels: Record<ClientTab, string> = {
@@ -1076,6 +1132,7 @@ function ClientAuthScreen({
 
 export function ClientMiniApp() {
   const viewportHeight = useTelegramStableViewportHeight();
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const [activeTab, setActiveTab] = useState<ClientTab>("home");
   const [authMode, setAuthMode] = useState<AuthMode>("checking");
   const [initData, setInitData] = useState("");
@@ -1088,6 +1145,7 @@ export function ClientMiniApp() {
   const [selectedTrainerId, setSelectedTrainerId] = useState<string | null>(null);
 
   useLockedMiniAppBody();
+  usePreventMiniAppRubberBand(scrollRef);
 
   async function authenticate() {
     const webApp = window.Telegram?.WebApp;
@@ -1197,7 +1255,7 @@ export function ClientMiniApp() {
     >
       <AppHeader title={tabLabels[activeTab]} onRefresh={() => void authenticate()} />
 
-      <div className="mx-auto min-h-0 w-full max-w-md flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="mx-auto min-h-0 w-full max-w-md flex-1 overflow-y-auto">
         {activeTab === "home" ? <HomeScreen data={data} /> : null}
         {activeTab === "schedule" ? (
           <ScheduleScreen
