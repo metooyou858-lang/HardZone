@@ -54,6 +54,7 @@ export type ClientMiniAppAvailableSlot = {
   booked_count: number;
   free_places: number;
   is_booked: boolean;
+  client_booking_id: string | null;
 };
 
 export type ClientMiniAppVisit = {

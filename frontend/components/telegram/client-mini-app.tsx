@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useState } from "react";
 
 import {
   bookClientMiniAppSlot,
+  cancelClientMiniAppBooking,
   linkClientMiniAppPhone,
   loginClientMiniApp,
   type ClientMiniAppAvailableSlot,
@@ -62,12 +63,6 @@ function sortByDateTime<T extends { date: string; start_time: string }>(items: T
     const rightValue = `${dateKey(right.date)} ${right.start_time}`;
     return leftValue.localeCompare(rightValue);
   });
-}
-
-function firstDayOnly<T extends { date: string; start_time: string }>(items: T[]) {
-  const sorted = sortByDateTime(items);
-  const firstDay = dateKey(sorted[0]?.date);
-  return firstDay ? sorted.filter((item) => dateKey(item.date) === firstDay) : [];
 }
 
 function clientName(data: ClientMiniAppPayload | null) {
@@ -360,12 +355,14 @@ function AvailableSlotItem({
   slot,
   busy,
   onBook,
+  onCancel,
 }: {
   slot: ClientMiniAppAvailableSlot;
   busy: boolean;
   onBook: () => void;
+  onCancel: () => void;
 }) {
-  const disabled = busy || slot.is_booked || slot.free_places <= 0;
+  const disabled = busy || (!slot.is_booked && slot.free_places <= 0);
   const tags = [
     slot.training_type_location,
     slot.training_type_audience,
@@ -412,11 +409,15 @@ function AvailableSlotItem({
       ) : null}
       <button
         type="button"
-        onClick={onBook}
+        onClick={slot.is_booked ? onCancel : onBook}
         disabled={disabled}
-        className="mt-3 h-9 w-full rounded-md bg-[var(--accent)] text-xs font-medium text-[var(--text-inverse)] disabled:bg-[rgba(255,255,255,0.08)] disabled:text-[var(--text-muted)]"
+        className={`mt-3 h-9 w-full rounded-md text-xs font-medium disabled:bg-[rgba(255,255,255,0.08)] disabled:text-[var(--text-muted)] ${
+          slot.is_booked
+            ? "border border-[rgba(255,116,57,0.28)] bg-[rgba(255,116,57,0.08)] text-[#ffb599]"
+            : "bg-[var(--accent)] text-[var(--text-inverse)]"
+        }`}
       >
-        {busy ? "Записываем..." : slot.is_booked ? "Записан" : slot.free_places <= 0 ? "Мест нет" : "Записаться"}
+        {busy ? (slot.is_booked ? "Отменяем..." : "Записываем...") : slot.is_booked ? "Отменить запись" : slot.free_places <= 0 ? "Мест нет" : "Записаться"}
       </button>
     </article>
   );
@@ -440,23 +441,27 @@ function VisitItem({ visit }: { visit: ClientMiniAppVisit }) {
 
 function HomeScreen({ data }: { data: ClientMiniAppPayload | null }) {
   const activeSubscription = data?.subscriptions.find((item) => item.status === "active") || data?.subscriptions[0] || null;
-  const nextBooking = data?.bookings[0] || null;
+  const bookings = sortByDateTime(data?.bookings || []);
 
   return (
     <div className="space-y-3 px-3 pb-3 pt-2">
       <ClientCard data={data} />
       <SubscriptionSummary subscription={activeSubscription} />
       <section className="rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.025)] p-3">
-        <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">Моя запись</p>
-        {nextBooking ? (
-          <>
-            <p className="mt-1 truncate text-xs font-medium text-[var(--text-main)]">
-              {nextBooking.training_type_name || "Занятие"}
-            </p>
-            <p className="mt-1 text-xs text-[var(--text-muted)]">
-              {formatDate(nextBooking.date)} · {formatTime(nextBooking.start_time)} · {nextBooking.trainer_name || "Тренер не назначен"}
-            </p>
-          </>
+        <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">Мои записи</p>
+        {bookings.length ? (
+          <div className="mt-2 space-y-2">
+            {bookings.map((booking) => (
+              <div key={booking.id} className="border-t border-[rgba(255,255,255,0.06)] pt-2 first:border-t-0 first:pt-0">
+                <p className="truncate text-xs font-medium text-[var(--text-main)]">
+                  {booking.training_type_name || "Занятие"}
+                </p>
+                <p className="mt-1 text-xs text-[var(--text-muted)]">
+                  {formatDate(booking.date)} · {formatTime(booking.start_time)} · {booking.trainer_name || "Тренер не назначен"}
+                </p>
+              </div>
+            ))}
+          </div>
         ) : (
           <p className="mt-2 text-xs text-[var(--text-muted)]">Активных записей пока нет</p>
         )}
@@ -470,14 +475,18 @@ function ScheduleScreen({
   busyId,
   error,
   onBook,
+  onCancel,
 }: {
   availableSlots: ClientMiniAppAvailableSlot[];
   busyId: string | null;
   error: string;
   onBook: (slot: ClientMiniAppAvailableSlot) => void;
+  onCancel: (slot: ClientMiniAppAvailableSlot) => void;
 }) {
-  const visibleSlots = firstDayOnly(availableSlots);
-  const slotsDay = visibleSlots[0]?.date;
+  const days = [...new Set(sortByDateTime(availableSlots).map((slot) => dateKey(slot.date)).filter(Boolean))];
+  const [selectedDay, setSelectedDay] = useState(days[0] || "");
+  const activeDay = days.includes(selectedDay) ? selectedDay : days[0] || "";
+  const visibleSlots = sortByDateTime(availableSlots).filter((slot) => dateKey(slot.date) === activeDay);
 
   return (
     <div className="space-y-3 px-3 pb-3 pt-2">
@@ -487,10 +496,38 @@ function ScheduleScreen({
         </div>
       ) : null}
       <section>
-        <div className="mb-2 flex items-end justify-between gap-3">
-          <h2 className="text-xs font-medium text-[var(--text-main)]">Доступно для записи</h2>
-          {slotsDay ? <p className="truncate text-[11px] text-[var(--accent)]">{formatDate(slotsDay)}</p> : null}
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <h2 className="text-xs font-medium text-[var(--text-main)]">Расписание</h2>
+          {activeDay ? <p className="truncate text-[11px] text-[var(--accent)]">{formatDate(activeDay)}</p> : null}
         </div>
+        {days.length ? (
+          <div className="-mx-3 mb-3 overflow-x-auto px-3">
+            <div className="flex gap-2">
+              {days.map((day) => {
+                const date = new Date(`${day}T00:00:00`);
+                const weekday = Number.isNaN(date.getTime())
+                  ? ""
+                  : new Intl.DateTimeFormat("ru-RU", { weekday: "short" }).format(date).replace(".", "");
+                const active = day === activeDay;
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => setSelectedDay(day)}
+                    className={`flex h-16 w-14 shrink-0 flex-col items-center justify-center rounded-lg border text-center transition ${
+                      active
+                        ? "border-[var(--accent)] bg-[rgba(94,244,216,0.14)] text-[var(--text-main)]"
+                        : "border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] text-[var(--text-muted)]"
+                    }`}
+                  >
+                    <span className="text-[10px] uppercase">{weekday}</span>
+                    <span className="mt-1 text-base font-medium leading-none">{day.slice(8, 10)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
         <div className="space-y-2">
           {visibleSlots.length === 0 ? (
             <div className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-3 text-xs text-[var(--text-muted)]">
@@ -501,8 +538,9 @@ function ScheduleScreen({
               <AvailableSlotItem
                 key={slot.id}
                 slot={slot}
-                busy={busyId === `book-${slot.id}`}
+                busy={busyId === `book-${slot.id}` || busyId === `cancel-${slot.id}`}
                 onBook={() => onBook(slot)}
+                onCancel={() => onCancel(slot)}
               />
             ))
           )}
@@ -813,6 +851,24 @@ export function ClientMiniApp() {
     }
   }
 
+  async function cancelSlot(slot: ClientMiniAppAvailableSlot) {
+    if (!slot.client_booking_id) {
+      setActionError("Не удалось найти запись для отмены");
+      return;
+    }
+
+    setBusyId(`cancel-${slot.id}`);
+    setActionError("");
+
+    try {
+      setData(await cancelClientMiniAppBooking(initData, slot.client_booking_id));
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Не удалось отменить запись");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   useEffect(() => {
     void authenticate();
   }, []);
@@ -842,6 +898,7 @@ export function ClientMiniApp() {
             busyId={busyId}
             error={actionError}
             onBook={(slot) => void bookSlot(slot)}
+            onCancel={(slot) => void cancelSlot(slot)}
           />
         ) : null}
         {activeTab === "trainers" ? <TrainersScreen trainers={data?.trainers || []} /> : null}

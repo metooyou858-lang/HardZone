@@ -239,24 +239,6 @@ async function buildClientMiniAppPayload(clientId) {
 
   const { rows: availableSlots } = await query(
     `
-      WITH candidate_slots AS (
-        SELECT ss.id
-        FROM schedule_slots ss
-        WHERE ss.status = 'active'
-          AND ss.slot_type = 'group'
-          AND ss.date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '14 days'
-      ),
-      nearest_day AS (
-        SELECT MIN(ss.date) AS date
-        FROM schedule_slots ss
-        JOIN candidate_slots candidate ON candidate.id = ss.id
-        LEFT JOIN bookings b ON b.slot_id = ss.id AND b.status IN ('confirmed', 'attended')
-        GROUP BY ss.id
-        HAVING ss.capacity > COALESCE(SUM(b.places_count), 0)
-          OR COALESCE(BOOL_OR(b.client_id = $1 AND b.status IN ('confirmed', 'attended')), false)
-        ORDER BY ss.date
-        LIMIT 1
-      )
       SELECT
         ss.id,
         ss.date,
@@ -283,17 +265,23 @@ async function buildClientMiniAppPayload(clientId) {
             ELSE 0
           END
         ), 0)::INT AS booked_count,
-        BOOL_OR(b.client_id = $1 AND b.status IN ('confirmed', 'attended')) AS is_booked
+        BOOL_OR(b.client_id = $1 AND b.status IN ('confirmed', 'attended')) AS is_booked,
+        MAX(CASE
+          WHEN b.client_id = $1 AND b.status IN ('confirmed', 'attended') THEN b.id
+          ELSE NULL
+        END) AS client_booking_id
       FROM schedule_slots ss
       LEFT JOIN training_types tt ON tt.id = ss.training_type_id
       LEFT JOIN trainers tr ON tr.id = ss.trainer_id
       LEFT JOIN bookings b ON b.slot_id = ss.id
       WHERE ss.status = 'active'
         AND ss.slot_type = 'group'
-        AND ss.date = (SELECT date FROM nearest_day)
+        AND ss.date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '14 days'
       GROUP BY ss.id, tt.name, tt.color, tt.description, tt.audience, tt.location, tt.booking_note, tt.tags, tr.first_name, tr.last_name, tr.photo_url, tr.rating, tr.reviews_count
+      HAVING ss.capacity > COALESCE(SUM(CASE WHEN b.status IN ('confirmed', 'attended') THEN b.places_count ELSE 0 END), 0)
+        OR COALESCE(BOOL_OR(b.client_id = $1 AND b.status IN ('confirmed', 'attended')), false)
       ORDER BY ss.date, ss.start_time
-      LIMIT 40
+      LIMIT 120
     `,
     [client.id]
   );
