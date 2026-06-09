@@ -847,13 +847,17 @@ function TrainersScreen({
 
   useEffect(() => {
     if (!selectedTrainer) return;
-    setReviewRating(selectedTrainer.my_review?.rating || 5);
+    setReviewRating(selectedTrainer.my_review?.rating || 0);
     setReviewComment(selectedTrainer.my_review?.comment || "");
     setReviewError("");
   }, [selectedTrainer]);
 
   async function saveReview() {
     if (!selectedTrainer) return;
+    if (reviewRating < 1) {
+      setReviewError("Выберите оценку");
+      return;
+    }
 
     setReviewSaving(true);
     setReviewError("");
@@ -878,7 +882,12 @@ function TrainersScreen({
         <section className="overflow-hidden rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.025)]">
           <div className="relative h-40 bg-[linear-gradient(135deg,#11151d,#18232d)]">
             {selectedTrainer.photo_url ? (
-              <img src={selectedTrainer.photo_url} alt={name} className="h-full w-full object-cover opacity-80" />
+              <img
+                src={selectedTrainer.photo_url}
+                alt={name}
+                className="h-full w-full object-cover opacity-80"
+                style={{ objectPosition: "center 28%" }}
+              />
             ) : null}
             <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,7,11,0.16),rgba(5,7,11,0.86))]" />
             <button
@@ -896,8 +905,23 @@ function TrainersScreen({
           </div>
           <div className="space-y-3 p-3">
             <section className="rounded-lg bg-[rgba(255,255,255,0.03)] p-3">
+              <h3 className="text-sm font-medium text-[var(--text-main)]">О тренере</h3>
+              <p className="mt-2 whitespace-pre-line text-xs leading-5 text-[var(--text-main)]">
+                {selectedTrainer.bio || "Описание тренера пока не заполнено в CRM."}
+              </p>
+              {specialties.length ? (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {specialties.map((specialty) => (
+                    <span key={specialty} className="rounded-full bg-[rgba(255,255,255,0.06)] px-2 py-1 text-[10px] text-[var(--text-muted)]">
+                      {specialty}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+            <section className="rounded-lg bg-[rgba(255,255,255,0.03)] p-3">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-medium text-[var(--text-main)]">Отзывы</h3>
+                <h3 className="text-sm font-medium text-[var(--text-main)]">Ваша оценка</h3>
                 <p className="text-xs text-[var(--text-muted)]">
                   {selectedTrainer.reviews_count > 0
                     ? `★ ${selectedTrainer.rating} · ${selectedTrainer.reviews_count}`
@@ -933,7 +957,7 @@ function TrainersScreen({
               <button
                 type="button"
                 onClick={() => void saveReview()}
-                disabled={reviewSaving}
+                disabled={reviewSaving || reviewRating < 1}
                 className="mt-3 h-9 w-full rounded-md bg-[var(--accent)] text-xs font-medium text-[var(--text-inverse)] disabled:opacity-60"
               >
                 {reviewSaving ? "Сохраняем..." : selectedTrainer.my_review ? "Обновить отзыв" : "Оставить отзыв"}
@@ -948,19 +972,29 @@ function TrainersScreen({
               </button>
             </div>
             <section className="rounded-lg bg-[rgba(255,255,255,0.03)] p-3">
-              <h3 className="text-sm font-medium text-[var(--text-main)]">О тренере</h3>
-              <p className="mt-2 whitespace-pre-line text-xs leading-5 text-[var(--text-main)]">
-                {selectedTrainer.bio || "Описание тренера пока не заполнено в CRM."}
-              </p>
-              {specialties.length ? (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {specialties.map((specialty) => (
-                    <span key={specialty} className="rounded-full bg-[rgba(255,255,255,0.06)] px-2 py-1 text-[10px] text-[var(--text-muted)]">
-                      {specialty}
-                    </span>
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-medium text-[var(--text-main)]">Отзывы</h3>
+                <span className="text-xs text-[var(--text-muted)]">{selectedTrainer.reviews_count}</span>
+              </div>
+              {(selectedTrainer.reviews || []).length ? (
+                <div className="mt-3 space-y-2">
+                  {(selectedTrainer.reviews || []).map((review) => (
+                    <div key={review.id} className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.025)] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="truncate text-xs font-medium text-[var(--text-main)]">{review.client_name || "Клиент"}</span>
+                        <span className="shrink-0 text-[10px] text-[var(--text-muted)]">★ {review.rating} · {formatDate(review.created_at)}</span>
+                      </div>
+                      {review.comment ? (
+                        <p className="mt-2 whitespace-pre-line text-xs leading-5 text-[var(--text-muted)]">{review.comment}</p>
+                      ) : (
+                        <p className="mt-2 text-xs text-[var(--text-muted)]">Без текста</p>
+                      )}
+                    </div>
                   ))}
                 </div>
-              ) : null}
+              ) : (
+                <p className="mt-2 text-xs text-[var(--text-muted)]">Отзывов пока нет</p>
+              )}
             </section>
           </div>
         </section>

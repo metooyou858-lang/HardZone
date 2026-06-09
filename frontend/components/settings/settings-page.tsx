@@ -30,6 +30,12 @@ const baseTabs: { value: SettingsTab; label: string }[] = [
   { value: "gym", label: "Часы работы зала" },
 ];
 
+function formatShortDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "2-digit" });
+}
+
 export function SettingsPage() {
   const [currentModules, setCurrentModules] = useState<AuthModulePermission[]>([]);
   const [currentUserId, setCurrentUserId] = useState<number>(0);
@@ -301,6 +307,32 @@ export function SettingsPage() {
                     ) : (
                       <span className="text-[var(--text-muted)]">не привязан</span>
                     )}
+                  </div>
+
+                  <div className="mt-4 rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3">
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className="font-medium text-[var(--text-main)]">Отзывы</span>
+                      <span className="text-[var(--text-muted)]">
+                        {trainer.reviews_count > 0 ? `★ ${trainer.rating} · ${trainer.reviews_count}` : "Нет отзывов"}
+                      </span>
+                    </div>
+                    {(trainer.reviews || []).length > 0 ? (
+                      <div className="mt-3 space-y-2">
+                        {(trainer.reviews || []).map((review) => (
+                          <div key={review.id} className="rounded-[14px] border border-[var(--line-soft)] bg-[rgba(255,255,255,0.02)] p-3 text-sm">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="font-medium text-[var(--text-main)]">{review.client_name || "Клиент"}</span>
+                              <span className="text-xs text-[var(--text-muted)]">★ {review.rating} · {formatShortDate(review.created_at)}</span>
+                            </div>
+                            {review.comment ? (
+                              <p className="mt-2 whitespace-pre-line text-[var(--text-muted)]">{review.comment}</p>
+                            ) : (
+                              <p className="mt-2 text-[var(--text-muted)]">Без текста</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="mt-4 flex flex-wrap gap-2">

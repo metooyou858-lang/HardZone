@@ -44,6 +44,7 @@ Before production work:
 3. Extend auth tests to frontend cookie/session route flow.
 4. Extend Telegram staff bot UX after live staff feedback.
 5. Fix effective subscription validity: expired `active` subscriptions must not appear usable in CRM, Telegram Mini Apps, or booking flows.
+6. Replace raw `<img>` tags in Telegram Mini Apps with `next/image` or explicitly document why plain images are kept for Telegram runtime stability.
 
 ## Current Production Notes
 

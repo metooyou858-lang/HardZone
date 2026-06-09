@@ -76,6 +76,14 @@ export type ClientMiniAppTrainer = {
   photo_url: string | null;
   rating: number | null;
   reviews_count: number;
+  reviews: Array<{
+    id: string;
+    rating: number;
+    comment: string | null;
+    client_name: string | null;
+    created_at: string;
+    updated_at: string;
+  }>;
   my_review: {
     rating: number;
     comment: string | null;

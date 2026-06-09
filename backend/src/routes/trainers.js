@@ -58,6 +58,57 @@ function normalizeTextArray(value) {
 router.get('/', requireTrainersRead, async (req, res) => {
   try {
     const { rows } = await pool.query(`
+      WITH training_type_map AS (
+        SELECT
+          ttt.trainer_id,
+          COALESCE(json_agg(tt.* ORDER BY tt.name) FILTER (WHERE tt.id IS NOT NULL), '[]') AS training_types
+        FROM trainer_training_types ttt
+        LEFT JOIN training_types tt ON tt.id = ttt.training_type_id
+        GROUP BY ttt.trainer_id
+      ),
+      review_stats AS (
+        SELECT
+          trainer_id,
+          ROUND(AVG(rating)::NUMERIC, 1) AS rating,
+          COUNT(*) AS reviews_count
+        FROM trainer_reviews
+        WHERE is_visible = true
+        GROUP BY trainer_id
+      ),
+      review_preview AS (
+        SELECT
+          trainer_id,
+          COALESCE(
+            jsonb_agg(
+              jsonb_build_object(
+                'id', id,
+                'rating', rating,
+                'comment', comment,
+                'created_at', created_at,
+                'updated_at', updated_at,
+                'client_name', client_name
+              )
+              ORDER BY created_at DESC
+            ),
+            '[]'::jsonb
+          ) AS reviews
+        FROM (
+          SELECT
+            tr.id,
+            tr.trainer_id,
+            tr.rating,
+            tr.comment,
+            tr.created_at,
+            tr.updated_at,
+            NULLIF(CONCAT_WS(' ', c.last_name, c.first_name), '') AS client_name,
+            ROW_NUMBER() OVER (PARTITION BY tr.trainer_id ORDER BY tr.created_at DESC) AS row_number
+          FROM trainer_reviews tr
+          LEFT JOIN clients c ON c.id = tr.client_id
+          WHERE tr.is_visible = true
+        ) ranked_reviews
+        WHERE row_number <= 5
+        GROUP BY trainer_id
+      )
       SELECT
         t.id,
         t.user_id,
@@ -74,6 +125,7 @@ router.get('/', requireTrainersRead, async (req, res) => {
         t.is_active,
         t.created_at,
         t.updated_at,
+        COALESCE(rp.reviews, '[]'::jsonb) AS reviews,
         CASE
           WHEN u.id IS NULL THEN NULL
           ELSE json_build_object(
@@ -84,22 +136,13 @@ router.get('/', requireTrainersRead, async (req, res) => {
             'is_active', u.is_active
           )
         END AS linked_user,
-        COALESCE(json_agg(tt.*) FILTER (WHERE tt.id IS NOT NULL), '[]') AS training_types
+        COALESCE(ttm.training_types, '[]') AS training_types
       FROM trainers t
       LEFT JOIN users u ON u.id = t.user_id
-      LEFT JOIN trainer_training_types ttt ON ttt.trainer_id = t.id
-      LEFT JOIN training_types tt ON tt.id = ttt.training_type_id
-      LEFT JOIN (
-        SELECT
-          trainer_id,
-          ROUND(AVG(rating)::NUMERIC, 1) AS rating,
-          COUNT(*) AS reviews_count
-        FROM trainer_reviews
-        WHERE is_visible = true
-        GROUP BY trainer_id
-      ) rs ON rs.trainer_id = t.id
+      LEFT JOIN training_type_map ttm ON ttm.trainer_id = t.id
+      LEFT JOIN review_stats rs ON rs.trainer_id = t.id
+      LEFT JOIN review_preview rp ON rp.trainer_id = t.id
       WHERE t.is_active = true
-      GROUP BY t.id, u.id, rs.rating, rs.reviews_count
       ORDER BY t.last_name, t.first_name
     `);
 

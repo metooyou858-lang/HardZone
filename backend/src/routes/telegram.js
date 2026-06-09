@@ -334,6 +334,40 @@ async function buildClientMiniAppPayload(clientId) {
 
   const { rows: trainers } = await query(
     `
+      WITH review_preview AS (
+        SELECT
+          trainer_id,
+          COALESCE(
+            jsonb_agg(
+              jsonb_build_object(
+                'id', id,
+                'rating', rating,
+                'comment', comment,
+                'created_at', created_at,
+                'updated_at', updated_at,
+                'client_name', client_name
+              )
+              ORDER BY created_at DESC
+            ),
+            '[]'::jsonb
+          ) AS reviews
+        FROM (
+          SELECT
+            tr.id,
+            tr.trainer_id,
+            tr.rating,
+            tr.comment,
+            tr.created_at,
+            tr.updated_at,
+            NULLIF(CONCAT_WS(' ', c.last_name, c.first_name), '') AS client_name,
+            ROW_NUMBER() OVER (PARTITION BY tr.trainer_id ORDER BY tr.created_at DESC) AS row_number
+          FROM trainer_reviews tr
+          LEFT JOIN clients c ON c.id = tr.client_id
+          WHERE tr.is_visible = true
+        ) ranked_reviews
+        WHERE row_number <= 8
+        GROUP BY trainer_id
+      )
       SELECT
         t.id,
         t.first_name,
@@ -343,6 +377,7 @@ async function buildClientMiniAppPayload(clientId) {
         t.photo_url,
         COALESCE(rs.rating, 0)::FLOAT AS rating,
         COALESCE(rs.reviews_count, 0)::INT AS reviews_count,
+        COALESCE(rp.reviews, '[]'::jsonb) AS reviews,
         t.specialties,
         CASE
           WHEN my_review.id IS NULL THEN NULL
@@ -365,10 +400,12 @@ async function buildClientMiniAppPayload(clientId) {
         WHERE is_visible = true
         GROUP BY trainer_id
       ) rs ON rs.trainer_id = t.id
+      LEFT JOIN review_preview rp ON rp.trainer_id = t.id
       LEFT JOIN trainer_reviews my_review ON my_review.trainer_id = t.id
         AND my_review.client_id = $1
+        AND my_review.is_visible = true
       WHERE t.is_active = true
-      GROUP BY t.id, rs.rating, rs.reviews_count, my_review.id
+      GROUP BY t.id, rs.rating, rs.reviews_count, rp.reviews, my_review.id
       ORDER BY t.last_name, t.first_name
       LIMIT 50
     `,
@@ -402,6 +439,7 @@ async function buildClientMiniAppPayload(clientId) {
       ...trainer,
       rating: trainer.rating === null ? null : Number(trainer.rating),
       reviews_count: Number(trainer.reviews_count || 0),
+      reviews: Array.isArray(trainer.reviews) ? trainer.reviews : [],
       specialties: Array.isArray(trainer.specialties) ? trainer.specialties : [],
     })),
     debt: {

@@ -19,6 +19,14 @@ export type Trainer = {
   position: string | null;
   rating: number;
   reviews_count: number;
+  reviews: Array<{
+    id: string;
+    rating: number;
+    comment: string | null;
+    client_name: string | null;
+    created_at: string;
+    updated_at: string;
+  }>;
   specialties: string[];
   is_active: boolean;
   created_at: string;
