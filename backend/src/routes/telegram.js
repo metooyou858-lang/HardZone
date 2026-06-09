@@ -255,6 +255,7 @@ async function buildClientMiniAppPayload(clientId) {
         tt.location AS training_type_location,
         tt.booking_note AS training_type_booking_note,
         tt.tags AS training_type_tags,
+        tr.id AS trainer_id,
         tr.first_name || ' ' || tr.last_name AS trainer_name,
         tr.photo_url AS trainer_photo_url,
         COALESCE(rs.rating, 0)::FLOAT AS trainer_rating,
@@ -286,7 +287,7 @@ async function buildClientMiniAppPayload(clientId) {
       WHERE ss.status = 'active'
         AND ss.slot_type = 'group'
         AND ss.date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '14 days'
-      GROUP BY ss.id, tt.name, tt.color, tt.description, tt.audience, tt.location, tt.booking_note, tt.tags, tr.first_name, tr.last_name, tr.photo_url, rs.rating, rs.reviews_count
+      GROUP BY ss.id, tt.name, tt.color, tt.description, tt.audience, tt.location, tt.booking_note, tt.tags, tr.id, tr.first_name, tr.last_name, tr.photo_url, rs.rating, rs.reviews_count
       HAVING ss.capacity > COALESCE(SUM(CASE WHEN b.status IN ('confirmed', 'attended') THEN b.places_count ELSE 0 END), 0)
         OR COALESCE(BOOL_OR(b.client_id = $1 AND b.status IN ('confirmed', 'attended')), false)
       ORDER BY ss.date, ss.start_time

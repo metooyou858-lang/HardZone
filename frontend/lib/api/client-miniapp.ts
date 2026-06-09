@@ -47,6 +47,7 @@ export type ClientMiniAppAvailableSlot = {
   training_type_location: string | null;
   training_type_booking_note: string | null;
   training_type_tags: string[];
+  trainer_id: string | null;
   trainer_name: string | null;
   trainer_photo_url: string | null;
   trainer_rating: number | null;

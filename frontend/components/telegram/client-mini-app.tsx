@@ -54,6 +54,18 @@ function formatDate(value: string | null | undefined) {
   return `${day}.${month}.${year}`;
 }
 
+function formatLongDate(value: string | null | undefined) {
+  if (!value) return "";
+  const day = dateKey(value);
+  const date = new Date(`${day}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return formatDate(value);
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "long",
+    weekday: "long",
+  }).format(date);
+}
+
 function dateKey(value: string | null | undefined) {
   return String(value || "").slice(0, 10);
 }
@@ -357,11 +369,13 @@ function AvailableSlotItem({
   busy,
   onBook,
   onCancel,
+  onOpen,
 }: {
   slot: ClientMiniAppAvailableSlot;
   busy: boolean;
   onBook: () => void;
   onCancel: () => void;
+  onOpen: () => void;
 }) {
   const disabled = busy || (!slot.is_booked && slot.free_places <= 0);
   const tags = [
@@ -372,7 +386,15 @@ function AvailableSlotItem({
   ].filter(Boolean) as string[];
 
   return (
-    <article className="relative overflow-hidden rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-3">
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") onOpen();
+      }}
+      className="relative overflow-hidden rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-3 text-left"
+    >
       <div
         className="absolute bottom-3 left-0 top-3 w-1 rounded-r-full"
         style={{ backgroundColor: slot.training_type_color || "var(--accent)" }}
@@ -410,7 +432,10 @@ function AvailableSlotItem({
       ) : null}
       <button
         type="button"
-        onClick={slot.is_booked ? onCancel : onBook}
+        onClick={(event) => {
+          event.stopPropagation();
+          slot.is_booked ? onCancel() : onBook();
+        }}
         disabled={disabled}
         className={`mt-3 h-9 w-full rounded-md text-xs font-medium disabled:bg-[rgba(255,255,255,0.08)] disabled:text-[var(--text-muted)] ${
           slot.is_booked
@@ -421,6 +446,111 @@ function AvailableSlotItem({
         {busy ? (slot.is_booked ? "Отменяем..." : "Записываем...") : slot.is_booked ? "Отменить запись" : slot.free_places <= 0 ? "Мест нет" : "Записаться"}
       </button>
     </article>
+  );
+}
+
+function SlotDetailScreen({
+  slot,
+  busy,
+  onBack,
+  onBook,
+  onCancel,
+  onOpenTrainer,
+}: {
+  slot: ClientMiniAppAvailableSlot;
+  busy: boolean;
+  onBack: () => void;
+  onBook: () => void;
+  onCancel: () => void;
+  onOpenTrainer: (trainerId: string) => void;
+}) {
+  const title = slot.training_type_name || "Занятие";
+  const location = slot.training_type_location || "HardZone";
+  const description = slot.training_type_description || "Описание тренировки пока не заполнено в CRM.";
+  const actionDisabled = busy || (!slot.is_booked && slot.free_places <= 0);
+
+  return (
+    <div className="pb-3">
+      <header className="sticky top-0 z-10 border-b border-[rgba(255,255,255,0.07)] bg-[rgba(8,11,16,0.96)] px-3 py-2 backdrop-blur">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-2xl text-[var(--text-main)] active:bg-[rgba(255,255,255,0.06)]"
+            aria-label="Назад"
+          >
+            ‹
+          </button>
+          <h2 className="truncate text-lg font-medium text-[var(--text-main)]">{formatLongDate(slot.date)}</h2>
+        </div>
+      </header>
+
+      <section className="px-4 py-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-main)]">
+              {slot.slot_type === "group" ? "Групповое занятие" : "Занятие"}
+            </p>
+            <h1 className="mt-2 text-3xl font-semibold leading-[1.08] text-[var(--text-main)]">{title}</h1>
+            <p className="mt-3 text-base font-medium text-[var(--text-main)]">{formatLongDate(slot.date)}</p>
+            <p className="mt-2 text-sm text-[var(--text-muted)]">{slot.training_type_booking_note || "Предварительная запись"}</p>
+          </div>
+          <div className="shrink-0 text-right">
+            <p className="text-4xl font-semibold leading-none text-[var(--text-main)]">{formatTime(slot.start_time)}</p>
+            <p className="mt-2 text-base text-[var(--text-muted)]">{slot.duration_minutes} мин</p>
+          </div>
+        </div>
+
+        <div className="mt-5 border-t border-[rgba(255,255,255,0.08)] pt-5">
+          <p className="text-sm text-[var(--text-muted)]">Место проведения</p>
+          <p className="mt-1 text-lg font-semibold text-[var(--text-main)]">{location}</p>
+          <p className="mt-5 text-sm text-[var(--text-muted)]">Продолжительность</p>
+          <p className="mt-1 text-lg font-semibold text-[var(--text-main)]">{slot.duration_minutes} мин</p>
+        </div>
+      </section>
+
+      <section className="border-y border-[rgba(255,255,255,0.05)] bg-[rgba(255,255,255,0.035)] px-4 py-5">
+        <h3 className="text-lg font-semibold text-[var(--text-main)]">Тренер</h3>
+        <button
+          type="button"
+          onClick={() => slot.trainer_id && onOpenTrainer(String(slot.trainer_id))}
+          disabled={!slot.trainer_id}
+          className="mt-4 flex w-full items-center gap-3 rounded-lg bg-[rgba(5,7,11,0.42)] p-3 text-left disabled:opacity-70"
+        >
+          <TrainerAvatar name={slot.trainer_name || "Т"} photoUrl={slot.trainer_photo_url} size="md" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-base font-semibold text-[var(--text-main)]">{slot.trainer_name || "Тренер не назначен"}</p>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
+              {slot.trainer_reviews_count > 0 ? `★ ${slot.trainer_rating} · ${slot.trainer_reviews_count} отзывов` : "Информация о тренере"}
+            </p>
+          </div>
+          {slot.trainer_id ? <span className="text-3xl text-[var(--text-main)]">›</span> : null}
+        </button>
+      </section>
+
+      <section className="px-4 py-5">
+        <h3 className="text-lg font-semibold text-[var(--text-main)]">{title}</h3>
+        <p className="mt-3 whitespace-pre-line text-base leading-6 text-[var(--text-main)]">{description}</p>
+      </section>
+
+      <section className="sticky bottom-0 border-t border-[rgba(255,255,255,0.06)] bg-[rgba(8,11,16,0.96)] px-4 py-3 backdrop-blur">
+        <button
+          type="button"
+          onClick={slot.is_booked ? onCancel : onBook}
+          disabled={actionDisabled}
+          className={`h-12 w-full rounded-lg text-base font-medium disabled:bg-[rgba(255,255,255,0.08)] disabled:text-[var(--text-muted)] ${
+            slot.is_booked
+              ? "border border-[rgba(255,116,57,0.28)] bg-[rgba(255,116,57,0.08)] text-[#ffb599]"
+              : "bg-[var(--accent)] text-[var(--text-inverse)]"
+          }`}
+        >
+          {busy ? (slot.is_booked ? "Отменяем..." : "Записываем...") : slot.is_booked ? "Отменить запись" : slot.free_places <= 0 ? "Нет свободных мест" : "Записаться на тренировку"}
+        </button>
+        {!slot.is_booked && slot.free_places <= 0 ? (
+          <p className="mt-3 text-center text-sm text-[var(--text-main)]">Нет свободных мест</p>
+        ) : null}
+      </section>
+    </div>
   );
 }
 
@@ -477,17 +607,34 @@ function ScheduleScreen({
   error,
   onBook,
   onCancel,
+  onOpenTrainer,
 }: {
   availableSlots: ClientMiniAppAvailableSlot[];
   busyId: string | null;
   error: string;
   onBook: (slot: ClientMiniAppAvailableSlot) => void;
   onCancel: (slot: ClientMiniAppAvailableSlot) => void;
+  onOpenTrainer: (trainerId: string) => void;
 }) {
   const days = [...new Set(sortByDateTime(availableSlots).map((slot) => dateKey(slot.date)).filter(Boolean))];
   const [selectedDay, setSelectedDay] = useState(days[0] || "");
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const activeDay = days.includes(selectedDay) ? selectedDay : days[0] || "";
   const visibleSlots = sortByDateTime(availableSlots).filter((slot) => dateKey(slot.date) === activeDay);
+  const selectedSlot = selectedSlotId ? availableSlots.find((slot) => String(slot.id) === selectedSlotId) || null : null;
+
+  if (selectedSlot) {
+    return (
+      <SlotDetailScreen
+        slot={selectedSlot}
+        busy={busyId === `book-${selectedSlot.id}` || busyId === `cancel-${selectedSlot.id}`}
+        onBack={() => setSelectedSlotId(null)}
+        onBook={() => onBook(selectedSlot)}
+        onCancel={() => onCancel(selectedSlot)}
+        onOpenTrainer={onOpenTrainer}
+      />
+    );
+  }
 
   return (
     <div className="space-y-3 px-3 pb-3 pt-2">
@@ -542,6 +689,7 @@ function ScheduleScreen({
                 busy={busyId === `book-${slot.id}` || busyId === `cancel-${slot.id}`}
                 onBook={() => onBook(slot)}
                 onCancel={() => onCancel(slot)}
+                onOpen={() => setSelectedSlotId(String(slot.id))}
               />
             ))
           )}
@@ -555,10 +703,12 @@ function TrainersScreen({
   trainers,
   initData,
   onPayloadUpdate,
+  initialSelectedId,
 }: {
   trainers: ClientMiniAppTrainer[];
   initData: string;
   onPayloadUpdate: (payload: ClientMiniAppPayload) => void;
+  initialSelectedId: string | null;
 }) {
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -578,6 +728,12 @@ function TrainersScreen({
     return !normalizedSearch || haystack.includes(normalizedSearch);
   });
   const selectedTrainer = selectedId ? trainers.find((trainer) => trainer.id === selectedId) || null : null;
+
+  useEffect(() => {
+    if (initialSelectedId) {
+      setSelectedId(initialSelectedId);
+    }
+  }, [initialSelectedId]);
 
   useEffect(() => {
     if (!selectedTrainer) return;
@@ -869,6 +1025,7 @@ export function ClientMiniApp() {
   const [data, setData] = useState<ClientMiniAppPayload | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
+  const [selectedTrainerId, setSelectedTrainerId] = useState<string | null>(null);
 
   async function authenticate() {
     const webApp = window.Telegram?.WebApp;
@@ -948,6 +1105,11 @@ export function ClientMiniApp() {
     }
   }
 
+  function openTrainerFromSchedule(trainerId: string) {
+    setSelectedTrainerId(trainerId);
+    setActiveTab("trainers");
+  }
+
   useEffect(() => {
     void authenticate();
   }, []);
@@ -978,16 +1140,28 @@ export function ClientMiniApp() {
             error={actionError}
             onBook={(slot) => void bookSlot(slot)}
             onCancel={(slot) => void cancelSlot(slot)}
+            onOpenTrainer={openTrainerFromSchedule}
           />
         ) : null}
         {activeTab === "trainers" ? (
-          <TrainersScreen trainers={data?.trainers || []} initData={initData} onPayloadUpdate={(payload) => setData(payload)} />
+          <TrainersScreen
+            trainers={data?.trainers || []}
+            initData={initData}
+            onPayloadUpdate={(payload) => setData(payload)}
+            initialSelectedId={selectedTrainerId}
+          />
         ) : null}
         {activeTab === "profile" ? <ProfileScreen data={data} onOpenVisits={() => setActiveTab("visits")} /> : null}
         {activeTab === "visits" ? <VisitsScreen visits={data?.visits || []} /> : null}
       </div>
 
-      <BottomNav active={activeTab} onChange={setActiveTab} />
+      <BottomNav
+        active={activeTab}
+        onChange={(tab) => {
+          setSelectedTrainerId(null);
+          setActiveTab(tab);
+        }}
+      />
     </main>
   );
 }
