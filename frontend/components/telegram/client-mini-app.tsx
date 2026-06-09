@@ -4,11 +4,9 @@ import { type FormEvent, useEffect, useState } from "react";
 
 import {
   bookClientMiniAppSlot,
-  cancelClientMiniAppBooking,
   linkClientMiniAppPhone,
   loginClientMiniApp,
   type ClientMiniAppAvailableSlot,
-  type ClientMiniAppBooking,
   type ClientMiniAppPayload,
   type ClientMiniAppSubscription,
   type ClientMiniAppTrainer,
@@ -329,58 +327,6 @@ function Stat({ label, value, onClick }: { label: string; value: string | number
   );
 }
 
-function BookingItem({ booking }: { booking: ClientMiniAppBooking }) {
-  return (
-    <article className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-2.5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs text-[var(--accent)]">{formatDate(booking.date)}</p>
-          <h3 className="mt-1 truncate text-xs font-medium text-[var(--text-main)]">
-            {booking.training_type_name || "Занятие"}
-          </h3>
-          <p className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">{booking.trainer_name || "Тренер не назначен"}</p>
-        </div>
-        <span className="font-[family:var(--font-mono)] text-xs text-[var(--text-main)]">{formatTime(booking.start_time)}</span>
-      </div>
-    </article>
-  );
-}
-
-function ClientBookingItem({
-  booking,
-  busy,
-  onCancel,
-}: {
-  booking: ClientMiniAppBooking;
-  busy: boolean;
-  onCancel: () => void;
-}) {
-  return (
-    <article className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-2.5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs text-[var(--accent)]">{formatDate(booking.date)}</p>
-          <h3 className="mt-1 truncate text-xs font-medium text-[var(--text-main)]">
-            {booking.training_type_name || "Занятие"}
-          </h3>
-          <p className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">{booking.trainer_name || "Тренер не назначен"}</p>
-        </div>
-        <span className="font-[family:var(--font-mono)] text-xs text-[var(--text-main)]">{formatTime(booking.start_time)}</span>
-      </div>
-      {booking.status === "confirmed" ? (
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={busy}
-          className="mt-2 h-8 w-full rounded-md border border-[rgba(255,116,57,0.28)] bg-[rgba(255,116,57,0.08)] text-xs font-medium text-[#ffb599] disabled:opacity-60"
-        >
-          {busy ? "Отменяем..." : "Отменить запись"}
-        </button>
-      ) : null}
-    </article>
-  );
-}
-
 function TrainerAvatar({ name, photoUrl, size = "md" }: { name: string; photoUrl?: string | null; size?: "sm" | "md" | "lg" }) {
   const sizeClass = {
     sm: "h-8 w-8 text-xs",
@@ -441,9 +387,6 @@ function AvailableSlotItem({
           <p className="mt-1 text-[11px] text-[var(--text-muted)]">
             {formatTime(slot.start_time)} · {formatDate(slot.date)}
           </p>
-          {slot.training_type_description ? (
-            <p className="mt-2 line-clamp-3 text-xs leading-5 text-[var(--text-main)]">{slot.training_type_description}</p>
-          ) : null}
         </div>
         <span className="shrink-0 rounded-full bg-[rgba(255,255,255,0.06)] px-2 py-1 text-[10px] text-[var(--text-main)]">
           Еще {slot.free_places} мест
@@ -473,7 +416,7 @@ function AvailableSlotItem({
         disabled={disabled}
         className="mt-3 h-9 w-full rounded-md bg-[var(--accent)] text-xs font-medium text-[var(--text-inverse)] disabled:bg-[rgba(255,255,255,0.08)] disabled:text-[var(--text-muted)]"
       >
-        {busy ? "Записываем..." : slot.is_booked ? "Вы записаны" : slot.free_places <= 0 ? "Мест нет" : "Записаться"}
+        {busy ? "Записываем..." : slot.is_booked ? "Записан" : slot.free_places <= 0 ? "Мест нет" : "Записаться"}
       </button>
     </article>
   );
@@ -495,7 +438,7 @@ function VisitItem({ visit }: { visit: ClientMiniAppVisit }) {
   );
 }
 
-function HomeScreen({ data, onOpenVisits }: { data: ClientMiniAppPayload | null; onOpenVisits: () => void }) {
+function HomeScreen({ data }: { data: ClientMiniAppPayload | null }) {
   const activeSubscription = data?.subscriptions.find((item) => item.status === "active") || data?.subscriptions[0] || null;
   const nextBooking = data?.bookings[0] || null;
 
@@ -503,16 +446,17 @@ function HomeScreen({ data, onOpenVisits }: { data: ClientMiniAppPayload | null;
     <div className="space-y-3 px-3 pb-3 pt-2">
       <ClientCard data={data} />
       <SubscriptionSummary subscription={activeSubscription} />
-      <section className="grid grid-cols-2 gap-2">
-        <Stat label="записей" value={data?.bookings.length ?? "..."} />
-        <Stat label="посещений" value={data?.visits.length ?? "..."} onClick={onOpenVisits} />
-      </section>
       <section className="rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.025)] p-3">
-        <h2 className="text-xs font-medium text-[var(--text-main)]">Ближайшая запись</h2>
+        <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">Моя запись</p>
         {nextBooking ? (
-          <div className="mt-2">
-            <BookingItem booking={nextBooking} />
-          </div>
+          <>
+            <p className="mt-1 truncate text-xs font-medium text-[var(--text-main)]">
+              {nextBooking.training_type_name || "Занятие"}
+            </p>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
+              {formatDate(nextBooking.date)} · {formatTime(nextBooking.start_time)} · {nextBooking.trainer_name || "Тренер не назначен"}
+            </p>
+          </>
         ) : (
           <p className="mt-2 text-xs text-[var(--text-muted)]">Активных записей пока нет</p>
         )}
@@ -522,22 +466,17 @@ function HomeScreen({ data, onOpenVisits }: { data: ClientMiniAppPayload | null;
 }
 
 function ScheduleScreen({
-  bookings,
   availableSlots,
   busyId,
   error,
   onBook,
-  onCancel,
 }: {
-  bookings: ClientMiniAppBooking[];
   availableSlots: ClientMiniAppAvailableSlot[];
   busyId: string | null;
   error: string;
   onBook: (slot: ClientMiniAppAvailableSlot) => void;
-  onCancel: (booking: ClientMiniAppBooking) => void;
 }) {
-  const sortedBookings = sortByDateTime(bookings);
-  const visibleSlots = firstDayOnly(availableSlots.filter((slot) => !slot.is_booked));
+  const visibleSlots = firstDayOnly(availableSlots);
   const slotsDay = visibleSlots[0]?.date;
 
   return (
@@ -547,25 +486,6 @@ function ScheduleScreen({
           {error}
         </div>
       ) : null}
-      <section>
-        <h2 className="mb-2 text-xs font-medium text-[var(--text-main)]">Мои записи</h2>
-        <div className="space-y-2">
-          {bookings.length === 0 ? (
-            <div className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-3 text-xs text-[var(--text-muted)]">
-              Активных записей нет
-            </div>
-          ) : (
-            sortedBookings.map((booking) => (
-              <ClientBookingItem
-                key={booking.id}
-                booking={booking}
-                busy={busyId === `cancel-${booking.id}`}
-                onCancel={() => onCancel(booking)}
-              />
-            ))
-          )}
-        </div>
-      </section>
       <section>
         <div className="mb-2 flex items-end justify-between gap-3">
           <h2 className="text-xs font-medium text-[var(--text-main)]">Доступно для записи</h2>
@@ -727,12 +647,15 @@ function VisitsScreen({ visits }: { visits: ClientMiniAppVisit[] }) {
   );
 }
 
-function ProfileScreen({ data }: { data: ClientMiniAppPayload | null }) {
+function ProfileScreen({ data, onOpenVisits }: { data: ClientMiniAppPayload | null; onOpenVisits: () => void }) {
   const client = data?.client;
 
   return (
     <div className="space-y-3 px-3 pb-3 pt-2">
       <ClientCard data={data} />
+      <section className="grid grid-cols-1 gap-2">
+        <Stat label="посещений" value={data?.visits.length ?? "..."} onClick={onOpenVisits} />
+      </section>
       <section className="rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.025)] p-3">
         <div className="space-y-2.5 text-xs">
           <div className="flex justify-between gap-4">
@@ -890,19 +813,6 @@ export function ClientMiniApp() {
     }
   }
 
-  async function cancelBooking(booking: ClientMiniAppBooking) {
-    setBusyId(`cancel-${booking.id}`);
-    setActionError("");
-
-    try {
-      setData(await cancelClientMiniAppBooking(initData, booking.id));
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Не удалось отменить запись");
-    } finally {
-      setBusyId(null);
-    }
-  }
-
   useEffect(() => {
     void authenticate();
   }, []);
@@ -925,19 +835,17 @@ export function ClientMiniApp() {
       <AppHeader title={tabLabels[activeTab]} onRefresh={() => void authenticate()} />
 
       <div className="mx-auto min-h-0 w-full max-w-md flex-1 overflow-y-auto">
-        {activeTab === "home" ? <HomeScreen data={data} onOpenVisits={() => setActiveTab("visits")} /> : null}
+        {activeTab === "home" ? <HomeScreen data={data} /> : null}
         {activeTab === "schedule" ? (
           <ScheduleScreen
-            bookings={data?.bookings || []}
             availableSlots={data?.available_slots || []}
             busyId={busyId}
             error={actionError}
             onBook={(slot) => void bookSlot(slot)}
-            onCancel={(booking) => void cancelBooking(booking)}
           />
         ) : null}
         {activeTab === "trainers" ? <TrainersScreen trainers={data?.trainers || []} /> : null}
-        {activeTab === "profile" ? <ProfileScreen data={data} /> : null}
+        {activeTab === "profile" ? <ProfileScreen data={data} onOpenVisits={() => setActiveTab("visits")} /> : null}
         {activeTab === "visits" ? <VisitsScreen visits={data?.visits || []} /> : null}
       </div>
 

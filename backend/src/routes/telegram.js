@@ -253,7 +253,7 @@ async function buildClientMiniAppPayload(clientId) {
         LEFT JOIN bookings b ON b.slot_id = ss.id AND b.status IN ('confirmed', 'attended')
         GROUP BY ss.id
         HAVING ss.capacity > COALESCE(SUM(b.places_count), 0)
-          AND NOT COALESCE(BOOL_OR(b.client_id = $1 AND b.status IN ('confirmed', 'attended')), false)
+          OR COALESCE(BOOL_OR(b.client_id = $1 AND b.status IN ('confirmed', 'attended')), false)
         ORDER BY ss.date
         LIMIT 1
       )
