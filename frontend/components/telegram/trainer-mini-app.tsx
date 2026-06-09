@@ -22,8 +22,12 @@ declare global {
     Telegram?: {
       WebApp?: {
         initData?: string;
+        viewportHeight?: number;
+        viewportStableHeight?: number;
         ready?: () => void;
         expand?: () => void;
+        onEvent?: (eventType: "viewportChanged", eventHandler: (eventData: { isStateStable?: boolean }) => void) => void;
+        offEvent?: (eventType: "viewportChanged", eventHandler: (eventData: { isStateStable?: boolean }) => void) => void;
       };
     };
   }

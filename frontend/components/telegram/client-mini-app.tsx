@@ -20,8 +20,12 @@ declare global {
     Telegram?: {
       WebApp?: {
         initData?: string;
+        viewportHeight?: number;
+        viewportStableHeight?: number;
         ready?: () => void;
         expand?: () => void;
+        onEvent?: (eventType: "viewportChanged", eventHandler: (eventData: { isStateStable?: boolean }) => void) => void;
+        offEvent?: (eventType: "viewportChanged", eventHandler: (eventData: { isStateStable?: boolean }) => void) => void;
       };
     };
   }
@@ -29,6 +33,56 @@ declare global {
 
 type ClientTab = "home" | "schedule" | "trainers" | "profile" | "visits";
 type AuthMode = "checking" | "linked" | "phone" | "telegram";
+
+function getTelegramStableViewportHeight() {
+  if (typeof window === "undefined") return null;
+  const webApp = window.Telegram?.WebApp;
+  return webApp?.viewportStableHeight || webApp?.viewportHeight || window.innerHeight;
+}
+
+function useTelegramStableViewportHeight() {
+  const [height, setHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    const webApp = window.Telegram?.WebApp;
+    const applyHeight = () => setHeight(getTelegramStableViewportHeight());
+    const handleViewportChange = (eventData: { isStateStable?: boolean }) => {
+      if (eventData.isStateStable) {
+        applyHeight();
+      }
+    };
+
+    applyHeight();
+    webApp?.onEvent?.("viewportChanged", handleViewportChange);
+
+    return () => {
+      webApp?.offEvent?.("viewportChanged", handleViewportChange);
+    };
+  }, []);
+
+  return height;
+}
+
+function useLockedMiniAppBody() {
+  useEffect(() => {
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousBodyOverscroll = document.body.style.overscrollBehavior;
+    const previousHtmlOverscroll = document.documentElement.style.overscrollBehavior;
+
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overscrollBehavior = "none";
+    document.documentElement.style.overscrollBehavior = "none";
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.body.style.overscrollBehavior = previousBodyOverscroll;
+      document.documentElement.style.overscrollBehavior = previousHtmlOverscroll;
+    };
+  }, []);
+}
 
 const tabLabels: Record<ClientTab, string> = {
   home: "Главная",
@@ -954,6 +1008,7 @@ function ClientAuthScreen({
   phone,
   error,
   loading,
+  viewportHeight,
   onPhoneChange,
   onSubmit,
 }: {
@@ -961,13 +1016,17 @@ function ClientAuthScreen({
   phone: string;
   error: string;
   loading: boolean;
+  viewportHeight: number | null;
   onPhoneChange: (value: string) => void;
   onSubmit: () => void;
 }) {
   const canEnterPhone = mode === "phone";
 
   return (
-    <main className="flex h-[100dvh] items-center bg-[var(--bg-app)] px-4 py-8 text-[var(--text-main)]">
+    <main
+      className="flex h-[100dvh] items-center overflow-hidden bg-[var(--bg-app)] px-4 py-8 text-[var(--text-main)]"
+      style={viewportHeight ? { height: `${viewportHeight}px` } : undefined}
+    >
       <section className="mx-auto w-full max-w-md rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] p-5 shadow-[0_18px_42px_rgba(0,0,0,0.32)]">
         <p className="font-[family:var(--font-mono)] text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">
           HardZone
@@ -1016,6 +1075,7 @@ function ClientAuthScreen({
 }
 
 export function ClientMiniApp() {
+  const viewportHeight = useTelegramStableViewportHeight();
   const [activeTab, setActiveTab] = useState<ClientTab>("home");
   const [authMode, setAuthMode] = useState<AuthMode>("checking");
   const [initData, setInitData] = useState("");
@@ -1026,6 +1086,8 @@ export function ClientMiniApp() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
   const [selectedTrainerId, setSelectedTrainerId] = useState<string | null>(null);
+
+  useLockedMiniAppBody();
 
   async function authenticate() {
     const webApp = window.Telegram?.WebApp;
@@ -1121,6 +1183,7 @@ export function ClientMiniApp() {
         phone={phone}
         error={authError}
         loading={authLoading}
+        viewportHeight={viewportHeight}
         onPhoneChange={setPhone}
         onSubmit={() => void linkPhone()}
       />
@@ -1128,7 +1191,10 @@ export function ClientMiniApp() {
   }
 
   return (
-    <main className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[var(--bg-app)] text-[var(--text-main)]">
+    <main
+      className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[var(--bg-app)] text-[var(--text-main)]"
+      style={viewportHeight ? { height: `${viewportHeight}px` } : undefined}
+    >
       <AppHeader title={tabLabels[activeTab]} onRefresh={() => void authenticate()} />
 
       <div className="mx-auto min-h-0 w-full max-w-md flex-1 overflow-y-auto">
