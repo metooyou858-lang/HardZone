@@ -16,6 +16,10 @@ type TrainingTypeFormState = {
   duration: string;
   capacity: string;
   description: string;
+  audience: string;
+  location: string;
+  booking_note: string;
+  tags: string;
   is_active: boolean;
 };
 
@@ -27,6 +31,10 @@ function toFormState(item?: TrainingType): TrainingTypeFormState {
     duration: item?.duration ? String(item.duration) : "",
     capacity: item?.capacity ? String(item.capacity) : "",
     description: item?.description ?? "",
+    audience: item?.audience ?? "",
+    location: item?.location ?? "",
+    booking_note: item?.booking_note ?? "",
+    tags: (item?.tags ?? []).join(", "),
     is_active: item?.is_active ?? true,
   };
 }
@@ -133,6 +141,51 @@ function TrainingTypeForm({
         />
       </div>
 
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div>
+          <label className={labelCls}>Для кого</label>
+          <input
+            type="text"
+            value={form.audience}
+            onChange={(event) => setForm((previous) => ({ ...previous, audience: event.target.value }))}
+            className={`mt-1 ${inputCls}`}
+            placeholder="Детская, 7-13 лет"
+          />
+        </div>
+        <div>
+          <label className={labelCls}>Зал / место</label>
+          <input
+            type="text"
+            value={form.location}
+            onChange={(event) => setForm((previous) => ({ ...previous, location: event.target.value }))}
+            className={`mt-1 ${inputCls}`}
+            placeholder="Большой зал"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className={labelCls}>Правило записи</label>
+        <input
+          type="text"
+          value={form.booking_note}
+          onChange={(event) => setForm((previous) => ({ ...previous, booking_note: event.target.value }))}
+          className={`mt-1 ${inputCls}`}
+          placeholder="По записи"
+        />
+      </div>
+
+      <div>
+        <label className={labelCls}>Теги</label>
+        <input
+          type="text"
+          value={form.tags}
+          onChange={(event) => setForm((previous) => ({ ...previous, tags: event.target.value }))}
+          className={`mt-1 ${inputCls}`}
+          placeholder="детская, функциональные, большой зал"
+        />
+      </div>
+
       <label className="flex items-center gap-3 text-sm text-slate-300">
         <input
           type="checkbox"
@@ -181,6 +234,10 @@ export function TrainingTypesManager({ onClose }: { onClose: () => void }) {
         duration: form.duration ? Number.parseInt(form.duration, 10) : null,
         capacity: form.capacity ? Number.parseInt(form.capacity, 10) : null,
         description: form.description.trim() || null,
+        audience: form.audience.trim() || null,
+        location: form.location.trim() || null,
+        booking_note: form.booking_note.trim() || null,
+        tags: form.tags.split(",").map((item) => item.trim()).filter(Boolean),
       });
       setShowCreate(false);
     } catch (error: unknown) {
@@ -202,6 +259,10 @@ export function TrainingTypesManager({ onClose }: { onClose: () => void }) {
         duration: form.duration ? Number.parseInt(form.duration, 10) : null,
         capacity: form.capacity ? Number.parseInt(form.capacity, 10) : null,
         description: form.description.trim() || null,
+        audience: form.audience.trim() || null,
+        location: form.location.trim() || null,
+        booking_note: form.booking_note.trim() || null,
+        tags: form.tags.split(",").map((item) => item.trim()).filter(Boolean),
         is_active: form.is_active,
       });
       setEditId(null);
@@ -279,6 +340,15 @@ export function TrainingTypesManager({ onClose }: { onClose: () => void }) {
                     </div>
 
                     {item.description && <p className="mt-1 text-xs text-slate-500">{item.description}</p>}
+                    {(item.audience || item.location || item.booking_note || item.tags?.length) && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {[item.audience, item.location, item.booking_note, ...(item.tags ?? [])].filter(Boolean).map((tag) => (
+                          <span key={tag} className="rounded-full bg-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex shrink-0 gap-2">

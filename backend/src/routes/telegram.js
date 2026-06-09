@@ -268,7 +268,15 @@ async function buildClientMiniAppPayload(clientId) {
         ss.block_if_empty_hours,
         tt.name AS training_type_name,
         tt.color AS training_type_color,
+        tt.description AS training_type_description,
+        tt.audience AS training_type_audience,
+        tt.location AS training_type_location,
+        tt.booking_note AS training_type_booking_note,
+        tt.tags AS training_type_tags,
         tr.first_name || ' ' || tr.last_name AS trainer_name,
+        tr.photo_url AS trainer_photo_url,
+        tr.rating AS trainer_rating,
+        tr.reviews_count AS trainer_reviews_count,
         COALESCE(SUM(
           CASE
             WHEN b.status IN ('confirmed', 'attended') THEN b.places_count
@@ -283,11 +291,34 @@ async function buildClientMiniAppPayload(clientId) {
       WHERE ss.status = 'active'
         AND ss.slot_type = 'group'
         AND ss.date = (SELECT date FROM nearest_day)
-      GROUP BY ss.id, tt.name, tt.color, tr.first_name, tr.last_name
+      GROUP BY ss.id, tt.name, tt.color, tt.description, tt.audience, tt.location, tt.booking_note, tt.tags, tr.first_name, tr.last_name, tr.photo_url, tr.rating, tr.reviews_count
       ORDER BY ss.date, ss.start_time
       LIMIT 40
     `,
     [client.id]
+  );
+
+  const { rows: trainers } = await query(
+    `
+      SELECT
+        t.id,
+        t.first_name,
+        t.last_name,
+        t.position,
+        t.bio,
+        t.photo_url,
+        t.rating,
+        t.reviews_count,
+        t.specialties,
+        COALESCE(json_agg(tt.*) FILTER (WHERE tt.id IS NOT NULL), '[]') AS training_types
+      FROM trainers t
+      LEFT JOIN trainer_training_types ttt ON ttt.trainer_id = t.id
+      LEFT JOIN training_types tt ON tt.id = ttt.training_type_id AND tt.is_active = true
+      WHERE t.is_active = true
+      GROUP BY t.id
+      ORDER BY t.last_name, t.first_name
+      LIMIT 50
+    `
   );
 
   const { rows: debtRows } = await query(
@@ -308,8 +339,16 @@ async function buildClientMiniAppPayload(clientId) {
     visits,
     available_slots: availableSlots.map((slot) => ({
       ...slot,
+      training_type_tags: Array.isArray(slot.training_type_tags) ? slot.training_type_tags : [],
+      trainer_rating: slot.trainer_rating === null ? null : Number(slot.trainer_rating),
       free_places: Math.max(0, Number(slot.capacity || 0) - Number(slot.booked_count || 0)),
       is_booked: Boolean(slot.is_booked),
+    })),
+    trainers: trainers.map((trainer) => ({
+      ...trainer,
+      rating: trainer.rating === null ? null : Number(trainer.rating),
+      reviews_count: Number(trainer.reviews_count || 0),
+      specialties: Array.isArray(trainer.specialties) ? trainer.specialties : [],
     })),
     debt: {
       unpaid_missed_count: Number(debtRows[0]?.unpaid_missed_count || 0),

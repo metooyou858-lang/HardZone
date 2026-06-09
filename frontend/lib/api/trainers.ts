@@ -15,6 +15,11 @@ export type Trainer = {
   phone: string | null;
   email: string | null;
   bio: string | null;
+  photo_url: string | null;
+  position: string | null;
+  rating: number;
+  reviews_count: number;
+  specialties: string[];
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -48,6 +53,11 @@ export async function createTrainer(data: {
   phone?: string | null;
   email?: string | null;
   bio?: string | null;
+  photo_url?: string | null;
+  position?: string | null;
+  rating?: number | null;
+  reviews_count?: number | null;
+  specialties?: string[];
   training_type_ids?: number[];
 }): Promise<Trainer> {
   const response = await apiFetch<ApiEnvelope<Trainer>>("/trainers", {
@@ -66,6 +76,11 @@ export async function updateTrainer(
     phone: string | null;
     email: string | null;
     bio: string | null;
+    photo_url: string | null;
+    position: string | null;
+    rating: number | null;
+    reviews_count: number | null;
+    specialties: string[];
     user_id: number | null;
     is_active: boolean;
     training_type_ids: number[];

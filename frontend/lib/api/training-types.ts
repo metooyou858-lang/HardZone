@@ -8,6 +8,10 @@ export type TrainingType = {
   duration: number | null;
   capacity: number | null;
   description: string | null;
+  audience: string | null;
+  location: string | null;
+  booking_note: string | null;
+  tags: string[];
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -45,6 +49,10 @@ export async function createTrainingType(data: {
   duration?: number | null;
   capacity?: number | null;
   description?: string | null;
+  audience?: string | null;
+  location?: string | null;
+  booking_note?: string | null;
+  tags?: string[];
 }): Promise<TrainingType> {
   const response = await apiFetch<ApiEnvelope<TrainingType>>("/training-types", {
     method: "POST",
@@ -63,6 +71,10 @@ export async function updateTrainingType(
     duration: number | null;
     capacity: number | null;
     description: string | null;
+    audience: string | null;
+    location: string | null;
+    booking_note: string | null;
+    tags: string[];
     is_active: boolean;
   }>
 ): Promise<TrainingType> {

@@ -8,6 +8,18 @@ const router = express.Router();
 const requireTrainingTypesRead = authMiddleware.requireRole('owner', 'admin');
 const requireTrainingTypesManage = authMiddleware.requireModule('services');
 
+function normalizeTextArray(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    return value.split(',').map((item) => item.trim()).filter(Boolean);
+  }
+
+  return [];
+}
+
 // GET /api/training-types — список видов тренировок
 router.get('/', requireTrainingTypesRead, async (req, res) => {
   try {
@@ -34,19 +46,44 @@ router.get('/', requireTrainingTypesRead, async (req, res) => {
 // POST /api/training-types — создать вид тренировки
 router.post('/', requireTrainingTypesManage, async (req, res) => {
   try {
-    const { name, color, duration, capacity, description, slot_type = 'group' } = req.body;
+    const {
+      name,
+      color,
+      duration,
+      capacity,
+      description,
+      slot_type = 'group',
+      audience,
+      location,
+      booking_note,
+      tags,
+    } = req.body;
 
     if (!name) {
       return res.status(422).json({ success: false, error: 'Укажите название' });
     }
 
     const { rows } = await pool.query(
-      `
-        INSERT INTO training_types (name, color, duration, capacity, description, slot_type)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        `
+        INSERT INTO training_types (
+          name, color, duration, capacity, description, slot_type,
+          audience, location, booking_note, tags
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING *
       `,
-      [name, color || '#00BCD4', duration || null, capacity || null, description || null, slot_type]
+      [
+        name,
+        color || '#00BCD4',
+        duration || null,
+        capacity || null,
+        description || null,
+        slot_type,
+        audience || null,
+        location || null,
+        booking_note || null,
+        normalizeTextArray(tags),
+      ]
     );
 
     res.status(201).json({ success: true, data: rows[0] });
@@ -58,7 +95,23 @@ router.post('/', requireTrainingTypesManage, async (req, res) => {
 // PATCH /api/training-types/:id — обновить
 router.patch('/:id', requireTrainingTypesManage, async (req, res) => {
   try {
-    const fields = ['name', 'color', 'duration', 'capacity', 'description', 'is_active', 'slot_type'];
+    if (req.body?.tags !== undefined) {
+      req.body.tags = normalizeTextArray(req.body.tags);
+    }
+
+    const fields = [
+      'name',
+      'color',
+      'duration',
+      'capacity',
+      'description',
+      'is_active',
+      'slot_type',
+      'audience',
+      'location',
+      'booking_note',
+      'tags',
+    ];
     const updates = [];
     const values = [];
 

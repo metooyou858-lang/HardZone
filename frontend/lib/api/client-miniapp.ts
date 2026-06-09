@@ -42,7 +42,15 @@ export type ClientMiniAppAvailableSlot = {
   block_if_empty_hours: number | null;
   training_type_name: string | null;
   training_type_color: string | null;
+  training_type_description: string | null;
+  training_type_audience: string | null;
+  training_type_location: string | null;
+  training_type_booking_note: string | null;
+  training_type_tags: string[];
   trainer_name: string | null;
+  trainer_photo_url: string | null;
+  trainer_rating: number | null;
+  trainer_reviews_count: number;
   booked_count: number;
   free_places: number;
   is_booked: boolean;
@@ -57,12 +65,32 @@ export type ClientMiniAppVisit = {
   training_type_name: string | null;
 };
 
+export type ClientMiniAppTrainer = {
+  id: string;
+  first_name: string;
+  last_name: string;
+  position: string | null;
+  bio: string | null;
+  photo_url: string | null;
+  rating: number | null;
+  reviews_count: number;
+  specialties: string[];
+  training_types: Array<{
+    id: string;
+    name: string;
+    slot_type: "group" | "personal" | "rental";
+    color: string | null;
+    description: string | null;
+  }>;
+};
+
 export type ClientMiniAppPayload = {
   client: ClientMiniAppClient;
   subscriptions: ClientMiniAppSubscription[];
   bookings: ClientMiniAppBooking[];
   visits: ClientMiniAppVisit[];
   available_slots: ClientMiniAppAvailableSlot[];
+  trainers: ClientMiniAppTrainer[];
   debt: {
     unpaid_missed_count: number;
   };

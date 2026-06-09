@@ -11,6 +11,7 @@ import {
   type ClientMiniAppBooking,
   type ClientMiniAppPayload,
   type ClientMiniAppSubscription,
+  type ClientMiniAppTrainer,
   type ClientMiniAppVisit,
 } from "@/lib/api/client-miniapp";
 
@@ -26,21 +27,16 @@ declare global {
   }
 }
 
-type ClientTab = "home" | "schedule" | "subscription" | "profile";
+type ClientTab = "home" | "schedule" | "trainers" | "profile" | "visits";
 type AuthMode = "checking" | "linked" | "phone" | "telegram";
 
 const tabLabels: Record<ClientTab, string> = {
   home: "Главная",
   schedule: "Расписание",
-  subscription: "Абонемент",
+  trainers: "Тренеры",
   profile: "Профиль",
+  visits: "Посещения",
 };
-
-const datePartsFormatter = new Intl.DateTimeFormat("ru-RU", {
-  day: "numeric",
-  month: "long",
-  weekday: "short",
-});
 
 function formatTime(value: string | null | undefined) {
   return String(value || "").slice(0, 5);
@@ -48,14 +44,14 @@ function formatTime(value: string | null | undefined) {
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "";
-  const date = new Date(`${value}T00:00:00`);
+  const raw = String(value);
+  const datePart = raw.includes("T") ? raw.slice(0, 10) : raw.slice(0, 10);
+  const date = new Date(`${datePart}T00:00:00`);
   if (Number.isNaN(date.getTime())) return value;
-  const parts = Object.fromEntries(datePartsFormatter.formatToParts(date).map((part) => [part.type, part.value]));
-  const weekday = String(parts.weekday || "").replace(".", "");
-  const day = String(parts.day || "");
-  const month = String(parts.month || "");
-  const capitalizedWeekday = weekday ? weekday.slice(0, 1).toUpperCase() + weekday.slice(1) : "";
-  return [capitalizedWeekday, `${day} ${month}`].filter(Boolean).join(", ");
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = String(date.getFullYear()).slice(-2);
+  return `${day}.${month}.${year}`;
 }
 
 function dateKey(value: string | null | undefined) {
@@ -201,13 +197,13 @@ function tabIcon(tab: ClientTab, active: boolean) {
     );
   }
 
-  if (tab === "subscription") {
+  if (tab === "trainers") {
     return (
       <svg {...common}>
-        <path d="M6 4h12v16H6z" />
-        <path d="M9 8h6" />
-        <path d="M9 12h6" />
-        <path d="M9 16h3" />
+        <circle cx="8.5" cy="8" r="3" />
+        <circle cx="16.5" cy="9" r="2.5" />
+        <path d="M3.5 19a5 5 0 0 1 10 0" />
+        <path d="M13.5 19a4 4 0 0 1 7 0" />
       </svg>
     );
   }
@@ -245,7 +241,7 @@ function AppHeader({ title, onRefresh }: { title: string; onRefresh: () => void 
 }
 
 function BottomNav({ active, onChange }: { active: ClientTab; onChange: (tab: ClientTab) => void }) {
-  const tabs: ClientTab[] = ["home", "schedule", "subscription", "profile"];
+  const tabs: ClientTab[] = ["home", "schedule", "trainers", "profile"];
 
   return (
     <nav className="z-30 shrink-0 px-3 pb-[max(7px,env(safe-area-inset-bottom))] pt-1">
@@ -257,14 +253,14 @@ function BottomNav({ active, onChange }: { active: ClientTab; onChange: (tab: Cl
               key={tab}
               type="button"
               onClick={() => onChange(tab)}
-              className={`flex min-h-[36px] min-w-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md px-1 text-[8px] transition [&_svg]:h-3.5 [&_svg]:w-3.5 ${
+              className={`flex min-h-[36px] min-w-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md px-1 text-[10px] transition [&_svg]:h-3.5 [&_svg]:w-3.5 ${
                 activeTab
                   ? "bg-[rgba(94,244,216,0.12)] text-[var(--text-main)]"
                   : "text-[var(--text-muted)] active:bg-[rgba(255,255,255,0.04)]"
               }`}
             >
               {tabIcon(tab, activeTab)}
-              <span className="block max-w-full truncate leading-tight">{tabLabels[tab]}</span>
+              <span className="block w-[150%] max-w-none origin-center scale-[0.6] truncate text-center leading-none">{tabLabels[tab]}</span>
             </button>
           );
         })}
@@ -291,9 +287,6 @@ function ClientCard({ data }: { data: ClientMiniAppPayload | null }) {
             ЛК {cabinetNumber(data)}
           </p>
         </div>
-        <span className="shrink-0 rounded-full border border-[rgba(94,244,216,0.28)] bg-[rgba(94,244,216,0.10)] px-2 py-0.5 text-[9px] font-medium uppercase tracking-[0.12em] text-[#9ffbed]">
-          Club
-        </span>
       </div>
       <div className="relative mt-3">
         <BarcodeSvg value={barcode} />
@@ -312,11 +305,26 @@ function SubscriptionSummary({ subscription }: { subscription: ClientMiniAppSubs
   );
 }
 
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] px-2.5 py-2">
+function Stat({ label, value, onClick }: { label: string; value: string | number; onClick?: () => void }) {
+  const className = "rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] px-2.5 py-2 text-center";
+  const content = (
+    <>
       <p className="text-base font-medium leading-none text-[var(--text-main)]">{value}</p>
       <p className="mt-1 text-[10px] leading-none text-[var(--text-muted)]">{label}</p>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={`${className} transition active:bg-[rgba(255,255,255,0.06)]`}>
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className={className}>
+      {content}
     </div>
   );
 }
@@ -373,6 +381,35 @@ function ClientBookingItem({
   );
 }
 
+function TrainerAvatar({ name, photoUrl, size = "md" }: { name: string; photoUrl?: string | null; size?: "sm" | "md" | "lg" }) {
+  const sizeClass = {
+    sm: "h-8 w-8 text-xs",
+    md: "h-12 w-12 text-sm",
+    lg: "h-20 w-20 text-lg",
+  }[size];
+  const initial = name.trim().slice(0, 1).toUpperCase() || "Т";
+
+  if (photoUrl) {
+    return (
+      <img
+        src={photoUrl}
+        alt={name}
+        className={`${sizeClass} shrink-0 rounded-full object-cover ring-1 ring-white/10`}
+      />
+    );
+  }
+
+  return (
+    <div className={`${sizeClass} flex shrink-0 items-center justify-center rounded-full bg-[rgba(255,255,255,0.92)] font-medium text-[var(--text-inverse)]`}>
+      {initial}
+    </div>
+  );
+}
+
+function trainerName(trainer: ClientMiniAppTrainer) {
+  return [trainer.first_name, trainer.last_name].filter(Boolean).join(" ");
+}
+
 function AvailableSlotItem({
   slot,
   busy,
@@ -383,27 +420,58 @@ function AvailableSlotItem({
   onBook: () => void;
 }) {
   const disabled = busy || slot.is_booked || slot.free_places <= 0;
+  const tags = [
+    slot.training_type_location,
+    slot.training_type_audience,
+    slot.training_type_booking_note,
+    ...(slot.training_type_tags || []),
+  ].filter(Boolean) as string[];
 
   return (
-    <article className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-2.5">
+    <article className="relative overflow-hidden rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-3">
+      <div
+        className="absolute bottom-3 left-0 top-3 w-1 rounded-r-full"
+        style={{ backgroundColor: slot.training_type_color || "var(--accent)" }}
+      />
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs text-[var(--accent)]">{formatDate(slot.date)}</p>
-          <h3 className="mt-1 truncate text-xs font-medium text-[var(--text-main)]">
+        <div className="min-w-0 pl-2">
+          <h3 className="truncate text-sm font-medium text-[var(--text-main)]">
             {slot.training_type_name || "Занятие"}
           </h3>
-          <p className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">{slot.trainer_name || "Тренер не назначен"}</p>
+          <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+            {formatTime(slot.start_time)} · {formatDate(slot.date)}
+          </p>
+          {slot.training_type_description ? (
+            <p className="mt-2 line-clamp-3 text-xs leading-5 text-[var(--text-main)]">{slot.training_type_description}</p>
+          ) : null}
         </div>
-        <div className="text-right">
-          <p className="font-[family:var(--font-mono)] text-xs text-[var(--text-main)]">{formatTime(slot.start_time)}</p>
-          <p className="mt-1 text-[10px] text-[var(--text-muted)]">{slot.free_places} мест</p>
+        <span className="shrink-0 rounded-full bg-[rgba(255,255,255,0.06)] px-2 py-1 text-[10px] text-[var(--text-main)]">
+          Еще {slot.free_places} мест
+        </span>
+      </div>
+      <div className="mt-3 flex items-center gap-2 pl-2">
+        <TrainerAvatar name={slot.trainer_name || "Т"} photoUrl={slot.trainer_photo_url} size="sm" />
+        <div className="min-w-0">
+          <p className="truncate text-xs font-medium text-[var(--text-main)]">{slot.trainer_name || "Тренер не назначен"}</p>
+          {slot.trainer_rating ? (
+            <p className="text-[10px] text-[var(--text-muted)]">★ {slot.trainer_rating} · {slot.trainer_reviews_count || 0} отзывов</p>
+          ) : null}
         </div>
       </div>
+      {tags.length ? (
+        <div className="mt-3 flex flex-wrap gap-1.5 pl-2">
+          {tags.slice(0, 4).map((tag) => (
+            <span key={tag} className="rounded-full bg-[rgba(255,116,116,0.10)] px-2 py-1 text-[10px] text-[#ffb3b3]">
+              {tag}
+            </span>
+          ))}
+        </div>
+      ) : null}
       <button
         type="button"
         onClick={onBook}
         disabled={disabled}
-        className="mt-2 h-8 w-full rounded-md bg-[var(--accent)] text-xs font-medium text-[var(--text-inverse)] disabled:bg-[rgba(255,255,255,0.08)] disabled:text-[var(--text-muted)]"
+        className="mt-3 h-9 w-full rounded-md bg-[var(--accent)] text-xs font-medium text-[var(--text-inverse)] disabled:bg-[rgba(255,255,255,0.08)] disabled:text-[var(--text-muted)]"
       >
         {busy ? "Записываем..." : slot.is_booked ? "Вы записаны" : slot.free_places <= 0 ? "Мест нет" : "Записаться"}
       </button>
@@ -411,21 +479,23 @@ function AvailableSlotItem({
   );
 }
 
-function VisitItem({ visit }: { visit: ClientMiniAppVisit }) {
+function visitDateTime(visit: ClientMiniAppVisit) {
   const visitedAt = new Date(visit.visited_at);
-  const label = Number.isNaN(visitedAt.getTime())
-    ? visit.visited_at
-    : formatDate(visitedAt.toISOString().slice(0, 10));
+  const date = visit.date || (Number.isNaN(visitedAt.getTime()) ? visit.visited_at : visitedAt.toISOString().slice(0, 10));
+  const time = visit.start_time || (Number.isNaN(visitedAt.getTime()) ? "" : visitedAt.toISOString().slice(11, 16));
+  return [formatDate(date), time ? formatTime(time) : ""].filter(Boolean).join(" · ");
+}
 
+function VisitItem({ visit }: { visit: ClientMiniAppVisit }) {
   return (
     <article className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-2.5">
       <p className="text-xs font-medium text-[var(--text-main)]">{visit.training_type_name || (visit.visit_type === "open_gym" ? "Open Gym" : "Занятие")}</p>
-      <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">{label}</p>
+      <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">{visitDateTime(visit)}</p>
     </article>
   );
 }
 
-function HomeScreen({ data }: { data: ClientMiniAppPayload | null }) {
+function HomeScreen({ data, onOpenVisits }: { data: ClientMiniAppPayload | null; onOpenVisits: () => void }) {
   const activeSubscription = data?.subscriptions.find((item) => item.status === "active") || data?.subscriptions[0] || null;
   const nextBooking = data?.bookings[0] || null;
 
@@ -433,10 +503,9 @@ function HomeScreen({ data }: { data: ClientMiniAppPayload | null }) {
     <div className="space-y-3 px-3 pb-3 pt-2">
       <ClientCard data={data} />
       <SubscriptionSummary subscription={activeSubscription} />
-      <section className="grid grid-cols-3 gap-2">
+      <section className="grid grid-cols-2 gap-2">
         <Stat label="записей" value={data?.bookings.length ?? "..."} />
-        <Stat label="посещений" value={data?.visits.length ?? "..."} />
-        <Stat label="долг" value={data?.debt.unpaid_missed_count ?? "..."} />
+        <Stat label="посещений" value={data?.visits.length ?? "..."} onClick={onOpenVisits} />
       </section>
       <section className="rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.025)] p-3">
         <h2 className="text-xs font-medium text-[var(--text-main)]">Ближайшая запись</h2>
@@ -523,33 +592,134 @@ function ScheduleScreen({
   );
 }
 
-function SubscriptionScreen({ subscriptions, visits }: { subscriptions: ClientMiniAppSubscription[]; visits: ClientMiniAppVisit[] }) {
+function TrainersScreen({ trainers }: { trainers: ClientMiniAppTrainer[] }) {
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const normalizedSearch = search.trim().toLowerCase();
+  const visibleTrainers = trainers.filter((trainer) => {
+    const haystack = [
+      trainerName(trainer),
+      trainer.position,
+      trainer.bio,
+      ...trainer.specialties,
+      ...trainer.training_types.map((type) => type.name),
+    ].filter(Boolean).join(" ").toLowerCase();
+    return !normalizedSearch || haystack.includes(normalizedSearch);
+  });
+  const selectedTrainer = selectedId ? trainers.find((trainer) => trainer.id === selectedId) || null : null;
+
+  if (selectedTrainer) {
+    const name = trainerName(selectedTrainer);
+    const specialties = selectedTrainer.specialties.length
+      ? selectedTrainer.specialties
+      : selectedTrainer.training_types.map((type) => type.name).filter(Boolean);
+
+    return (
+      <div className="space-y-3 px-3 pb-3 pt-2">
+        <section className="overflow-hidden rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.025)]">
+          <div className="relative h-40 bg-[linear-gradient(135deg,#11151d,#18232d)]">
+            {selectedTrainer.photo_url ? (
+              <img src={selectedTrainer.photo_url} alt={name} className="h-full w-full object-cover opacity-80" />
+            ) : null}
+            <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,7,11,0.16),rgba(5,7,11,0.86))]" />
+            <button
+              type="button"
+              onClick={() => setSelectedId(null)}
+              className="absolute left-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/35 text-lg text-white"
+              aria-label="Назад"
+            >
+              ‹
+            </button>
+            <div className="absolute bottom-3 left-3 right-3">
+              <h2 className="text-base font-medium text-white">{name}</h2>
+              <p className="mt-1 text-xs text-white/75">{selectedTrainer.position || "Тренер"}</p>
+            </div>
+          </div>
+          <div className="space-y-3 p-3">
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setSelectedId(null)} className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.04)] px-3 py-2 text-left text-xs font-medium text-[var(--text-main)]">
+                Расписание
+              </button>
+              <button type="button" className="rounded-md border border-[rgba(94,244,216,0.24)] bg-[rgba(94,244,216,0.10)] px-3 py-2 text-left text-xs font-medium text-[var(--text-main)]">
+                Персональная
+              </button>
+            </div>
+            <section className="rounded-lg bg-[rgba(255,255,255,0.03)] p-3">
+              <h3 className="text-sm font-medium text-[var(--text-main)]">О тренере</h3>
+              <p className="mt-2 whitespace-pre-line text-xs leading-5 text-[var(--text-main)]">
+                {selectedTrainer.bio || "Описание тренера пока не заполнено в CRM."}
+              </p>
+              {specialties.length ? (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {specialties.map((specialty) => (
+                    <span key={specialty} className="rounded-full bg-[rgba(255,255,255,0.06)] px-2 py-1 text-[10px] text-[var(--text-muted)]">
+                      {specialty}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3 px-3 pb-3 pt-2">
-      <section className="space-y-2">
-        {subscriptions.length === 0 ? (
-          <div className="rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.025)] p-4 text-center text-xs text-[var(--text-muted)]">
-            Активных абонементов нет
+      <input
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="Поиск"
+        className="h-10 w-full rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.04)] px-3 text-sm text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
+      />
+      <section className="grid grid-cols-2 gap-3">
+        {visibleTrainers.length === 0 ? (
+          <div className="col-span-2 rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-3 text-xs text-[var(--text-muted)]">
+            Тренеры пока не заполнены
           </div>
         ) : (
-          subscriptions.map((subscription) => (
-            <article key={subscription.id} className="rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.025)] p-3">
-              <h2 className="text-xs font-medium text-[var(--text-main)]">{subscriptionTitle(subscription)}</h2>
-              <p className="mt-1 text-xs text-[var(--text-muted)]">{subscriptionMeta(subscription)}</p>
-              <p className="mt-2 text-[11px] text-[var(--text-muted)]">Статус: {subscription.status}</p>
-            </article>
-          ))
+          visibleTrainers.map((trainer) => {
+            const name = trainerName(trainer);
+            return (
+              <button key={trainer.id} type="button" onClick={() => setSelectedId(trainer.id)} className="text-left">
+                <div className="relative aspect-[4/5] overflow-hidden rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.04)]">
+                  {trainer.photo_url ? (
+                    <img src={trainer.photo_url} alt={name} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,#10141c,#18222d)] text-2xl font-medium text-[var(--text-muted)]">
+                      {name.slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                  <span className="absolute left-2 top-2 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-[#0b1017]">
+                    ★ {trainer.rating ?? 5}
+                  </span>
+                </div>
+                <p className="mt-1 truncate text-xs font-medium text-[var(--text-main)]">{name}</p>
+                <p className="truncate text-[11px] text-[var(--text-muted)]">{trainer.position || "Тренер"}</p>
+              </button>
+            );
+          })
         )}
       </section>
+    </div>
+  );
+}
+
+function VisitsScreen({ visits }: { visits: ClientMiniAppVisit[] }) {
+  const sortedVisits = [...visits].sort((left, right) => String(right.visited_at).localeCompare(String(left.visited_at)));
+
+  return (
+    <div className="space-y-3 px-3 pb-3 pt-2">
       <section>
-        <h2 className="mb-2 text-xs font-medium text-[var(--text-main)]">Последние посещения</h2>
+        <h2 className="mb-2 text-xs font-medium text-[var(--text-main)]">Посещенные занятия</h2>
         <div className="space-y-2">
-          {visits.length === 0 ? (
+          {sortedVisits.length === 0 ? (
             <div className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-3 text-xs text-[var(--text-muted)]">
               Посещений пока нет
             </div>
           ) : (
-            visits.map((visit) => <VisitItem key={visit.id} visit={visit} />)
+            sortedVisits.map((visit) => <VisitItem key={visit.id} visit={visit} />)
           )}
         </div>
       </section>
@@ -755,7 +925,7 @@ export function ClientMiniApp() {
       <AppHeader title={tabLabels[activeTab]} onRefresh={() => void authenticate()} />
 
       <div className="mx-auto min-h-0 w-full max-w-md flex-1 overflow-y-auto">
-        {activeTab === "home" ? <HomeScreen data={data} /> : null}
+        {activeTab === "home" ? <HomeScreen data={data} onOpenVisits={() => setActiveTab("visits")} /> : null}
         {activeTab === "schedule" ? (
           <ScheduleScreen
             bookings={data?.bookings || []}
@@ -766,10 +936,9 @@ export function ClientMiniApp() {
             onCancel={(booking) => void cancelBooking(booking)}
           />
         ) : null}
-        {activeTab === "subscription" ? (
-          <SubscriptionScreen subscriptions={data?.subscriptions || []} visits={data?.visits || []} />
-        ) : null}
+        {activeTab === "trainers" ? <TrainersScreen trainers={data?.trainers || []} /> : null}
         {activeTab === "profile" ? <ProfileScreen data={data} /> : null}
+        {activeTab === "visits" ? <VisitsScreen visits={data?.visits || []} /> : null}
       </div>
 
       <BottomNav active={activeTab} onChange={setActiveTab} />

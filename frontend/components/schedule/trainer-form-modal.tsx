@@ -23,6 +23,11 @@ export function TrainerFormModal({
   const [lastName, setLastName] = useState(trainer?.last_name ?? "");
   const [phone, setPhone] = useState(trainer?.phone ?? "");
   const [email, setEmail] = useState(trainer?.email ?? "");
+  const [photoUrl, setPhotoUrl] = useState(trainer?.photo_url ?? "");
+  const [position, setPosition] = useState(trainer?.position ?? "");
+  const [rating, setRating] = useState(String(trainer?.rating ?? 5));
+  const [reviewsCount, setReviewsCount] = useState(String(trainer?.reviews_count ?? 0));
+  const [specialties, setSpecialties] = useState((trainer?.specialties ?? []).join(", "));
   const [bio, setBio] = useState(trainer?.bio ?? "");
   const [selectedUserId, setSelectedUserId] = useState(trainer?.user_id ?? "");
   const [selectedTypes, setSelectedTypes] = useState<string[]>(trainer?.training_types.map((item) => item.id) ?? []);
@@ -34,6 +39,11 @@ export function TrainerFormModal({
     setLastName(trainer?.last_name ?? "");
     setPhone(trainer?.phone ?? "");
     setEmail(trainer?.email ?? "");
+    setPhotoUrl(trainer?.photo_url ?? "");
+    setPosition(trainer?.position ?? "");
+    setRating(String(trainer?.rating ?? 5));
+    setReviewsCount(String(trainer?.reviews_count ?? 0));
+    setSpecialties((trainer?.specialties ?? []).join(", "));
     setBio(trainer?.bio ?? "");
     setSelectedUserId(trainer?.user_id ?? "");
     setSelectedTypes(trainer?.training_types.map((item) => item.id) ?? []);
@@ -63,6 +73,11 @@ export function TrainerFormModal({
         last_name: lastName.trim(),
         phone: phone.trim() || null,
         email: email.trim() || null,
+        photo_url: photoUrl.trim() || null,
+        position: position.trim() || null,
+        rating: rating ? Number.parseFloat(rating) : null,
+        reviews_count: reviewsCount ? Number.parseInt(reviewsCount, 10) : null,
+        specialties: specialties.split(",").map((item) => item.trim()).filter(Boolean),
         bio: bio.trim() || null,
         user_id: selectedUserId ? Number.parseInt(selectedUserId, 10) : null,
         training_type_ids: selectedTypes.map((value) => Number.parseInt(value, 10)),
@@ -84,7 +99,7 @@ export function TrainerFormModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(5,8,12,0.78)] px-4 py-8">
-      <div className="w-full max-w-3xl rounded-[30px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-6 shadow-[0_30px_90px_rgba(0,0,0,0.45)]">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-[30px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-6 shadow-[0_30px_90px_rgba(0,0,0,0.45)]">
         <div className="flex items-start justify-between gap-4">
           <div className="max-w-2xl">
             <p className="font-[family:var(--font-heading)] text-[1.9rem] font-semibold leading-none text-[var(--text-main)]">
@@ -125,10 +140,37 @@ export function TrainerFormModal({
             <label className={labelCls}>Email</label>
             <input value={email} onChange={(event) => setEmail(event.target.value)} className={`mt-2 ${inputCls}`} />
           </div>
+          <div>
+            <label className={labelCls}>Должность в приложении</label>
+            <input value={position} onChange={(event) => setPosition(event.target.value)} className={`mt-2 ${inputCls}`} placeholder="Тренер, главный тренер" />
+          </div>
+          <div>
+            <label className={labelCls}>Фото, URL</label>
+            <input value={photoUrl} onChange={(event) => setPhotoUrl(event.target.value)} className={`mt-2 ${inputCls}`} placeholder="https://..." />
+          </div>
+          <div>
+            <label className={labelCls}>Рейтинг</label>
+            <input type="number" min="0" max="5" step="0.1" value={rating} onChange={(event) => setRating(event.target.value)} className={`mt-2 ${inputCls}`} />
+          </div>
+          <div>
+            <label className={labelCls}>Кол-во отзывов</label>
+            <input type="number" min="0" value={reviewsCount} onChange={(event) => setReviewsCount(event.target.value)} className={`mt-2 ${inputCls}`} />
+          </div>
         </div>
 
         <div className="mt-4">
-          <label className={labelCls}>Bio</label>
+          <label className={labelCls}>Специализации</label>
+          <input
+            value={specialties}
+            onChange={(event) => setSpecialties(event.target.value)}
+            className={`mt-2 ${inputCls}`}
+            placeholder="Растяжка, функциональные, силовые"
+          />
+          <p className="mt-2 text-xs text-[var(--text-muted)]">Через запятую, показывается в клиентском Mini App.</p>
+        </div>
+
+        <div className="mt-4">
+          <label className={labelCls}>О тренере</label>
           <textarea
             value={bio}
             onChange={(event) => setBio(event.target.value)}

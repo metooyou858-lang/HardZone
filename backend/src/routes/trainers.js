@@ -12,6 +12,18 @@ function isUniqueUserLinkViolation(error) {
   return String(error?.message || '').includes('idx_trainers_user_id_unique');
 }
 
+function normalizeTextArray(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    return value.split(',').map((item) => item.trim()).filter(Boolean);
+  }
+
+  return [];
+}
+
 router.get('/', requireTrainersRead, async (req, res) => {
   try {
     const { rows } = await pool.query(`
@@ -67,7 +79,20 @@ router.get('/staff-users', requireTrainersManage, async (req, res) => {
 
 router.post('/', requireTrainersManage, async (req, res) => {
   try {
-    const { first_name, last_name, phone, email, bio, user_id, training_type_ids } = req.body;
+    const {
+      first_name,
+      last_name,
+      phone,
+      email,
+      bio,
+      user_id,
+      training_type_ids,
+      photo_url,
+      position,
+      rating,
+      reviews_count,
+      specialties,
+    } = req.body;
 
     if (!first_name || !last_name) {
       return res.status(422).json({ success: false, error: 'Укажите имя и фамилию' });
@@ -80,11 +105,26 @@ router.post('/', requireTrainersManage, async (req, res) => {
 
       const { rows } = await client.query(
         `
-          INSERT INTO trainers (user_id, first_name, last_name, phone, email, bio)
-          VALUES ($1, $2, $3, $4, $5, $6)
+          INSERT INTO trainers (
+            user_id, first_name, last_name, phone, email, bio,
+            photo_url, position, rating, reviews_count, specialties
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, 5.0), COALESCE($10, 0), $11)
           RETURNING *
         `,
-        [user_id || null, first_name, last_name, phone || null, email || null, bio || null]
+        [
+          user_id || null,
+          first_name,
+          last_name,
+          phone || null,
+          email || null,
+          bio || null,
+          photo_url || null,
+          position || null,
+          rating ?? null,
+          reviews_count ?? null,
+          normalizeTextArray(specialties),
+        ]
       );
 
       if (Array.isArray(training_type_ids) && training_type_ids.length > 0) {
@@ -115,7 +155,21 @@ router.post('/', requireTrainersManage, async (req, res) => {
 
 router.patch('/:id', requireTrainersManage, async (req, res) => {
   try {
-    const { first_name, last_name, phone, email, bio, user_id, is_active, training_type_ids } = req.body;
+    const {
+      first_name,
+      last_name,
+      phone,
+      email,
+      bio,
+      user_id,
+      is_active,
+      training_type_ids,
+      photo_url,
+      position,
+      rating,
+      reviews_count,
+      specialties,
+    } = req.body;
     const client = await pool.connect();
 
     try {
@@ -126,16 +180,42 @@ router.patch('/:id', requireTrainersManage, async (req, res) => {
           UPDATE trainers SET
             first_name = COALESCE($1, first_name),
             last_name  = COALESCE($2, last_name),
-            phone      = COALESCE($3, phone),
-            email      = COALESCE($4, email),
-            bio        = COALESCE($5, bio),
-            user_id    = CASE WHEN $6::BOOLEAN THEN $7 ELSE user_id END,
-            is_active  = COALESCE($8, is_active),
+            phone      = CASE WHEN $3::BOOLEAN THEN $4 ELSE phone END,
+            email      = CASE WHEN $5::BOOLEAN THEN $6 ELSE email END,
+            bio        = CASE WHEN $7::BOOLEAN THEN $8 ELSE bio END,
+            user_id    = CASE WHEN $9::BOOLEAN THEN $10 ELSE user_id END,
+            is_active  = COALESCE($11, is_active),
+            photo_url  = CASE WHEN $12::BOOLEAN THEN $13 ELSE photo_url END,
+            position   = CASE WHEN $14::BOOLEAN THEN $15 ELSE position END,
+            rating     = COALESCE($16, rating),
+            reviews_count = COALESCE($17, reviews_count),
+            specialties = CASE WHEN $18::BOOLEAN THEN $19 ELSE specialties END,
             updated_at = NOW()
-          WHERE id = $9
+          WHERE id = $20
           RETURNING *
         `,
-        [first_name, last_name, phone, email, bio, req.body?.user_id !== undefined, user_id || null, is_active, req.params.id]
+        [
+          first_name,
+          last_name,
+          req.body?.phone !== undefined,
+          phone || null,
+          req.body?.email !== undefined,
+          email || null,
+          req.body?.bio !== undefined,
+          bio || null,
+          req.body?.user_id !== undefined,
+          user_id || null,
+          is_active,
+          req.body?.photo_url !== undefined,
+          photo_url || null,
+          req.body?.position !== undefined,
+          position || null,
+          rating ?? null,
+          reviews_count ?? null,
+          req.body?.specialties !== undefined,
+          normalizeTextArray(specialties),
+          req.params.id,
+        ]
       );
 
       if (!rows[0]) {
