@@ -257,8 +257,8 @@ async function buildClientMiniAppPayload(clientId) {
         tt.tags AS training_type_tags,
         tr.first_name || ' ' || tr.last_name AS trainer_name,
         tr.photo_url AS trainer_photo_url,
-        tr.rating AS trainer_rating,
-        tr.reviews_count AS trainer_reviews_count,
+        COALESCE(rs.rating, 0)::FLOAT AS trainer_rating,
+        COALESCE(rs.reviews_count, 0)::INT AS trainer_reviews_count,
         COALESCE(SUM(
           CASE
             WHEN b.status IN ('confirmed', 'attended') THEN b.places_count
@@ -273,11 +273,20 @@ async function buildClientMiniAppPayload(clientId) {
       FROM schedule_slots ss
       LEFT JOIN training_types tt ON tt.id = ss.training_type_id
       LEFT JOIN trainers tr ON tr.id = ss.trainer_id
+      LEFT JOIN (
+        SELECT
+          trainer_id,
+          ROUND(AVG(rating)::NUMERIC, 1) AS rating,
+          COUNT(*) AS reviews_count
+        FROM trainer_reviews
+        WHERE is_visible = true
+        GROUP BY trainer_id
+      ) rs ON rs.trainer_id = tr.id
       LEFT JOIN bookings b ON b.slot_id = ss.id
       WHERE ss.status = 'active'
         AND ss.slot_type = 'group'
         AND ss.date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '14 days'
-      GROUP BY ss.id, tt.name, tt.color, tt.description, tt.audience, tt.location, tt.booking_note, tt.tags, tr.first_name, tr.last_name, tr.photo_url, tr.rating, tr.reviews_count
+      GROUP BY ss.id, tt.name, tt.color, tt.description, tt.audience, tt.location, tt.booking_note, tt.tags, tr.first_name, tr.last_name, tr.photo_url, rs.rating, rs.reviews_count
       HAVING ss.capacity > COALESCE(SUM(CASE WHEN b.status IN ('confirmed', 'attended') THEN b.places_count ELSE 0 END), 0)
         OR COALESCE(BOOL_OR(b.client_id = $1 AND b.status IN ('confirmed', 'attended')), false)
       ORDER BY ss.date, ss.start_time
@@ -295,18 +304,38 @@ async function buildClientMiniAppPayload(clientId) {
         t.position,
         t.bio,
         t.photo_url,
-        t.rating,
-        t.reviews_count,
+        COALESCE(rs.rating, 0)::FLOAT AS rating,
+        COALESCE(rs.reviews_count, 0)::INT AS reviews_count,
         t.specialties,
+        CASE
+          WHEN my_review.id IS NULL THEN NULL
+          ELSE json_build_object(
+            'rating', my_review.rating,
+            'comment', my_review.comment,
+            'updated_at', my_review.updated_at
+          )
+        END AS my_review,
         COALESCE(json_agg(tt.*) FILTER (WHERE tt.id IS NOT NULL), '[]') AS training_types
       FROM trainers t
       LEFT JOIN trainer_training_types ttt ON ttt.trainer_id = t.id
       LEFT JOIN training_types tt ON tt.id = ttt.training_type_id AND tt.is_active = true
+      LEFT JOIN (
+        SELECT
+          trainer_id,
+          ROUND(AVG(rating)::NUMERIC, 1) AS rating,
+          COUNT(*) AS reviews_count
+        FROM trainer_reviews
+        WHERE is_visible = true
+        GROUP BY trainer_id
+      ) rs ON rs.trainer_id = t.id
+      LEFT JOIN trainer_reviews my_review ON my_review.trainer_id = t.id
+        AND my_review.client_id = $1
       WHERE t.is_active = true
-      GROUP BY t.id
+      GROUP BY t.id, rs.rating, rs.reviews_count, my_review.id
       ORDER BY t.last_name, t.first_name
       LIMIT 50
-    `
+    `,
+    [client.id]
   );
 
   const { rows: debtRows } = await query(
@@ -593,6 +622,50 @@ async function cancelClientBooking(telegramId, bookingId) {
   }
 }
 
+async function saveTrainerReview(telegramId, trainerId, rating, comment) {
+  const clientId = await findClientIdByTelegramId(telegramId);
+  if (!clientId) {
+    return { status: 'not_linked' };
+  }
+
+  const normalizedRating = Number.parseInt(rating, 10);
+  if (!Number.isInteger(normalizedRating) || normalizedRating < 1 || normalizedRating > 5) {
+    return { status: 'invalid_rating' };
+  }
+
+  const { rows: trainerRows } = await query(
+    `
+      SELECT id
+      FROM trainers
+      WHERE id = $1
+        AND is_active = true
+      LIMIT 1
+    `,
+    [trainerId]
+  );
+
+  if (!trainerRows[0]) {
+    return { status: 'trainer_not_found' };
+  }
+
+  const normalizedComment = String(comment || '').trim().slice(0, 1000) || null;
+  await query(
+    `
+      INSERT INTO trainer_reviews (trainer_id, client_id, rating, comment)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (trainer_id, client_id)
+      DO UPDATE SET
+        rating = EXCLUDED.rating,
+        comment = EXCLUDED.comment,
+        is_visible = true,
+        updated_at = NOW()
+    `,
+    [trainerId, clientId, normalizedRating, normalizedComment]
+  );
+
+  return { status: 'saved', data: await buildClientMiniAppPayload(clientId) };
+}
+
 router.post('/miniapp-login', async (req, res) => {
   try {
     if (!getBotToken()) {
@@ -774,6 +847,45 @@ router.post('/client-miniapp-cancel-booking', async (req, res) => {
     return res.json({ success: true, data: result.data });
   } catch (error) {
     return sendInternalError(res, error, { route: 'telegram.client_miniapp_cancel_booking' });
+  }
+});
+
+router.post('/client-miniapp-trainer-review', async (req, res) => {
+  try {
+    const clientBotToken = getClientBotToken();
+    if (!clientBotToken) {
+      return res.status(503).json({ success: false, error: 'Telegram client bot token is not configured' });
+    }
+
+    const telegramUser = parseTelegramInitData(req.body?.init_data, clientBotToken);
+    if (!telegramUser?.id) {
+      return res.status(401).json({ success: false, error: 'Telegram авторизация недействительна' });
+    }
+
+    if (!req.body?.trainer_id) {
+      return res.status(422).json({ success: false, error: 'Укажите тренера' });
+    }
+
+    const result = await saveTrainerReview(
+      telegramUser.id,
+      req.body.trainer_id,
+      req.body.rating,
+      req.body.comment
+    );
+    const errorByStatus = {
+      not_linked: [403, 'Telegram не привязан к клиенту HardZone'],
+      invalid_rating: [422, 'Оценка должна быть от 1 до 5'],
+      trainer_not_found: [404, 'Тренер не найден'],
+    };
+
+    if (result.status !== 'saved') {
+      const [status, message] = errorByStatus[result.status] || [500, 'Не удалось сохранить отзыв'];
+      return res.status(status).json({ success: false, error: message });
+    }
+
+    return res.json({ success: true, data: result.data });
+  } catch (error) {
+    return sendInternalError(res, error, { route: 'telegram.client_miniapp_trainer_review' });
   }
 });
 

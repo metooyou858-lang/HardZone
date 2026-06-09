@@ -75,6 +75,11 @@ export type ClientMiniAppTrainer = {
   photo_url: string | null;
   rating: number | null;
   reviews_count: number;
+  my_review: {
+    rating: number;
+    comment: string | null;
+    updated_at: string;
+  } | null;
   specialties: string[];
   training_types: Array<{
     id: string;
@@ -165,6 +170,27 @@ export async function cancelClientMiniAppBooking(
   const data = (await response.json().catch(() => null)) as ApiEnvelope<ClientMiniAppPayload> | null;
   if (!response.ok || !data?.data) {
     throw new Error(data?.error || "Не удалось отменить запись");
+  }
+
+  return data.data;
+}
+
+export async function reviewClientMiniAppTrainer(
+  initData: string,
+  trainerId: string | number,
+  rating: number,
+  comment: string
+): Promise<ClientMiniAppPayload> {
+  const response = await fetch("/auth-api/telegram-client-miniapp-trainer-review", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ init_data: initData, trainer_id: trainerId, rating, comment }),
+  });
+
+  const data = (await response.json().catch(() => null)) as ApiEnvelope<ClientMiniAppPayload> | null;
+  if (!response.ok || !data?.data) {
+    throw new Error(data?.error || "Не удалось сохранить отзыв");
   }
 
   return data.data;

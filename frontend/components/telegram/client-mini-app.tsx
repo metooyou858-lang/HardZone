@@ -7,6 +7,7 @@ import {
   cancelClientMiniAppBooking,
   linkClientMiniAppPhone,
   loginClientMiniApp,
+  reviewClientMiniAppTrainer,
   type ClientMiniAppAvailableSlot,
   type ClientMiniAppPayload,
   type ClientMiniAppSubscription,
@@ -550,9 +551,21 @@ function ScheduleScreen({
   );
 }
 
-function TrainersScreen({ trainers }: { trainers: ClientMiniAppTrainer[] }) {
+function TrainersScreen({
+  trainers,
+  initData,
+  onPayloadUpdate,
+}: {
+  trainers: ClientMiniAppTrainer[];
+  initData: string;
+  onPayloadUpdate: (payload: ClientMiniAppPayload) => void;
+}) {
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewSaving, setReviewSaving] = useState(false);
+  const [reviewError, setReviewError] = useState("");
   const normalizedSearch = search.trim().toLowerCase();
   const visibleTrainers = trainers.filter((trainer) => {
     const haystack = [
@@ -565,6 +578,28 @@ function TrainersScreen({ trainers }: { trainers: ClientMiniAppTrainer[] }) {
     return !normalizedSearch || haystack.includes(normalizedSearch);
   });
   const selectedTrainer = selectedId ? trainers.find((trainer) => trainer.id === selectedId) || null : null;
+
+  useEffect(() => {
+    if (!selectedTrainer) return;
+    setReviewRating(selectedTrainer.my_review?.rating || 5);
+    setReviewComment(selectedTrainer.my_review?.comment || "");
+    setReviewError("");
+  }, [selectedTrainer]);
+
+  async function saveReview() {
+    if (!selectedTrainer) return;
+
+    setReviewSaving(true);
+    setReviewError("");
+
+    try {
+      onPayloadUpdate(await reviewClientMiniAppTrainer(initData, selectedTrainer.id, reviewRating, reviewComment));
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : "Не удалось сохранить отзыв");
+    } finally {
+      setReviewSaving(false);
+    }
+  }
 
   if (selectedTrainer) {
     const name = trainerName(selectedTrainer);
@@ -594,7 +629,51 @@ function TrainersScreen({ trainers }: { trainers: ClientMiniAppTrainer[] }) {
             </div>
           </div>
           <div className="space-y-3 p-3">
-            <div className="grid grid-cols-2 gap-2">
+            <section className="rounded-lg bg-[rgba(255,255,255,0.03)] p-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-medium text-[var(--text-main)]">Отзывы</h3>
+                <p className="text-xs text-[var(--text-muted)]">
+                  {selectedTrainer.reviews_count > 0
+                    ? `★ ${selectedTrainer.rating} · ${selectedTrainer.reviews_count}`
+                    : "Пока нет отзывов"}
+                </p>
+              </div>
+              <div className="mt-3 flex gap-1.5">
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setReviewRating(value)}
+                    className={`h-8 w-8 rounded-md text-sm ${
+                      value <= reviewRating
+                        ? "bg-[rgba(94,244,216,0.16)] text-[var(--accent)]"
+                        : "bg-[rgba(255,255,255,0.05)] text-[var(--text-muted)]"
+                    }`}
+                    aria-label={`Оценка ${value}`}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
+              <textarea
+                value={reviewComment}
+                onChange={(event) => setReviewComment(event.target.value)}
+                rows={3}
+                maxLength={1000}
+                placeholder="Ваш отзыв"
+                className="mt-3 w-full resize-none rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.04)] px-3 py-2 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
+              />
+              {reviewError ? <p className="mt-2 text-xs text-[#ffb599]">{reviewError}</p> : null}
+              <button
+                type="button"
+                onClick={() => void saveReview()}
+                disabled={reviewSaving}
+                className="mt-3 h-9 w-full rounded-md bg-[var(--accent)] text-xs font-medium text-[var(--text-inverse)] disabled:opacity-60"
+              >
+                {reviewSaving ? "Сохраняем..." : selectedTrainer.my_review ? "Обновить отзыв" : "Оставить отзыв"}
+              </button>
+            </section>
+            <div className="hidden grid-cols-2 gap-2">
               <button type="button" onClick={() => setSelectedId(null)} className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.04)] px-3 py-2 text-left text-xs font-medium text-[var(--text-main)]">
                 Расписание
               </button>
@@ -649,8 +728,8 @@ function TrainersScreen({ trainers }: { trainers: ClientMiniAppTrainer[] }) {
                       {name.slice(0, 1).toUpperCase()}
                     </div>
                   )}
-                  <span className="absolute left-2 top-2 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-[#0b1017]">
-                    ★ {trainer.rating ?? 5}
+                  <span className={`absolute left-2 top-2 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-[#0b1017] ${trainer.reviews_count > 0 ? "" : "hidden"}`}>
+                    ★ {trainer.rating}
                   </span>
                 </div>
                 <p className="mt-1 truncate text-xs font-medium text-[var(--text-main)]">{name}</p>
@@ -901,7 +980,9 @@ export function ClientMiniApp() {
             onCancel={(slot) => void cancelSlot(slot)}
           />
         ) : null}
-        {activeTab === "trainers" ? <TrainersScreen trainers={data?.trainers || []} /> : null}
+        {activeTab === "trainers" ? (
+          <TrainersScreen trainers={data?.trainers || []} initData={initData} onPayloadUpdate={(payload) => setData(payload)} />
+        ) : null}
         {activeTab === "profile" ? <ProfileScreen data={data} onOpenVisits={() => setActiveTab("visits")} /> : null}
         {activeTab === "visits" ? <VisitsScreen visits={data?.visits || []} /> : null}
       </div>

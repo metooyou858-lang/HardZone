@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 const express = require('express');
+const path = require('node:path');
 
 const authMiddleware = require('./middleware/auth');
 const { pool, query } = require('./db');
@@ -37,6 +38,7 @@ const host = process.env.HOST || '127.0.0.1';
 const requireModule = authMiddleware.requireModule;
 
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 app.use((req, res, next) => {
   const start = Date.now();

@@ -55,8 +55,6 @@ export async function createTrainer(data: {
   bio?: string | null;
   photo_url?: string | null;
   position?: string | null;
-  rating?: number | null;
-  reviews_count?: number | null;
   specialties?: string[];
   training_type_ids?: number[];
 }): Promise<Trainer> {
@@ -78,8 +76,6 @@ export async function updateTrainer(
     bio: string | null;
     photo_url: string | null;
     position: string | null;
-    rating: number | null;
-    reviews_count: number | null;
     specialties: string[];
     user_id: number | null;
     is_active: boolean;
@@ -96,4 +92,16 @@ export async function updateTrainer(
 
 export async function deleteTrainer(id: string): Promise<void> {
   await apiFetch(`/trainers/${id}`, { method: "DELETE" });
+}
+
+export async function uploadTrainerPhoto(id: string, file: File): Promise<Trainer> {
+  const formData = new FormData();
+  formData.append("photo", file);
+
+  const response = await apiFetch<ApiEnvelope<Trainer>>(`/trainers/${id}/photo`, {
+    method: "POST",
+    body: formData,
+  });
+
+  return response.data;
 }

@@ -1,4 +1,7 @@
 const express = require('express');
+const fs = require('node:fs');
+const path = require('node:path');
+const multer = require('multer');
 
 const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
@@ -7,6 +10,34 @@ const { sendInternalError } = require('../utils/http-response');
 const router = express.Router();
 const requireTrainersRead = authMiddleware.requireRole('owner', 'admin');
 const requireTrainersManage = authMiddleware.requireModule('services');
+const trainerPhotoDir = path.join(__dirname, '..', '..', 'uploads', 'trainers');
+const trainerPhotoStorage = multer.diskStorage({
+  destination: (_req, _file, callback) => {
+    fs.mkdirSync(trainerPhotoDir, { recursive: true });
+    callback(null, trainerPhotoDir);
+  },
+  filename: (_req, file, callback) => {
+    const extensionByMime = {
+      'image/jpeg': '.jpg',
+      'image/png': '.png',
+      'image/webp': '.webp',
+    };
+    const extension = extensionByMime[file.mimetype] || path.extname(file.originalname).toLowerCase();
+    callback(null, `${Date.now()}-${Math.random().toString(16).slice(2)}${extension}`);
+  },
+});
+const uploadTrainerPhoto = multer({
+  storage: trainerPhotoStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, callback) => {
+    if (['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error('Unsupported trainer photo type'));
+  },
+});
 
 function isUniqueUserLinkViolation(error) {
   return String(error?.message || '').includes('idx_trainers_user_id_unique');
@@ -28,7 +59,21 @@ router.get('/', requireTrainersRead, async (req, res) => {
   try {
     const { rows } = await pool.query(`
       SELECT
-        t.*,
+        t.id,
+        t.user_id,
+        t.first_name,
+        t.last_name,
+        t.phone,
+        t.email,
+        t.bio,
+        t.photo_url,
+        t.position,
+        COALESCE(rs.rating, 0)::FLOAT AS rating,
+        COALESCE(rs.reviews_count, 0)::INT AS reviews_count,
+        t.specialties,
+        t.is_active,
+        t.created_at,
+        t.updated_at,
         CASE
           WHEN u.id IS NULL THEN NULL
           ELSE json_build_object(
@@ -44,8 +89,17 @@ router.get('/', requireTrainersRead, async (req, res) => {
       LEFT JOIN users u ON u.id = t.user_id
       LEFT JOIN trainer_training_types ttt ON ttt.trainer_id = t.id
       LEFT JOIN training_types tt ON tt.id = ttt.training_type_id
+      LEFT JOIN (
+        SELECT
+          trainer_id,
+          ROUND(AVG(rating)::NUMERIC, 1) AS rating,
+          COUNT(*) AS reviews_count
+        FROM trainer_reviews
+        WHERE is_visible = true
+        GROUP BY trainer_id
+      ) rs ON rs.trainer_id = t.id
       WHERE t.is_active = true
-      GROUP BY t.id, u.id
+      GROUP BY t.id, u.id, rs.rating, rs.reviews_count
       ORDER BY t.last_name, t.first_name
     `);
 
@@ -89,8 +143,6 @@ router.post('/', requireTrainersManage, async (req, res) => {
       training_type_ids,
       photo_url,
       position,
-      rating,
-      reviews_count,
       specialties,
     } = req.body;
 
@@ -107,9 +159,9 @@ router.post('/', requireTrainersManage, async (req, res) => {
         `
           INSERT INTO trainers (
             user_id, first_name, last_name, phone, email, bio,
-            photo_url, position, rating, reviews_count, specialties
+            photo_url, position, specialties
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, 5.0), COALESCE($10, 0), $11)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
           RETURNING *
         `,
         [
@@ -121,8 +173,6 @@ router.post('/', requireTrainersManage, async (req, res) => {
           bio || null,
           photo_url || null,
           position || null,
-          rating ?? null,
-          reviews_count ?? null,
           normalizeTextArray(specialties),
         ]
       );
@@ -166,8 +216,6 @@ router.patch('/:id', requireTrainersManage, async (req, res) => {
       training_type_ids,
       photo_url,
       position,
-      rating,
-      reviews_count,
       specialties,
     } = req.body;
     const client = await pool.connect();
@@ -187,11 +235,9 @@ router.patch('/:id', requireTrainersManage, async (req, res) => {
             is_active  = COALESCE($11, is_active),
             photo_url  = CASE WHEN $12::BOOLEAN THEN $13 ELSE photo_url END,
             position   = CASE WHEN $14::BOOLEAN THEN $15 ELSE position END,
-            rating     = COALESCE($16, rating),
-            reviews_count = COALESCE($17, reviews_count),
-            specialties = CASE WHEN $18::BOOLEAN THEN $19 ELSE specialties END,
+            specialties = CASE WHEN $16::BOOLEAN THEN $17 ELSE specialties END,
             updated_at = NOW()
-          WHERE id = $20
+          WHERE id = $18
           RETURNING *
         `,
         [
@@ -210,8 +256,6 @@ router.patch('/:id', requireTrainersManage, async (req, res) => {
           photo_url || null,
           req.body?.position !== undefined,
           position || null,
-          rating ?? null,
-          reviews_count ?? null,
           req.body?.specialties !== undefined,
           normalizeTextArray(specialties),
           req.params.id,
@@ -248,6 +292,44 @@ router.patch('/:id', requireTrainersManage, async (req, res) => {
     }
 
     sendInternalError(res, err, { route: 'trainers.update' });
+  }
+});
+
+router.post('/:id/photo', requireTrainersManage, uploadTrainerPhoto.single('photo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(422).json({ success: false, error: 'Загрузите фото тренера' });
+    }
+
+    const photoUrl = `/uploads/trainers/${req.file.filename}`;
+    const { rows } = await pool.query(
+      `
+        UPDATE trainers
+        SET photo_url = $1,
+            updated_at = NOW()
+        WHERE id = $2
+          AND is_active = true
+        RETURNING *
+      `,
+      [photoUrl, req.params.id]
+    );
+
+    if (!rows[0]) {
+      fs.rm(req.file.path, { force: true }, () => {});
+      return res.status(404).json({ success: false, error: 'Тренер не найден' });
+    }
+
+    return res.json({ success: true, data: rows[0] });
+  } catch (err) {
+    if (req.file?.path) {
+      fs.rm(req.file.path, { force: true }, () => {});
+    }
+
+    if (err.message === 'Unsupported trainer photo type') {
+      return res.status(422).json({ success: false, error: 'Поддерживаются JPG, PNG или WebP' });
+    }
+
+    return sendInternalError(res, err, { route: 'trainers.photo' });
   }
 });
 

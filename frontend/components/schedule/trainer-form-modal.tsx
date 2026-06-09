@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import { CloseIcon } from "@/components/schedule/schedule-shared";
 import { inputCls, labelCls } from "@/components/warehouse/shared";
-import { createTrainer, type Trainer, type TrainerStaffUser, updateTrainer } from "@/lib/api/trainers";
+import { createTrainer, type Trainer, type TrainerStaffUser, updateTrainer, uploadTrainerPhoto } from "@/lib/api/trainers";
 import type { TrainingType } from "@/lib/api/training-types";
 export function TrainerFormModal({
   trainer,
@@ -23,10 +23,8 @@ export function TrainerFormModal({
   const [lastName, setLastName] = useState(trainer?.last_name ?? "");
   const [phone, setPhone] = useState(trainer?.phone ?? "");
   const [email, setEmail] = useState(trainer?.email ?? "");
-  const [photoUrl, setPhotoUrl] = useState(trainer?.photo_url ?? "");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [position, setPosition] = useState(trainer?.position ?? "");
-  const [rating, setRating] = useState(String(trainer?.rating ?? 5));
-  const [reviewsCount, setReviewsCount] = useState(String(trainer?.reviews_count ?? 0));
   const [specialties, setSpecialties] = useState((trainer?.specialties ?? []).join(", "));
   const [bio, setBio] = useState(trainer?.bio ?? "");
   const [selectedUserId, setSelectedUserId] = useState(trainer?.user_id ?? "");
@@ -39,10 +37,8 @@ export function TrainerFormModal({
     setLastName(trainer?.last_name ?? "");
     setPhone(trainer?.phone ?? "");
     setEmail(trainer?.email ?? "");
-    setPhotoUrl(trainer?.photo_url ?? "");
+    setPhotoFile(null);
     setPosition(trainer?.position ?? "");
-    setRating(String(trainer?.rating ?? 5));
-    setReviewsCount(String(trainer?.reviews_count ?? 0));
     setSpecialties((trainer?.specialties ?? []).join(", "));
     setBio(trainer?.bio ?? "");
     setSelectedUserId(trainer?.user_id ?? "");
@@ -73,21 +69,22 @@ export function TrainerFormModal({
         last_name: lastName.trim(),
         phone: phone.trim() || null,
         email: email.trim() || null,
-        photo_url: photoUrl.trim() || null,
         position: position.trim() || null,
-        rating: rating ? Number.parseFloat(rating) : null,
-        reviews_count: reviewsCount ? Number.parseInt(reviewsCount, 10) : null,
         specialties: specialties.split(",").map((item) => item.trim()).filter(Boolean),
         bio: bio.trim() || null,
         user_id: selectedUserId ? Number.parseInt(selectedUserId, 10) : null,
         training_type_ids: selectedTypes.map((value) => Number.parseInt(value, 10)),
       };
 
+      const savedTrainer = trainer ? await updateTrainer(trainer.id, payload) : await createTrainer(payload);
+
+      if (photoFile) {
+        await uploadTrainerPhoto(savedTrainer.id, photoFile);
+      }
+
       if (trainer) {
-        await updateTrainer(trainer.id, payload);
         onSaved("Тренер обновлён");
       } else {
-        await createTrainer(payload);
         onSaved("Тренер создан");
       }
     } catch (submitError) {
@@ -145,16 +142,16 @@ export function TrainerFormModal({
             <input value={position} onChange={(event) => setPosition(event.target.value)} className={`mt-2 ${inputCls}`} placeholder="Тренер, главный тренер" />
           </div>
           <div>
-            <label className={labelCls}>Фото, URL</label>
-            <input value={photoUrl} onChange={(event) => setPhotoUrl(event.target.value)} className={`mt-2 ${inputCls}`} placeholder="https://..." />
-          </div>
-          <div>
-            <label className={labelCls}>Рейтинг</label>
-            <input type="number" min="0" max="5" step="0.1" value={rating} onChange={(event) => setRating(event.target.value)} className={`mt-2 ${inputCls}`} />
-          </div>
-          <div>
-            <label className={labelCls}>Кол-во отзывов</label>
-            <input type="number" min="0" value={reviewsCount} onChange={(event) => setReviewsCount(event.target.value)} className={`mt-2 ${inputCls}`} />
+            <label className={labelCls}>Фото тренера</label>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(event) => setPhotoFile(event.target.files?.[0] || null)}
+              className={`mt-2 ${inputCls}`}
+            />
+            {trainer?.photo_url ? (
+              <p className="mt-2 truncate text-xs text-[var(--text-muted)]">Текущее фото: {trainer.photo_url}</p>
+            ) : null}
           </div>
         </div>
 
