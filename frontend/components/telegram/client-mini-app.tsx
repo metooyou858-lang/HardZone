@@ -1130,6 +1130,25 @@ function ClientAuthScreen({
   );
 }
 
+function ClientLoadingScreen({ viewportHeight }: { viewportHeight: number | null }) {
+  return (
+    <main
+      className="flex h-[100dvh] items-center overflow-hidden bg-[var(--bg-app)] px-4 py-8 text-[var(--text-main)]"
+      style={viewportHeight ? { height: `${viewportHeight}px` } : undefined}
+    >
+      <section className="mx-auto w-full max-w-md rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] p-5 shadow-[0_18px_42px_rgba(0,0,0,0.32)]">
+        <p className="font-[family:var(--font-mono)] text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">
+          HardZone
+        </p>
+        <h1 className="mt-2 text-xl font-medium leading-tight text-[var(--text-main)]">Проверяем вход</h1>
+        <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+          Получаем данные личного кабинета...
+        </p>
+      </section>
+    </main>
+  );
+}
+
 export function ClientMiniApp() {
   const viewportHeight = useTelegramStableViewportHeight();
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -1156,6 +1175,7 @@ export function ClientMiniApp() {
     setInitData(telegramInitData);
 
     if (!telegramInitData) {
+      setData(null);
       setAuthMode("telegram");
       setAuthError("Telegram не передал данные запуска. Откройте Mini App из кнопки в боте HardZone.");
       return;
@@ -1167,12 +1187,15 @@ export function ClientMiniApp() {
       setAuthMode("linked");
       setAuthError("");
     } catch (error) {
-      if (error instanceof Error && error.message.includes("не привязан")) {
+      const message = error instanceof Error ? error.message : "";
+      if (message.includes("не привязан")) {
+        setData(null);
         setAuthMode("phone");
         setAuthError("");
         return;
       }
 
+      setData(null);
       setAuthMode("telegram");
       setAuthError(error instanceof Error ? error.message : "Не удалось войти через Telegram");
     }
@@ -1233,6 +1256,10 @@ export function ClientMiniApp() {
   useEffect(() => {
     void authenticate();
   }, []);
+
+  if (authMode === "checking" || (authMode === "linked" && !data?.client)) {
+    return <ClientLoadingScreen viewportHeight={viewportHeight} />;
+  }
 
   if (authMode === "phone" || authMode === "telegram") {
     return (

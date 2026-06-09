@@ -154,6 +154,42 @@ function toClientIdentity(client) {
   };
 }
 
+async function logClientMiniAppAuthAttempt({
+  action,
+  status,
+  telegramUser,
+  phoneNormalized = null,
+  matchedClientId = null,
+  errorCode = null,
+}) {
+  try {
+    await query(
+      `
+        INSERT INTO client_miniapp_auth_audit (
+          action, status, telegram_id, telegram_username,
+          phone_normalized, matched_client_id, error_code
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `,
+      [
+        action,
+        status,
+        telegramUser?.id ? String(telegramUser.id) : null,
+        telegramUser?.username ? String(telegramUser.username) : null,
+        phoneNormalized,
+        matchedClientId,
+        errorCode,
+      ]
+    );
+  } catch (error) {
+    logger.warn('telegram_client_auth_audit_failed', {
+      action,
+      status,
+      message: error.message,
+    });
+  }
+}
+
 async function buildClientMiniAppPayload(clientId) {
   const { rows: clientRows } = await query(
     `
@@ -428,6 +464,8 @@ async function linkClientByPhone(telegramId, phone) {
     return { status: 'duplicate', phone_normalized: phoneNormalized };
   }
 
+  const matchedClientId = rows[0].id;
+
   await query(
     `
       UPDATE clients
@@ -437,12 +475,14 @@ async function linkClientByPhone(telegramId, phone) {
           updated_at = NOW()
       WHERE id = $4
     `,
-    [String(telegramId), phone, phoneNormalized, rows[0].id]
+    [String(telegramId), phone, phoneNormalized, matchedClientId]
   );
 
   return {
     status: 'linked',
-    data: await buildClientMiniAppPayload(rows[0].id),
+    phone_normalized: phoneNormalized,
+    matched_client_id: matchedClientId,
+    data: await buildClientMiniAppPayload(matchedClientId),
   };
 }
 
@@ -736,8 +776,21 @@ router.post('/client-miniapp-login', async (req, res) => {
 
     const data = await findClientByTelegramId(telegramUser.id);
     if (!data) {
+      await logClientMiniAppAuthAttempt({
+        action: 'login',
+        status: 'not_linked',
+        telegramUser,
+        errorCode: 'telegram_not_linked',
+      });
       return res.status(403).json({ success: false, error: 'Telegram не привязан к клиенту HardZone' });
     }
+
+    await logClientMiniAppAuthAttempt({
+      action: 'login',
+      status: 'success',
+      telegramUser,
+      matchedClientId: data.client.id,
+    });
 
     return res.json({ success: true, data });
   } catch (error) {
@@ -759,19 +812,47 @@ router.post('/client-miniapp-link-phone', async (req, res) => {
 
     const result = await linkClientByPhone(telegramUser.id, req.body?.phone);
     if (result.status === 'invalid_phone') {
+      await logClientMiniAppAuthAttempt({
+        action: 'link_phone',
+        status: 'invalid_phone',
+        telegramUser,
+        errorCode: 'invalid_phone',
+      });
       return res.status(422).json({ success: false, error: 'Укажите корректный номер телефона' });
     }
 
     if (result.status === 'not_found') {
+      await logClientMiniAppAuthAttempt({
+        action: 'link_phone',
+        status: 'not_found',
+        telegramUser,
+        phoneNormalized: result.phone_normalized,
+        errorCode: 'client_phone_not_found',
+      });
       return res.status(404).json({ success: false, error: 'Номер не найден среди клиентов HardZone' });
     }
 
     if (result.status === 'duplicate') {
+      await logClientMiniAppAuthAttempt({
+        action: 'link_phone',
+        status: 'duplicate',
+        telegramUser,
+        phoneNormalized: result.phone_normalized,
+        errorCode: 'client_phone_duplicate',
+      });
       return res.status(409).json({
         success: false,
         error: 'В CRM найдено несколько клиентов с таким номером. Обратитесь к администратору.',
       });
     }
+
+    await logClientMiniAppAuthAttempt({
+      action: 'link_phone',
+      status: 'linked',
+      telegramUser,
+      phoneNormalized: result.phone_normalized,
+      matchedClientId: result.matched_client_id,
+    });
 
     return res.json({ success: true, data: result.data });
   } catch (error) {
