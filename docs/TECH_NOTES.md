@@ -56,3 +56,11 @@
 ## URL и штрихкоды
 
 Символ `%` в URL ломает barcode lookup. Перед запросом к API штрихкод нужно нормализовать/кодировать.
+
+## Frontend load performance
+
+Global layout must not load third-party runtime scripts that are only needed by a narrow route group.
+
+- Telegram Web App SDK is loaded lazily by `frontend/components/telegram/telegram-web-app-script.ts`, only from Telegram Mini App pages.
+- `frontend/app/layout.tsx` imports fontsource subsets explicitly instead of broad weight files: keep CRM fonts limited to the actually used `cyrillic` and `latin` subsets.
+- After changing global layout imports, run `cd frontend; npm run build` and check `.next/static/media` / `.next/static/chunks` for accidental large global assets.

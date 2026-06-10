@@ -15,6 +15,8 @@ import {
   type ClientMiniAppVisit,
 } from "@/lib/api/client-miniapp";
 
+import { ensureTelegramWebAppScript } from "./telegram-web-app-script";
+
 declare global {
   interface Window {
     Telegram?: {
@@ -1201,6 +1203,8 @@ export function ClientMiniApp() {
   usePreventMiniAppRubberBand(scrollRef);
 
   async function authenticate() {
+    await ensureTelegramWebAppScript();
+
     const webApp = window.Telegram?.WebApp;
     webApp?.ready?.();
     webApp?.expand?.();

@@ -1,18 +1,20 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 
 import { AppShell } from "@/components/app-shell";
 import { NumberInputScrollGuard } from "@/components/number-input-scroll-guard";
 
-import "@fontsource/ibm-plex-mono/400.css";
-import "@fontsource/ibm-plex-mono/500.css";
-import "@fontsource/plus-jakarta-sans/400.css";
-import "@fontsource/plus-jakarta-sans/500.css";
-import "@fontsource/plus-jakarta-sans/600.css";
-import "@fontsource/plus-jakarta-sans/700.css";
-import "@fontsource/inter/400.css";
-import "@fontsource/inter/500.css";
-import "@fontsource/inter/600.css";
+import "@fontsource/ibm-plex-mono/cyrillic-400.css";
+import "@fontsource/ibm-plex-mono/cyrillic-500.css";
+import "@fontsource/ibm-plex-mono/latin-400.css";
+import "@fontsource/ibm-plex-mono/latin-500.css";
+import "@fontsource/plus-jakarta-sans/latin-600.css";
+import "@fontsource/plus-jakarta-sans/latin-700.css";
+import "@fontsource/inter/cyrillic-400.css";
+import "@fontsource/inter/cyrillic-500.css";
+import "@fontsource/inter/cyrillic-600.css";
+import "@fontsource/inter/latin-400.css";
+import "@fontsource/inter/latin-500.css";
+import "@fontsource/inter/latin-600.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -28,7 +30,6 @@ export default function RootLayout({
   return (
     <html lang="ru" className="h-full antialiased">
       <body className="min-h-full bg-[var(--bg-app)] text-[var(--text-main)]">
-        <Script src="https://telegram.org/js/telegram-web-app.js" strategy="beforeInteractive" />
         <NumberInputScrollGuard />
         <AppShell>{children}</AppShell>
       </body>
