@@ -2,8 +2,13 @@ const { resolveModules, hasModuleAccess } = require('../authz');
 const { pool } = require('../db');
 const {
   expireActiveSubscriptions,
-  restoreSubscriptionToActiveIfValid,
 } = require('./subscription-validity');
+const {
+  assertSubscriptionAccess,
+  chargeSubscriptionVisit,
+  getSlotAccessContext,
+  refundSubscriptionVisit,
+} = require('./subscription-access');
 const { normalizePhone } = require('../utils/phones');
 
 const CLUB_TIME_ZONE = process.env.APP_TIMEZONE || 'Asia/Vladivostok';
@@ -367,17 +372,13 @@ async function createBooking(staff, slotId, clientId, subscriptionId = null) {
 
     let placesCount = 1;
     if (subscriptionId) {
-      await expireActiveSubscriptions(client, { subscriptionId });
+      const subscription = await assertSubscriptionAccess(client, {
+        subscriptionId,
+        clientId,
+        context: await getSlotAccessContext(client, slotId),
+      });
 
-      const { rows: subscriptionRows } = await client.query(
-        "SELECT is_family FROM client_subscriptions WHERE id = $1 AND client_id = $2 AND status = 'active'",
-        [subscriptionId, clientId]
-      );
-      if (!subscriptionRows[0]) {
-        await client.query('ROLLBACK');
-        throw new Error('Абонемент истёк или неактивен');
-      }
-      if (subscriptionRows[0].is_family) {
+      if (subscription.is_family) {
         placesCount = 2;
       }
     }
@@ -442,32 +443,11 @@ async function markBookingAsAttended(staff, bookingId) {
     );
 
     if (booking.subscription_id) {
-      await expireActiveSubscriptions(client, { subscriptionId: booking.subscription_id });
-
-      const { rows: subscriptionRows } = await client.query(
-        'SELECT * FROM client_subscriptions WHERE id = $1',
-        [booking.subscription_id]
-      );
-      const subscription = subscriptionRows[0];
-
-      if (subscription?.status !== 'active') {
-        await client.query('ROLLBACK');
-        throw new Error('Абонемент истёк или неактивен');
-      }
-
-      if (subscription && ['visits', 'single'].includes(subscription.type) && (subscription.visits_left || 0) > 0) {
-        await client.query(
-          'UPDATE client_subscriptions SET visits_left = visits_left - 1, updated_at = NOW() WHERE id = $1',
-          [booking.subscription_id]
-        );
-
-        if ((subscription.visits_left || 0) - 1 === 0) {
-          await client.query(
-            'UPDATE client_subscriptions SET status = $1, updated_at = NOW() WHERE id = $2',
-            ['exhausted', booking.subscription_id]
-          );
-        }
-      }
+      await chargeSubscriptionVisit(client, {
+        subscriptionId: booking.subscription_id,
+        clientId: booking.client_id,
+        context: await getSlotAccessContext(client, booking.slot_id),
+      });
     }
 
     await client.query(
@@ -519,21 +499,7 @@ async function markBookingAsUnattended(staff, bookingId) {
 
     const chargedSubscriptionId = visitRows[0]?.subscription_id ?? null;
     if (chargedSubscriptionId) {
-      const { rows: subRows } = await client.query(
-        'SELECT * FROM client_subscriptions WHERE id = $1',
-        [chargedSubscriptionId]
-      );
-      const sub = subRows[0];
-
-      if (sub && ['visits', 'single'].includes(sub.type)) {
-        await client.query(
-          'UPDATE client_subscriptions SET visits_left = visits_left + 1, updated_at = NOW() WHERE id = $1',
-          [chargedSubscriptionId]
-        );
-        if (sub.status === 'exhausted') {
-          await restoreSubscriptionToActiveIfValid(client, chargedSubscriptionId);
-        }
-      }
+      await refundSubscriptionVisit(client, chargedSubscriptionId);
     }
 
     await client.query(

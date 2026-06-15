@@ -208,6 +208,9 @@ router.post('/:id/subscription-params', requireServiceSettingsManage, async (req
       freeze_min_days,
       freeze_max_count,
       is_family,
+      allow_free_visit,
+      allow_group_training,
+      allow_personal_training,
       training_type_ids,
     } = req.body;
 
@@ -220,8 +223,9 @@ router.post('/:id/subscription-params', requireServiceSettingsManage, async (req
         `
           INSERT INTO product_subscription_params
             (product_id, subscription_type, visits_total, validity_days, activation_type,
-             freeze_days_allowed, freeze_min_days, freeze_max_count, is_family)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+             freeze_days_allowed, freeze_min_days, freeze_max_count, is_family,
+             allow_free_visit, allow_group_training, allow_personal_training)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
           ON CONFLICT (product_id) DO UPDATE SET
             subscription_type   = EXCLUDED.subscription_type,
             visits_total        = EXCLUDED.visits_total,
@@ -231,6 +235,9 @@ router.post('/:id/subscription-params', requireServiceSettingsManage, async (req
             freeze_min_days     = EXCLUDED.freeze_min_days,
             freeze_max_count    = EXCLUDED.freeze_max_count,
             is_family           = EXCLUDED.is_family,
+            allow_free_visit    = EXCLUDED.allow_free_visit,
+            allow_group_training = EXCLUDED.allow_group_training,
+            allow_personal_training = EXCLUDED.allow_personal_training,
             updated_at          = NOW()
           RETURNING *
         `,
@@ -244,6 +251,9 @@ router.post('/:id/subscription-params', requireServiceSettingsManage, async (req
           freeze_min_days || 1,
           freeze_max_count || null,
           is_family || false,
+          allow_free_visit === true,
+          allow_group_training === true,
+          allow_personal_training === true,
         ]
       );
 

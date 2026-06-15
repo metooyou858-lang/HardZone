@@ -6,6 +6,7 @@ const { resolveModules } = require('../authz');
 const { pool, query } = require('../db');
 const logger = require('../services/logger');
 const { expireActiveSubscriptions } = require('../services/subscription-validity');
+const { assertSubscriptionAccess } = require('../services/subscription-access');
 const { sendInternalError } = require('../utils/http-response');
 const { normalizePhone } = require('../utils/phones');
 
@@ -578,7 +579,7 @@ async function bookClientSlot(telegramId, slotId) {
 
     const { rows: subscriptionRows } = await dbClient.query(
       `
-        SELECT *
+        SELECT id
         FROM client_subscriptions
         WHERE client_id = $1
           AND status = 'active'
@@ -592,7 +593,27 @@ async function bookClientSlot(telegramId, slotId) {
       [clientId]
     );
 
-    const subscription = subscriptionRows[0];
+    let subscription = null;
+    for (const candidate of subscriptionRows) {
+      try {
+        subscription = await assertSubscriptionAccess(dbClient, {
+          subscriptionId: candidate.id,
+          clientId,
+          context: {
+            kind: 'slot',
+            slotId: slot.id,
+            slotType: slot.slot_type,
+            trainingTypeId: slot.training_type_id,
+          },
+        });
+        break;
+      } catch (error) {
+        if (![404, 409].includes(error.statusCode)) {
+          throw error;
+        }
+      }
+    }
+
     if (!subscription) {
       await dbClient.query('ROLLBACK');
       return { status: 'no_subscription' };

@@ -31,6 +31,9 @@ type ServiceParamsForm = {
   freeze_min_days: string;
   freeze_max_count: string;
   is_family: boolean;
+  allow_free_visit: boolean;
+  allow_group_training: boolean;
+  allow_personal_training: boolean;
   training_type_ids: string[];
 };
 
@@ -51,6 +54,9 @@ function defaultServiceParams(): ServiceParamsForm {
     freeze_min_days: "1",
     freeze_max_count: "",
     is_family: false,
+    allow_free_visit: false,
+    allow_group_training: true,
+    allow_personal_training: false,
     training_type_ids: [],
   };
 }
@@ -75,6 +81,9 @@ function mapServiceParams(
     freeze_min_days: String(params.freeze_min_days ?? 1),
     freeze_max_count: params.freeze_max_count !== null ? String(params.freeze_max_count) : "",
     is_family: params.is_family,
+    allow_free_visit: params.allow_free_visit,
+    allow_group_training: params.allow_group_training,
+    allow_personal_training: params.allow_personal_training,
     training_type_ids: trainingTypeIds,
   };
 }
@@ -251,6 +260,9 @@ export function InlineEditForm({
           freeze_min_days: parseInteger(serviceForm.freeze_min_days, 1) ?? 1,
           freeze_max_count: parseInteger(serviceForm.freeze_max_count, null),
           is_family: serviceForm.is_family,
+          allow_free_visit: serviceForm.allow_free_visit,
+          allow_group_training: serviceForm.allow_group_training,
+          allow_personal_training: serviceForm.allow_personal_training,
           training_type_ids: serviceForm.training_type_ids.map((item) => Number.parseInt(item, 10)),
         });
       } catch (error: unknown) {
@@ -642,6 +654,32 @@ export function InlineEditForm({
                 />
                 Семейный абонемент
               </label>
+
+              <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+                <p className={labelCls}>Права доступа</p>
+                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                  {[
+                    ["allow_free_visit", "Свободное посещение"],
+                    ["allow_group_training", "Групповые тренировки"],
+                    ["allow_personal_training", "Персональные тренировки"],
+                  ].map(([field, title]) => (
+                    <label key={field} className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3 text-sm text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(serviceForm[field as keyof ServiceParamsForm])}
+                        onChange={(event) =>
+                          setServiceForm((previous) => ({
+                            ...previous,
+                            [field]: event.target.checked,
+                          }))
+                        }
+                        className="h-4 w-4 rounded border-slate-600"
+                      />
+                      {title}
+                    </label>
+                  ))}
+                </div>
+              </div>
 
               <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
                 <div className="flex items-center justify-between gap-3">

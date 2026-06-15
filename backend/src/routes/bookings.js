@@ -3,9 +3,11 @@ const express = require('express');
 const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
 const {
-  expireActiveSubscriptions,
-  restoreSubscriptionToActiveIfValid,
-} = require('../services/subscription-validity');
+  assertSubscriptionAccess,
+  chargeSubscriptionVisit,
+  getSlotAccessContext,
+  refundSubscriptionVisit,
+} = require('../services/subscription-access');
 const { getPublicErrorMessage } = require('../utils/http-response');
 
 const router = express.Router();
@@ -40,33 +42,11 @@ async function markBookingAsAttended(client, bookingId, { skipSubscription = fal
   );
 
   if (effectiveSubscriptionId) {
-    await expireActiveSubscriptions(client, { subscriptionId: effectiveSubscriptionId });
-
-    const { rows: subscriptionRows } = await client.query(
-      'SELECT * FROM client_subscriptions WHERE id = $1',
-      [effectiveSubscriptionId]
-    );
-    const subscription = subscriptionRows[0];
-
-    if (subscription?.status !== 'active') {
-      const error = new Error('Абонемент истёк или неактивен');
-      error.statusCode = 409;
-      throw error;
-    }
-
-    if (subscription && ['visits', 'single'].includes(subscription.type) && (subscription.visits_left || 0) > 0) {
-      await client.query(
-        'UPDATE client_subscriptions SET visits_left = visits_left - 1, updated_at = NOW() WHERE id = $1',
-        [effectiveSubscriptionId]
-      );
-
-      if ((subscription.visits_left || 0) - 1 === 0) {
-        await client.query(
-          'UPDATE client_subscriptions SET status = $1, updated_at = NOW() WHERE id = $2',
-          ['exhausted', effectiveSubscriptionId]
-        );
-      }
-    }
+    await chargeSubscriptionVisit(client, {
+      subscriptionId: effectiveSubscriptionId,
+      clientId: booking.client_id,
+      context: await getSlotAccessContext(client, booking.slot_id),
+    });
   }
 
   await client.query(
@@ -116,19 +96,13 @@ router.post('/', requireModule('schedule_clients'), async (req, res) => {
 
       let placesCount = 1;
       if (subscription_id) {
-        await expireActiveSubscriptions(client, { subscriptionId: subscription_id });
+        const subscription = await assertSubscriptionAccess(client, {
+          subscriptionId: subscription_id,
+          clientId: client_id,
+          context: await getSlotAccessContext(client, slot_id),
+        });
 
-        const { rows: subscriptionRows } = await client.query(
-          "SELECT is_family FROM client_subscriptions WHERE id = $1 AND status = 'active'",
-          [subscription_id]
-        );
-
-        if (!subscriptionRows[0]) {
-          await client.query('ROLLBACK');
-          return res.status(409).json({ success: false, error: 'Абонемент истёк или неактивен' });
-        }
-
-        if (subscriptionRows[0]?.is_family) {
+        if (subscription.is_family) {
           placesCount = 2;
         }
       }
@@ -285,21 +259,7 @@ router.post('/:id/unattend', requireModule('schedule_attendance'), async (req, r
       // Возвращаем визит только если при attend реально списывали (subscription_id в client_visits не null)
       const chargedSubscriptionId = visitRows[0]?.subscription_id ?? null;
       if (chargedSubscriptionId) {
-        const { rows: subRows } = await client.query(
-          'SELECT * FROM client_subscriptions WHERE id = $1',
-          [chargedSubscriptionId]
-        );
-        const sub = subRows[0];
-
-        if (sub && ['visits', 'single'].includes(sub.type)) {
-          await client.query(
-            'UPDATE client_subscriptions SET visits_left = visits_left + 1, updated_at = NOW() WHERE id = $1',
-            [chargedSubscriptionId]
-          );
-          if (sub.status === 'exhausted') {
-            await restoreSubscriptionToActiveIfValid(client, chargedSubscriptionId);
-          }
-        }
+        await refundSubscriptionVisit(client, chargedSubscriptionId);
       }
 
       // Удаляем бронь целиком и уменьшаем счётчик слота

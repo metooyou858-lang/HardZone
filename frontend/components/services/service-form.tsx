@@ -29,6 +29,9 @@ type ServiceParamsForm = {
   freeze_min_days: string;
   freeze_max_count: string;
   is_family: boolean;
+  allow_free_visit: boolean;
+  allow_group_training: boolean;
+  allow_personal_training: boolean;
   training_type_ids: string[];
 };
 
@@ -49,6 +52,9 @@ function defaultServiceParams(): ServiceParamsForm {
     freeze_min_days: "1",
     freeze_max_count: "",
     is_family: false,
+    allow_free_visit: false,
+    allow_group_training: true,
+    allow_personal_training: false,
     training_type_ids: [],
   };
 }
@@ -73,6 +79,9 @@ function mapServiceParams(
     freeze_min_days: String(params.freeze_min_days ?? 1),
     freeze_max_count: params.freeze_max_count !== null ? String(params.freeze_max_count) : "",
     is_family: params.is_family,
+    allow_free_visit: params.allow_free_visit,
+    allow_group_training: params.allow_group_training,
+    allow_personal_training: params.allow_personal_training,
     training_type_ids: trainingTypeIds,
   };
 }
@@ -245,6 +254,9 @@ export function ServiceForm({
         freeze_min_days: parseInteger(paramsForm.freeze_min_days, 1) ?? 1,
         freeze_max_count: parseInteger(paramsForm.freeze_max_count, null),
         is_family: paramsForm.is_family,
+        allow_free_visit: paramsForm.allow_free_visit,
+        allow_group_training: paramsForm.allow_group_training,
+        allow_personal_training: paramsForm.allow_personal_training,
         training_type_ids: paramsForm.training_type_ids.map((item) => Number.parseInt(item, 10)),
       });
 
@@ -495,6 +507,35 @@ export function ServiceForm({
             />
             Семейный абонемент
           </label>
+
+          <div>
+            <label className={labelCls}>Права доступа</label>
+            <div className="mt-2 grid gap-2 md:grid-cols-3">
+              {[
+                ["allow_free_visit", "Свободное посещение"],
+                ["allow_group_training", "Групповые тренировки"],
+                ["allow_personal_training", "Персональные тренировки"],
+              ].map(([field, title]) => (
+                <label
+                  key={field}
+                  className="flex items-center gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-4 py-3 text-sm text-[var(--text-main)]"
+                >
+                  <input
+                    type="checkbox"
+                    checked={Boolean(paramsForm[field as keyof ServiceParamsForm])}
+                    onChange={(event) =>
+                      setParamsForm((previous) => ({
+                        ...previous,
+                        [field]: event.target.checked,
+                      }))
+                    }
+                    className="h-4 w-4"
+                  />
+                  {title}
+                </label>
+              ))}
+            </div>
+          </div>
 
           <div>
             <div className="flex items-center justify-between gap-3">

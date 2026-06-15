@@ -23,6 +23,13 @@
 - удаление визита зала: удаление + возврат `visits_left`;
 - `skip_subscription` не должен увеличивать `visits_left`.
 
+Единая точка правил абонемента: `backend/src/services/subscription-access.js`.
+
+- `assertSubscriptionAccess` проверяет актуальный статус, остаток посещений, право свободного посещения / групповых / персональных тренировок и ограничения по видам тренировок.
+- `chargeSubscriptionVisit` списывает посещение через эти правила.
+- `refundSubscriptionVisit` возвращает посещение и восстанавливает `active`, если абонемент был `exhausted` и срок ещё действителен.
+- Новые маршруты расписания, CRM, staff и Telegram не должны писать собственный decrement/increment `visits_left`; они должны вызывать этот сервис.
+
 ## Sub-permissions расписания
 
 `schedule` дополнен sub-permissions:

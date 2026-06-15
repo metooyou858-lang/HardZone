@@ -59,6 +59,9 @@ export type ProductSubscriptionParams = {
   freeze_min_days: number;
   freeze_max_count: number | null;
   is_family: boolean;
+  allow_free_visit: boolean;
+  allow_group_training: boolean;
+  allow_personal_training: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -177,6 +180,9 @@ export async function saveProductSubscriptionParams(
     freeze_min_days?: number;
     freeze_max_count?: number | null;
     is_family?: boolean;
+    allow_free_visit?: boolean;
+    allow_group_training?: boolean;
+    allow_personal_training?: boolean;
     training_type_ids?: number[];
   }
 ): Promise<ProductSubscriptionParams> {

@@ -3,9 +3,9 @@ const express = require('express');
 const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
 const {
-  expireActiveSubscriptions,
-  restoreSubscriptionToActiveIfValid,
-} = require('../services/subscription-validity');
+  chargeSubscriptionVisit,
+  refundSubscriptionVisit,
+} = require('../services/subscription-access');
 const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
@@ -241,45 +241,14 @@ router.post('/open-gym/check-in', requireModule('schedule_gym'), async (req, res
       let resolvedSubscriptionId = null;
 
       if (subscription_id) {
-        await expireActiveSubscriptions(client, { subscriptionId: subscription_id });
+        const subscription = await chargeSubscriptionVisit(client, {
+          subscriptionId: subscription_id,
+          clientId: customer.id,
+          context: { kind: 'free_visit' },
+        });
 
-        const { rows: subRows } = await client.query(
-          `SELECT * FROM client_subscriptions WHERE id = $1 AND client_id = $2`,
-          [subscription_id, customer.id]
-        );
-        const sub = subRows[0];
-
-        if (!sub) {
-          await client.query('ROLLBACK');
-          return res.status(404).json({ success: false, error: 'Абонемент не найден' });
-        }
-
-        if (sub.status !== 'active') {
-          await client.query('ROLLBACK');
-          return res.status(409).json({ success: false, error: 'Абонемент неактивен' });
-        }
-
-        if (['visits', 'single'].includes(sub.type)) {
-          if ((sub.visits_left || 0) <= 0) {
-            await client.query('ROLLBACK');
-            return res.status(409).json({ success: false, error: 'Визиты по абонементу исчерпаны' });
-          }
-
-          const newVisitsLeft = (sub.visits_left || 0) - 1;
-
-          await client.query(
-            `UPDATE client_subscriptions
-             SET visits_left = $1,
-                 status = CASE WHEN $1 = 0 THEN 'exhausted'::subscription_status ELSE status END,
-                 updated_at = NOW()
-             WHERE id = $2`,
-            [newVisitsLeft, sub.id]
-          );
-        }
-
-        resolvedSubscriptionId = sub.id;
+        resolvedSubscriptionId = subscription.id;
       }
-
       const { rows: insertedRows } = await client.query(
         `INSERT INTO client_visits (client_id, subscription_id, visit_type, created_by)
          VALUES ($1, $2, 'open_gym', $3)
@@ -340,21 +309,7 @@ router.delete('/open-gym/visits/:id', requireModule('schedule_gym'), async (req,
     const deleted = rows[0];
 
     if (deleted.subscription_id) {
-      const { rows: subRows } = await client.query(
-        'SELECT * FROM client_subscriptions WHERE id = $1',
-        [deleted.subscription_id]
-      );
-      const sub = subRows[0];
-
-      if (sub && ['visits', 'single'].includes(sub.type)) {
-        await client.query(
-          'UPDATE client_subscriptions SET visits_left = visits_left + 1, updated_at = NOW() WHERE id = $1',
-          [deleted.subscription_id]
-        );
-        if (sub.status === 'exhausted') {
-          await restoreSubscriptionToActiveIfValid(client, deleted.subscription_id);
-        }
-      }
+      await refundSubscriptionVisit(client, deleted.subscription_id);
     }
 
     await client.query('COMMIT');

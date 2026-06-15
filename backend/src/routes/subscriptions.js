@@ -11,6 +11,10 @@ const {
   buildLegacySubscriptionImportPlan,
   importLegacySubscriptions,
 } = require('../services/legacy-subscription-import');
+const {
+  chargeSubscriptionVisit,
+  getSlotAccessContext,
+} = require('../services/subscription-access');
 const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
@@ -105,6 +109,9 @@ router.get('/legacy-services', requireLegacySubscriptions, async (_req, res) => 
         psp.validity_days,
         psp.activation_type,
         psp.is_family,
+        psp.allow_free_visit,
+        psp.allow_group_training,
+        psp.allow_personal_training,
         COALESCE(
           json_agg(
             json_build_object('id', tt.id, 'name', tt.name, 'color', tt.color)
@@ -419,51 +426,15 @@ router.post('/:id/visit', async (req, res) => {
     const { visit_type = 'group', schedule_id, created_by } = req.body;
 
     await client.query('BEGIN');
-    await expireActiveSubscriptions(client, { subscriptionId: req.params.id });
 
-    const { rows: subRows } = await client.query(
-      'SELECT * FROM client_subscriptions WHERE id = $1 AND status = $2',
-      [req.params.id, 'active']
-    );
-    const subscription = subRows[0];
+    const context = visit_type === 'open_gym'
+      ? { kind: 'free_visit' }
+      : await getSlotAccessContext(client, schedule_id);
 
-    if (!subscription) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ success: false, error: 'Активный абонемент не найден' });
-    }
-
-    if (['period', 'unlimited'].includes(subscription.type) && subscription.expires_at) {
-      if (new Date(subscription.expires_at) < new Date()) {
-        await client.query(
-          'UPDATE client_subscriptions SET status = $1, updated_at = NOW() WHERE id = $2',
-          ['expired', subscription.id]
-        );
-        await client.query('COMMIT');
-        return res.status(409).json({ success: false, error: 'Абонемент истёк' });
-      }
-    }
-
-    if (['visits', 'single'].includes(subscription.type)) {
-      if ((subscription.visits_left || 0) <= 0) {
-        await client.query(
-          'UPDATE client_subscriptions SET status = $1, updated_at = NOW() WHERE id = $2',
-          ['exhausted', subscription.id]
-        );
-        await client.query('COMMIT');
-        return res.status(409).json({ success: false, error: 'Занятия закончились' });
-      }
-
-      await client.query(
-        `
-          UPDATE client_subscriptions
-          SET visits_left = visits_left - 1,
-              status = CASE WHEN visits_left - 1 <= 0 THEN 'exhausted' ELSE status END,
-              updated_at = NOW()
-          WHERE id = $1
-        `,
-        [subscription.id]
-      );
-    }
+    const subscription = await chargeSubscriptionVisit(client, {
+      subscriptionId: req.params.id,
+      context,
+    });
 
     const { rows } = await client.query(
       `

@@ -110,6 +110,9 @@ export type LegacySubscriptionService = {
   validity_days: number | null;
   activation_type: "purchase" | "first_visit";
   is_family: boolean;
+  allow_free_visit: boolean;
+  allow_group_training: boolean;
+  allow_personal_training: boolean;
   training_types: Array<{ id: string; name: string; color: string | null }>;
 };
 
