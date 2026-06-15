@@ -42,6 +42,119 @@ function ReadonlyField({ label, value, wide = false }: { label: string; value: s
   );
 }
 
+function AthleteStat({ label, value, hint }: { label: string; value: string | number; hint: string }) {
+  return (
+    <div className="rounded-[20px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4">
+      <p className={clientLabelCls}>{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-[var(--text-main)]">{value}</p>
+      <p className="mt-1 text-xs text-[var(--text-muted)]">{hint}</p>
+    </div>
+  );
+}
+
+function AthleteEmptyBlock({ title, text, action }: { title: string; text: string; action: string }) {
+  return (
+    <div className="rounded-[20px] border border-dashed border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-[var(--text-main)]">{title}</p>
+          <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">{text}</p>
+        </div>
+        <button
+          type="button"
+          className="rounded-[14px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-muted)]"
+          disabled
+        >
+          {action}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AthleteMetricGroup({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="rounded-[20px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4">
+      <p className="text-sm font-semibold text-[var(--text-main)]">{title}</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {items.map((item) => (
+          <div key={item} className="rounded-[14px] border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] px-3 py-2">
+            <p className="text-xs text-[var(--text-main)]">{item}</p>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">Не заполнено</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AthleteProfilePanel({ client }: { client: ClientDetail }) {
+  const currentSubscription =
+    client.subscriptions.find((item) => item.status === "active") ??
+    client.subscriptions.find((item) => item.status === "frozen") ??
+    null;
+  const lastVisit = client.visits[0] ?? null;
+
+  return (
+    <div className="mt-6 rounded-[24px] border border-[var(--line-soft)] bg-[rgba(255,255,255,0.025)] p-5">
+      <div>
+        <p className="font-[family:var(--font-heading)] text-lg font-semibold text-[var(--text-main)]">
+          Профиль атлета
+        </p>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">
+          Спортивная часть карточки клиента: цели, ограничения, навыки и рабочие показатели.
+        </p>
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        <AthleteStat label="Посещений" value={client.visits.length} hint="последние 20 в карточке" />
+        <AthleteStat
+          label="Абонемент"
+          value={currentSubscription ? getSubscriptionStatusMeta(currentSubscription.status).label : "—"}
+          hint={currentSubscription ? describeSubscription(currentSubscription) : "нет активного доступа"}
+        />
+        <AthleteStat
+          label="Последняя тренировка"
+          value={lastVisit ? formatClientDate(lastVisit.visited_at) : "—"}
+          hint={lastVisit ? getVisitTypeLabel(lastVisit.visit_type) : "посещений пока нет"}
+        />
+      </div>
+
+      <div className="mt-4 space-y-4">
+        <AthleteMetricGroup
+          title="Силовые показатели и 1ПМ"
+          items={[
+            "Присед со штангой на спине",
+            "Фронтальный присед",
+            "Присед со штангой над головой",
+            "Рывок",
+            "Взятие + толчок",
+            "Взятие на грудь",
+            "Становая тяга",
+            "Жим лёжа",
+            "Строгий жим стоя",
+            "Толчковый швунг",
+          ]}
+        />
+        <AthleteMetricGroup
+          title="Гимнастика и выносливость"
+          items={[
+            "Максимум строгих подтягиваний",
+            "Гребля 1 км",
+            "Бег 5 км",
+            "Бег 10 км",
+          ]}
+        />
+        <AthleteEmptyBlock
+          title="Навыки и ограничения"
+          text="Уровни навыков, цели, травмы и ограничения относятся к профилю атлета, а не к расписанию."
+          action="Добавим поля"
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function ClientDetailsPage() {
   const params = useParams<{ id: string }>();
   const clientId = String(params.id);
@@ -400,6 +513,8 @@ export default function ClientDetailsPage() {
                 <ReadonlyField label="Комментарий" value={client.comment ?? ""} wide />
               </div>
             )}
+
+            <AthleteProfilePanel client={client} />
           </div>
 
           <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-6">

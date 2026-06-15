@@ -1068,12 +1068,31 @@ function VisitsScreen({ visits }: { visits: ClientMiniAppVisit[] }) {
 
 function ProfileScreen({ data, onOpenVisits }: { data: ClientMiniAppPayload | null; onOpenVisits: () => void }) {
   const client = data?.client;
+  const lastVisit = data?.visits[0] ?? null;
 
   return (
     <div className="space-y-3 px-3 pb-3 pt-2">
       <ClientCard data={data} />
       <section className="grid grid-cols-1 gap-2">
         <Stat label="посещений" value={data?.visits.length ?? "..."} onClick={onOpenVisits} />
+      </section>
+      <section className="rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.025)] p-3">
+        <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">Атлет</p>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-2.5">
+            <p className="text-[10px] text-[var(--text-muted)]">Последняя тренировка</p>
+            <p className="mt-1 truncate text-xs font-medium text-[var(--text-main)]">
+              {lastVisit ? visitDateTime(lastVisit) : "Пока нет"}
+            </p>
+          </div>
+          <div className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-2.5">
+            <p className="text-[10px] text-[var(--text-muted)]">Показатели</p>
+            <p className="mt-1 truncate text-xs font-medium text-[var(--text-main)]">Заполняются в CRM</p>
+          </div>
+        </div>
+        <p className="mt-3 text-xs leading-5 text-[var(--text-muted)]">
+          Силовые показатели, навыки и тренировочные результаты появятся здесь после заполнения тренером в CRM.
+        </p>
       </section>
       <section className="rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.025)] p-3">
         <div className="space-y-2.5 text-xs">

@@ -46,6 +46,43 @@ Before production work:
 5. Fix effective subscription validity: expired `active` subscriptions must not appear usable in CRM, Telegram Mini Apps, or booking flows.
 6. Replace raw `<img>` tags in Telegram Mini Apps with `next/image` or explicitly document why plain images are kept for Telegram runtime stability.
 
+## Next Product Work: Athlete Diary
+
+Agreed direction:
+
+1. Add a separate CRM module `Тренировки`.
+   - Trainer creates a workout/program of the day.
+   - Trainer links the workout to schedule slots or training types.
+   - The workout is not created inside an individual client card.
+2. Keep the client card focused on the client and athlete profile.
+   - Client data: name, birth date, phone, email, discount, comment, barcode.
+   - Membership data: active subscriptions and subscription history.
+   - Attendance data: visited classes.
+   - Athlete profile: strength metrics, skills, goals, limitations.
+3. Athlete profile metrics to model first:
+   - 1RM back squat;
+   - 1RM front squat;
+   - 1RM overhead squat;
+   - 1RM snatch;
+   - 1RM clean and jerk;
+   - 1RM clean;
+   - 1RM deadlift;
+   - 1RM bench press;
+   - 1RM strict press;
+   - 1RM push jerk;
+   - max strict pull-ups;
+   - 1 km row;
+   - 5 km run;
+   - 10 km run.
+4. Telegram client cabinet should be treated as `Дневник атлета`.
+   - Preserve existing agreed tabs and flows.
+   - Show backend/CRM data only; no separate mock/demo product logic.
+   - Do not show staff-only financial/administrative details to the athlete.
+5. REST Client can be added as a helper for manual API checks.
+   - Suggested files: `docs/api-requests/clients.http`, `schedule.http`, `telegram.http`, `workouts.http`.
+   - Do not commit real tokens, cookies, AQSI keys, or dangerous production write requests.
+   - REST Client is not a replacement for CI, remote backend tests, or production smoke checks.
+
 ## Current Production Notes
 
 - Production backend: `inventory-backend`, PM2, port `3000`.
