@@ -378,12 +378,16 @@ export function TrainingTypesManager({ onClose }: { onClose: () => void }) {
                       )}
                     </div>
 
-                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-400">
-                      <span>{item.slot_type === "personal" ? "Персональная" : "Групповая"}</span>
-                      <span>•</span>
-                      <span>{item.duration ? `${item.duration} мин` : "Без длительности"}</span>
-                      <span>•</span>
-                      <span>{item.capacity ? `${item.capacity} мест` : "Без лимита мест"}</span>
+                    <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-slate-400">
+                      {[
+                        item.slot_type === "personal" ? "Персональная" : "Групповая",
+                        item.duration ? `${item.duration} мин` : "Без длительности",
+                        item.capacity ? `${item.capacity} мест` : "Без лимита мест",
+                      ].map((label) => (
+                        <span key={label} className="rounded-full bg-slate-900/50 px-2 py-0.5">
+                          {label}
+                        </span>
+                      ))}
                     </div>
 
                     {item.description && <p className="mt-1 text-xs text-slate-500">{item.description}</p>}
