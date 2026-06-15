@@ -5,6 +5,7 @@ const { handleTelegramUpdate } = require('../services/telegram-bot');
 const { resolveModules } = require('../authz');
 const { pool, query } = require('../db');
 const logger = require('../services/logger');
+const { expireActiveSubscriptions } = require('../services/subscription-validity');
 const { sendInternalError } = require('../utils/http-response');
 const { normalizePhone } = require('../utils/phones');
 
@@ -205,6 +206,8 @@ async function buildClientMiniAppPayload(clientId) {
   if (!client) {
     return null;
   }
+
+  await expireActiveSubscriptions(pool, { clientId: client.id });
 
   const { rows: subscriptions } = await query(
     `
@@ -570,6 +573,8 @@ async function bookClientSlot(telegramId, slotId) {
         return { status: 'booking_closed' };
       }
     }
+
+    await expireActiveSubscriptions(dbClient, { clientId });
 
     const { rows: subscriptionRows } = await dbClient.query(
       `

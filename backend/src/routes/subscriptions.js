@@ -1,6 +1,10 @@
 const express = require('express');
 
 const { pool } = require('../db');
+const {
+  CLUB_TIME_ZONE,
+  expireActiveSubscriptions,
+} = require('../services/subscription-validity');
 const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
@@ -12,6 +16,8 @@ router.post('/', async (req, res) => {
     if (!client_id || !type) {
       return res.status(422).json({ success: false, error: 'Укажите клиента и тип абонемента' });
     }
+
+    await expireActiveSubscriptions(pool, { clientId: client_id });
 
     await pool.query(
       `
@@ -62,6 +68,8 @@ router.post('/:id/freeze', async (req, res) => {
     const { reason } = req.body;
 
     await client.query('BEGIN');
+    await expireActiveSubscriptions(client, { subscriptionId: req.params.id });
+
     const { rows: subRows } = await client.query(
       'SELECT * FROM client_subscriptions WHERE id = $1 AND status = $2',
       [req.params.id, 'active']
@@ -122,7 +130,11 @@ router.post('/:id/unfreeze', async (req, res) => {
     await client.query(
       `
         UPDATE client_subscriptions
-        SET status = 'active',
+        SET status = CASE
+              WHEN expires_at IS NOT NULL AND (expires_at + $1) < (NOW() AT TIME ZONE $3)::date
+                THEN 'expired'::subscription_status
+              ELSE 'active'::subscription_status
+            END,
             expires_at = CASE
               WHEN expires_at IS NULL THEN NULL
               ELSE expires_at + $1
@@ -130,7 +142,7 @@ router.post('/:id/unfreeze', async (req, res) => {
             updated_at = NOW()
         WHERE id = $2
       `,
-      [daysFrozen, req.params.id]
+      [daysFrozen, req.params.id, CLUB_TIME_ZONE]
     );
 
     await client.query('COMMIT');
@@ -150,6 +162,8 @@ router.post('/:id/visit', async (req, res) => {
     const { visit_type = 'group', schedule_id, created_by } = req.body;
 
     await client.query('BEGIN');
+    await expireActiveSubscriptions(client, { subscriptionId: req.params.id });
+
     const { rows: subRows } = await client.query(
       'SELECT * FROM client_subscriptions WHERE id = $1 AND status = $2',
       [req.params.id, 'active']

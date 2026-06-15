@@ -212,6 +212,9 @@ function subscriptionTitle(subscription: ClientMiniAppSubscription | null) {
 
 function subscriptionMeta(subscription: ClientMiniAppSubscription | null) {
   if (!subscription) return "Обратитесь на ресепшн HardZone";
+  if (subscription.status === "expired") return "Срок действия закончился";
+  if (subscription.status === "exhausted") return "Посещения закончились";
+  if (subscription.status === "frozen") return "Заморожен";
   if (subscription.type === "visits" || subscription.type === "single") {
     return subscription.visits_left === null ? "Посещения не ограничены" : `Осталось ${subscription.visits_left}`;
   }
@@ -683,7 +686,7 @@ function VisitItem({ visit }: { visit: ClientMiniAppVisit }) {
 }
 
 function HomeScreen({ data }: { data: ClientMiniAppPayload | null }) {
-  const activeSubscription = data?.subscriptions.find((item) => item.status === "active") || data?.subscriptions[0] || null;
+  const activeSubscription = data?.subscriptions.find((item) => item.status === "active") || null;
   const bookings = sortByDateTime(data?.bookings || []);
 
   return (

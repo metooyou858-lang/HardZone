@@ -2,6 +2,10 @@ const express = require('express');
 
 const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
+const {
+  expireActiveSubscriptions,
+  restoreSubscriptionToActiveIfValid,
+} = require('../services/subscription-validity');
 const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
@@ -237,6 +241,8 @@ router.post('/open-gym/check-in', requireModule('schedule_gym'), async (req, res
       let resolvedSubscriptionId = null;
 
       if (subscription_id) {
+        await expireActiveSubscriptions(client, { subscriptionId: subscription_id });
+
         const { rows: subRows } = await client.query(
           `SELECT * FROM client_subscriptions WHERE id = $1 AND client_id = $2`,
           [subscription_id, customer.id]
@@ -346,10 +352,7 @@ router.delete('/open-gym/visits/:id', requireModule('schedule_gym'), async (req,
           [deleted.subscription_id]
         );
         if (sub.status === 'exhausted') {
-          await client.query(
-            "UPDATE client_subscriptions SET status = 'active', updated_at = NOW() WHERE id = $1",
-            [deleted.subscription_id]
-          );
+          await restoreSubscriptionToActiveIfValid(client, deleted.subscription_id);
         }
       }
     }

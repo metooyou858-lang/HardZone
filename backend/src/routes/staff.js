@@ -2,6 +2,10 @@ const express = require('express');
 
 const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
+const {
+  expireActiveSubscriptions,
+  restoreSubscriptionToActiveIfValid,
+} = require('../services/subscription-validity');
 const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
@@ -112,11 +116,19 @@ async function markBookingAsAttended(executor, bookingId, { skipSubscription = f
   );
 
   if (effectiveSubscriptionId) {
+    await expireActiveSubscriptions(executor, { subscriptionId: effectiveSubscriptionId });
+
     const { rows: subscriptionRows } = await executor.query(
       'SELECT * FROM client_subscriptions WHERE id = $1',
       [effectiveSubscriptionId]
     );
     const subscription = subscriptionRows[0];
+
+    if (subscription?.status !== 'active') {
+      const error = new Error('Абонемент истёк или неактивен');
+      error.statusCode = 409;
+      throw error;
+    }
 
     if (subscription && ['visits', 'single'].includes(subscription.type) && (subscription.visits_left || 0) > 0) {
       await executor.query(
@@ -305,14 +317,16 @@ router.post('/bookings', requireModule('schedule_clients'), async (req, res) => 
 
     let placesCount = 1;
     if (subscription_id) {
+      await expireActiveSubscriptions(client, { subscriptionId: subscription_id });
+
       const { rows: subscriptionRows } = await client.query(
-        'SELECT is_family FROM client_subscriptions WHERE id = $1 AND client_id = $2',
+        "SELECT is_family FROM client_subscriptions WHERE id = $1 AND client_id = $2 AND status = 'active'",
         [subscription_id, client_id]
       );
 
       if (!subscriptionRows[0]) {
         await client.query('ROLLBACK');
-        return res.status(404).json({ success: false, error: 'Subscription not found' });
+        return res.status(409).json({ success: false, error: 'Subscription expired or inactive' });
       }
 
       if (subscriptionRows[0].is_family) {
@@ -428,10 +442,7 @@ router.post('/bookings/:id/unattend', requireModule('schedule_attendance'), asyn
           [chargedSubscriptionId]
         );
         if (sub.status === 'exhausted') {
-          await client.query(
-            "UPDATE client_subscriptions SET status = 'active', updated_at = NOW() WHERE id = $1",
-            [chargedSubscriptionId]
-          );
+          await restoreSubscriptionToActiveIfValid(client, chargedSubscriptionId);
         }
       }
     }
@@ -456,6 +467,8 @@ router.post('/bookings/:id/unattend', requireModule('schedule_attendance'), asyn
 
 router.get('/client-search', requireModule('clients'), async (req, res) => {
   try {
+    await expireActiveSubscriptions(pool);
+
     const search = String(req.query.search || req.query.q || '').trim();
     const limit = parseLimit(req.query.limit, 10, 25);
 

@@ -5,6 +5,7 @@ const fs = require('fs');
 
 const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
+const { expireActiveSubscriptions } = require('../services/subscription-validity');
 const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
@@ -31,6 +32,8 @@ async function generateClientBarcode() {
 
 router.get('/', requireClientsRead, async (req, res) => {
   try {
+    await expireActiveSubscriptions(pool);
+
     const { search, status, limit = 50, offset = 0 } = req.query;
     const params = [];
     const conditions = [];
@@ -189,6 +192,8 @@ router.post('/import', requireClientsImport, upload.single('file'), async (req, 
 
 router.get('/barcode/:barcode', requireClientsRead, async (req, res) => {
   try {
+    await expireActiveSubscriptions(pool);
+
     const { rows } = await pool.query(
       `
         SELECT
@@ -225,6 +230,8 @@ router.get('/:id', requireClientsRead, async (req, res) => {
     if (!clientRows[0]) {
       return res.status(404).json({ success: false, error: 'Клиент не найден' });
     }
+
+    await expireActiveSubscriptions(pool, { clientId: req.params.id });
 
     const { rows: subscriptions } = await pool.query(
       `SELECT cs.*, p.name AS product_name,

@@ -2,6 +2,10 @@ const express = require('express');
 
 const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
+const {
+  expireActiveSubscriptions,
+  restoreSubscriptionToActiveIfValid,
+} = require('../services/subscription-validity');
 const { getPublicErrorMessage } = require('../utils/http-response');
 
 const router = express.Router();
@@ -36,11 +40,19 @@ async function markBookingAsAttended(client, bookingId, { skipSubscription = fal
   );
 
   if (effectiveSubscriptionId) {
+    await expireActiveSubscriptions(client, { subscriptionId: effectiveSubscriptionId });
+
     const { rows: subscriptionRows } = await client.query(
       'SELECT * FROM client_subscriptions WHERE id = $1',
       [effectiveSubscriptionId]
     );
     const subscription = subscriptionRows[0];
+
+    if (subscription?.status !== 'active') {
+      const error = new Error('Абонемент истёк или неактивен');
+      error.statusCode = 409;
+      throw error;
+    }
 
     if (subscription && ['visits', 'single'].includes(subscription.type) && (subscription.visits_left || 0) > 0) {
       await client.query(
@@ -104,10 +116,17 @@ router.post('/', requireModule('schedule_clients'), async (req, res) => {
 
       let placesCount = 1;
       if (subscription_id) {
+        await expireActiveSubscriptions(client, { subscriptionId: subscription_id });
+
         const { rows: subscriptionRows } = await client.query(
-          'SELECT is_family FROM client_subscriptions WHERE id = $1',
+          "SELECT is_family FROM client_subscriptions WHERE id = $1 AND status = 'active'",
           [subscription_id]
         );
+
+        if (!subscriptionRows[0]) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ success: false, error: 'Абонемент истёк или неактивен' });
+        }
 
         if (subscriptionRows[0]?.is_family) {
           placesCount = 2;
@@ -278,10 +297,7 @@ router.post('/:id/unattend', requireModule('schedule_attendance'), async (req, r
             [chargedSubscriptionId]
           );
           if (sub.status === 'exhausted') {
-            await client.query(
-              "UPDATE client_subscriptions SET status = 'active', updated_at = NOW() WHERE id = $1",
-              [chargedSubscriptionId]
-            );
+            await restoreSubscriptionToActiveIfValid(client, chargedSubscriptionId);
           }
         }
       }

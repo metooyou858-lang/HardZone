@@ -1,5 +1,9 @@
 const { resolveModules, hasModuleAccess } = require('../authz');
 const { pool } = require('../db');
+const {
+  expireActiveSubscriptions,
+  restoreSubscriptionToActiveIfValid,
+} = require('./subscription-validity');
 const { normalizePhone } = require('../utils/phones');
 
 const CLUB_TIME_ZONE = process.env.APP_TIMEZONE || 'Asia/Vladivostok';
@@ -295,6 +299,8 @@ async function searchClients(staff, search, limit = 5) {
     return [];
   }
 
+  await expireActiveSubscriptions(pool);
+
   const params = [];
   const conditions = [];
 
@@ -361,13 +367,15 @@ async function createBooking(staff, slotId, clientId, subscriptionId = null) {
 
     let placesCount = 1;
     if (subscriptionId) {
+      await expireActiveSubscriptions(client, { subscriptionId });
+
       const { rows: subscriptionRows } = await client.query(
-        'SELECT is_family FROM client_subscriptions WHERE id = $1 AND client_id = $2',
+        "SELECT is_family FROM client_subscriptions WHERE id = $1 AND client_id = $2 AND status = 'active'",
         [subscriptionId, clientId]
       );
       if (!subscriptionRows[0]) {
         await client.query('ROLLBACK');
-        throw new Error('Абонемент не найден');
+        throw new Error('Абонемент истёк или неактивен');
       }
       if (subscriptionRows[0].is_family) {
         placesCount = 2;
@@ -434,11 +442,18 @@ async function markBookingAsAttended(staff, bookingId) {
     );
 
     if (booking.subscription_id) {
+      await expireActiveSubscriptions(client, { subscriptionId: booking.subscription_id });
+
       const { rows: subscriptionRows } = await client.query(
         'SELECT * FROM client_subscriptions WHERE id = $1',
         [booking.subscription_id]
       );
       const subscription = subscriptionRows[0];
+
+      if (subscription?.status !== 'active') {
+        await client.query('ROLLBACK');
+        throw new Error('Абонемент истёк или неактивен');
+      }
 
       if (subscription && ['visits', 'single'].includes(subscription.type) && (subscription.visits_left || 0) > 0) {
         await client.query(
@@ -516,10 +531,7 @@ async function markBookingAsUnattended(staff, bookingId) {
           [chargedSubscriptionId]
         );
         if (sub.status === 'exhausted') {
-          await client.query(
-            "UPDATE client_subscriptions SET status = 'active', updated_at = NOW() WHERE id = $1",
-            [chargedSubscriptionId]
-          );
+          await restoreSubscriptionToActiveIfValid(client, chargedSubscriptionId);
         }
       }
     }
