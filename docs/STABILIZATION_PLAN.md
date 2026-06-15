@@ -45,6 +45,7 @@ Before production work:
 4. Extend Telegram staff bot UX after live staff feedback.
 5. Fix effective subscription validity: expired `active` subscriptions must not appear usable in CRM, Telegram Mini Apps, or booking flows.
 6. Replace raw `<img>` tags in Telegram Mini Apps with `next/image` or explicitly document why plain images are kept for Telegram runtime stability.
+7. Continue client card work from a clean product branch, not from older hotfix branches. Current direction: `feature/client-photo` adds CRM client photo storage/display first, then client-side upload and legacy subscription import in separate follow-up branches.
 
 ## Next Product Work: Athlete Diary
 

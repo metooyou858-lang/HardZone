@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -10,6 +11,7 @@ import {
   freezeSubscription,
   unfreezeSubscription,
   updateClient,
+  uploadClientPhoto,
 } from "@/lib/api/clients";
 import { hasModuleAccess, type AuthModulePermission } from "@/lib/access";
 import {
@@ -38,6 +40,64 @@ function ReadonlyField({ label, value, wide = false }: { label: string; value: s
     <div className={`rounded-[20px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4 ${wide ? "sm:col-span-2" : ""}`}>
       <p className={clientLabelCls}>{label}</p>
       <p className="mt-2 text-sm leading-6 text-[var(--text-main)]">{value || "—"}</p>
+    </div>
+  );
+}
+
+function ClientPhoto({
+  client,
+  canUpdate,
+  uploading,
+  onSelect,
+}: {
+  client: ClientDetail;
+  canUpdate: boolean;
+  uploading: boolean;
+  onSelect: (file: File) => void;
+}) {
+  const initials = [client.first_name, client.last_name]
+    .filter(Boolean)
+    .map((part) => part.trim().slice(0, 1))
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  return (
+    <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center">
+      <div className="h-24 w-24 overflow-hidden rounded-full border border-[var(--line-soft)] bg-[var(--bg-card-soft)]">
+        {client.photo_url ? (
+          <Image
+            src={client.photo_url}
+            alt={formatClientName(client)}
+            width={96}
+            height={96}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-2xl font-semibold text-[var(--text-muted)]">
+            {initials || "HZ"}
+          </div>
+        )}
+      </div>
+
+      {canUpdate && (
+        <label className="inline-flex cursor-pointer rounded-[16px] border border-[var(--line-soft)] px-4 py-2 text-sm text-[var(--text-main)] transition-colors hover:bg-[rgba(255,255,255,0.04)]">
+          {uploading ? "Загружаем..." : client.photo_url ? "Заменить фото" : "Загрузить фото"}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="sr-only"
+            disabled={uploading}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) {
+                onSelect(file);
+              }
+            }}
+          />
+        </label>
+      )}
     </div>
   );
 }
@@ -165,6 +225,7 @@ export default function ClientDetailsPage() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
   const [busyAction, setBusyAction] = useState<"freeze" | "unfreeze" | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -307,6 +368,29 @@ export default function ClientDetailsPage() {
     }
   }
 
+  async function handlePhotoSelect(file: File) {
+    if (!client) {
+      return;
+    }
+
+    if (!canUpdateClient) {
+      setError("Недостаточно прав доступа");
+      return;
+    }
+
+    setPhotoUploading(true);
+    setError(null);
+
+    try {
+      await uploadClientPhoto(client.id, file);
+      setReloadToken((value) => value + 1);
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Не удалось загрузить фото клиента");
+    } finally {
+      setPhotoUploading(false);
+    }
+  }
+
   async function handleFreeze() {
     if (!currentSubscription) {
       return;
@@ -384,12 +468,21 @@ export default function ClientDetailsPage() {
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.95fr)]">
         <section className="space-y-5">
           <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                <ClientPhoto
+                  client={client}
+                  canUpdate={canUpdateClient}
+                  uploading={photoUploading}
+                  onSelect={(file) => void handlePhotoSelect(file)}
+                />
+                <div>
                 <p className="font-[family:var(--font-heading)] text-xl font-semibold text-[var(--text-main)]">
                   Карточка клиента
                 </p>
                 <p className="mt-1 text-sm text-[var(--text-muted)]">Контакты и персональная скидка</p>
+              </div>
+
               </div>
 
               {!editing && canUpdateClient ? (

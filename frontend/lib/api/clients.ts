@@ -14,6 +14,7 @@ export type Client = {
   email: string | null;
   birth_date: string | null;
   barcode: string | null;
+  photo_url: string | null;
   discount: string;
   status: ClientStatus;
   status_comment: string | null;
@@ -140,6 +141,17 @@ export async function updateClient(
   const response = await apiFetch<ApiEnvelope<Client>>(`/clients/${id}`, {
     method: "PATCH",
     body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function uploadClientPhoto(id: string, file: File): Promise<Client> {
+  const formData = new FormData();
+  formData.append("photo", file);
+
+  const response = await apiFetch<ApiEnvelope<Client>>(`/clients/${id}/photo`, {
+    method: "POST",
+    body: formData,
   });
   return response.data;
 }

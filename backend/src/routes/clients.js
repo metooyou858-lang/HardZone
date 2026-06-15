@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const csv = require('csv-parse/sync');
 const fs = require('fs');
+const path = require('path');
 
 const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
@@ -10,10 +11,46 @@ const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
 const upload = multer({ dest: '/tmp/' });
+const clientPhotoDir = path.join(__dirname, '..', '..', 'uploads', 'clients');
+const clientPhotoStorage = multer.diskStorage({
+  destination: (_req, _file, callback) => {
+    fs.mkdirSync(clientPhotoDir, { recursive: true });
+    callback(null, clientPhotoDir);
+  },
+  filename: (_req, file, callback) => {
+    const extensionByMime = {
+      'image/jpeg': '.jpg',
+      'image/png': '.png',
+      'image/webp': '.webp',
+    };
+    const extension = extensionByMime[file.mimetype] || path.extname(file.originalname).toLowerCase();
+    callback(null, `${Date.now()}-${Math.random().toString(16).slice(2)}${extension}`);
+  },
+});
+const uploadClientPhoto = multer({
+  storage: clientPhotoStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, callback) => {
+    if (['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error('Unsupported client photo type'));
+  },
+});
 const requireClientsRead = authMiddleware.requireModule('clients');
 const requireClientsCreate = authMiddleware.requireModule('clients_create');
 const requireClientsUpdate = authMiddleware.requireModule('clients_update');
 const requireClientsImport = authMiddleware.requireModule('clients_import');
+
+function removeLocalClientPhoto(photoUrl) {
+  if (!photoUrl || !photoUrl.startsWith('/uploads/clients/')) {
+    return;
+  }
+
+  fs.rm(path.join(clientPhotoDir, path.basename(photoUrl)), { force: true }, () => {});
+}
 
 async function generateClientBarcode() {
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -371,6 +408,57 @@ router.patch('/:id', requireClientsUpdate, async (req, res) => {
     res.json({ success: true, data: rows[0] });
   } catch (err) {
     sendInternalError(res, err, { route: 'clients.delete' });
+  }
+});
+
+router.post('/:id/photo', requireClientsUpdate, uploadClientPhoto.single('photo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(422).json({ success: false, error: 'Загрузите фото клиента' });
+    }
+
+    const photoUrl = `/uploads/clients/${req.file.filename}`;
+    const { rows } = await pool.query(
+      `
+        WITH previous AS (
+          SELECT id, photo_url AS old_photo_url
+          FROM clients
+          WHERE id = $2
+        ),
+        updated AS (
+          UPDATE clients c
+          SET photo_url = $1,
+              updated_at = NOW()
+          FROM previous
+          WHERE c.id = previous.id
+          RETURNING c.*
+        )
+        SELECT updated.*, previous.old_photo_url
+        FROM updated
+        JOIN previous ON previous.id = updated.id
+      `,
+      [photoUrl, req.params.id]
+    );
+
+    if (!rows[0]) {
+      fs.rm(req.file.path, { force: true }, () => {});
+      return res.status(404).json({ success: false, error: 'Клиент не найден' });
+    }
+
+    removeLocalClientPhoto(rows[0].old_photo_url);
+    delete rows[0].old_photo_url;
+
+    return res.json({ success: true, data: rows[0] });
+  } catch (err) {
+    if (req.file?.path) {
+      fs.rm(req.file.path, { force: true }, () => {});
+    }
+
+    if (err.message === 'Unsupported client photo type') {
+      return res.status(422).json({ success: false, error: 'Поддерживаются JPG, PNG или WebP' });
+    }
+
+    return sendInternalError(res, err, { route: 'clients.photo' });
   }
 });
 
