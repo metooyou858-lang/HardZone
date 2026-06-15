@@ -19,6 +19,7 @@ const upload = multer({
   limits: { fileSize: 2 * 1024 * 1024 },
 });
 const requireClientsImport = authMiddleware.requireModule('clients_import');
+const requireLegacySubscriptions = authMiddleware.requireModule('clients_legacy_subscriptions');
 
 router.post('/legacy-import/preview', requireClientsImport, upload.single('file'), async (req, res) => {
   try {
@@ -88,6 +89,91 @@ router.delete('/legacy-import/:batchId', requireClientsImport, async (req, res) 
   } catch (err) {
     await client.query('ROLLBACK');
     sendInternalError(res, err, { route: 'subscriptions.legacy_import_rollback' });
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/legacy-manual', requireLegacySubscriptions, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const {
+      client_id,
+      product_id,
+      type,
+      visits_total,
+      visits_left,
+      started_at,
+      expires_at,
+      is_family,
+      status,
+      note,
+    } = req.body;
+
+    if (!client_id || !type) {
+      return res.status(422).json({ success: false, error: 'Укажите клиента и тип абонемента' });
+    }
+
+    if (!['single', 'visits', 'period', 'unlimited'].includes(type)) {
+      return res.status(422).json({ success: false, error: 'Некорректный тип абонемента' });
+    }
+
+    await client.query('BEGIN');
+    await expireActiveSubscriptions(client, { clientId: client_id });
+
+    const requestedStatus = ['active', 'frozen', 'expired', 'exhausted'].includes(status) ? status : 'active';
+    if (requestedStatus === 'active') {
+      const { rows: activeRows } = await client.query(
+        "SELECT id FROM client_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1",
+        [client_id]
+      );
+      if (activeRows[0]) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          success: false,
+          error: `У клиента уже есть активный абонемент #${activeRows[0].id}`,
+        });
+      }
+    }
+
+    const visitsTotal = visits_total === null || visits_total === undefined || visits_total === ''
+      ? null
+      : Number.parseInt(visits_total, 10);
+    const visitsLeft = visits_left === null || visits_left === undefined || visits_left === ''
+      ? visitsTotal
+      : Number.parseInt(visits_left, 10);
+
+    const { rows } = await client.query(
+      `
+        INSERT INTO client_subscriptions (
+          client_id, product_id, type, visits_total, visits_left,
+          started_at, expires_at, is_family, status,
+          legacy_source, legacy_note
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        RETURNING *
+      `,
+      [
+        client_id,
+        product_id || null,
+        type,
+        Number.isFinite(visitsTotal) ? visitsTotal : null,
+        Number.isFinite(visitsLeft) ? visitsLeft : null,
+        started_at || null,
+        expires_at || null,
+        Boolean(is_family),
+        requestedStatus,
+        'manual_legacy',
+        [note || null, req.user?.username ? `created_by=${req.user.username}` : null].filter(Boolean).join(' | ') || null,
+      ]
+    );
+
+    await client.query('COMMIT');
+    res.status(201).json({ success: true, data: rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    sendInternalError(res, err, { route: 'subscriptions.legacy_manual' });
   } finally {
     client.release();
   }

@@ -233,6 +233,25 @@ export async function importLegacySubscriptionsCsv(file: File): Promise<LegacySu
   return response.data;
 }
 
+export async function createManualLegacySubscription(data: {
+  client_id: string | number;
+  product_id?: string | number | null;
+  type: SubscriptionType;
+  visits_total?: number | null;
+  visits_left?: number | null;
+  started_at?: string | null;
+  expires_at?: string | null;
+  is_family?: boolean;
+  status?: SubscriptionStatus;
+  note?: string | null;
+}): Promise<ClientSubscription> {
+  const response = await apiFetch<ApiEnvelope<ClientSubscription>>("/subscriptions/legacy-manual", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
 export async function createSubscription(data: {
   client_id: string | number;
   type: SubscriptionType;

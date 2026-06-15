@@ -11,6 +11,7 @@ const ALL_MODULES = [
   'clients_create',
   'clients_update',
   'clients_import',
+  'clients_legacy_subscriptions',
   'schedule',
   'schedule_edit_groups',
   'schedule_edit_personal',

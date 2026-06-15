@@ -13,6 +13,7 @@ export type AuthModulePermission =
   | "clients_create"
   | "clients_update"
   | "clients_import"
+  | "clients_legacy_subscriptions"
   | "schedule"
   | "schedule_edit_groups"
   | "schedule_edit_personal"
@@ -36,6 +37,7 @@ export const ALL_MODULE_PERMISSIONS: AuthModulePermission[] = [
   "clients_create",
   "clients_update",
   "clients_import",
+  "clients_legacy_subscriptions",
   "schedule",
   "schedule_edit_groups",
   "schedule_edit_personal",
@@ -68,6 +70,7 @@ export const CLIENT_SUB_PERMISSIONS: AuthModulePermission[] = [
   "clients_create",
   "clients_update",
   "clients_import",
+  "clients_legacy_subscriptions",
 ];
 
 export const roleLabels: Record<AuthUserRole, string> = {
@@ -88,6 +91,7 @@ export const moduleLabels: Record<AuthModulePermission, string> = {
   clients_create: "Клиенты: создание",
   clients_update: "Клиенты: редактирование",
   clients_import: "Клиенты: импорт",
+  clients_legacy_subscriptions: "Клиенты: старые абонементы",
   schedule: "Расписание",
   schedule_edit_groups: "Групповые: создание и редактирование",
   schedule_edit_personal: "Персоналки: создание и редактирование",

@@ -47,6 +47,7 @@ Before production work:
 6. Replace raw `<img>` tags in Telegram Mini Apps with `next/image` or explicitly document why plain images are kept for Telegram runtime stability.
 7. Continue client card work from a clean product branch, not from older hotfix branches. Current direction: `feature/client-photo` adds CRM client photo storage/display first, then client-side upload and legacy subscription import in separate follow-up branches.
 8. Legacy subscription import is tracked in `feature/legacy-subscription-import`; rules and CSV format live in `docs/LEGACY_SUBSCRIPTION_IMPORT.md`.
+9. Manual legacy subscriptions are controlled by `clients_legacy_subscriptions`; only users with this permission can add old subscriptions from a client card.
 
 ## Next Product Work: Athlete Diary
 

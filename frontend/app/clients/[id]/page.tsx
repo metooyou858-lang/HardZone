@@ -7,6 +7,9 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   ClientDetail,
+  SubscriptionStatus,
+  SubscriptionType,
+  createManualLegacySubscription,
   fetchClient,
   freezeSubscription,
   unfreezeSubscription,
@@ -34,6 +37,17 @@ function normalizeDateValue(value: string | null | undefined) {
 
   return new Date(value).toISOString().slice(0, 10);
 }
+
+const emptyLegacySubscriptionForm = {
+  type: "visits" as SubscriptionType,
+  visits_total: "",
+  visits_left: "",
+  started_at: "",
+  expires_at: "",
+  is_family: false,
+  status: "active" as SubscriptionStatus,
+  note: "Перенос из старой CRM",
+};
 
 function ReadonlyField({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
   return (
@@ -97,6 +111,147 @@ function ClientPhoto({
             }}
           />
         </label>
+      )}
+    </div>
+  );
+}
+
+function ManualLegacySubscriptionPanel({
+  form,
+  saving,
+  open,
+  onToggle,
+  onChange,
+  onSubmit,
+  onCancel,
+}: {
+  form: typeof emptyLegacySubscriptionForm;
+  saving: boolean;
+  open: boolean;
+  onToggle: () => void;
+  onChange: (value: typeof emptyLegacySubscriptionForm) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="font-[family:var(--font-heading)] text-xl font-semibold text-[var(--text-main)]">
+            Старый абонемент
+          </p>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">Ручной перенос без продажи, оплаты, чека и AQSI.</p>
+        </div>
+        <button
+          type="button"
+          onClick={onToggle}
+          className="rounded-[16px] border border-[var(--line-soft)] px-4 py-2 text-sm text-[var(--text-main)] transition-colors hover:bg-[rgba(255,255,255,0.04)]"
+        >
+          {open ? "Скрыть" : "Добавить старый"}
+        </button>
+      </div>
+
+      {open && (
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className={clientLabelCls}>Тип</label>
+            <select
+              value={form.type}
+              onChange={(event) => onChange({ ...form, type: event.target.value as SubscriptionType })}
+              className={`mt-2 ${clientInputCls}`}
+            >
+              <option value="single">Разовый</option>
+              <option value="visits">По посещениям</option>
+              <option value="period">По сроку</option>
+              <option value="unlimited">Безлимит</option>
+            </select>
+          </div>
+          <div>
+            <label className={clientLabelCls}>Статус</label>
+            <select
+              value={form.status}
+              onChange={(event) => onChange({ ...form, status: event.target.value as SubscriptionStatus })}
+              className={`mt-2 ${clientInputCls}`}
+            >
+              <option value="active">Активен</option>
+              <option value="expired">Истек</option>
+              <option value="exhausted">Исчерпан</option>
+              <option value="frozen">Заморожен</option>
+            </select>
+          </div>
+          <div>
+            <label className={clientLabelCls}>Всего посещений</label>
+            <input
+              type="number"
+              min="0"
+              value={form.visits_total}
+              onChange={(event) => onChange({ ...form, visits_total: event.target.value })}
+              className={`mt-2 ${clientInputCls}`}
+            />
+          </div>
+          <div>
+            <label className={clientLabelCls}>Осталось посещений</label>
+            <input
+              type="number"
+              min="0"
+              value={form.visits_left}
+              onChange={(event) => onChange({ ...form, visits_left: event.target.value })}
+              className={`mt-2 ${clientInputCls}`}
+            />
+          </div>
+          <div>
+            <label className={clientLabelCls}>Дата начала</label>
+            <input
+              type="date"
+              value={form.started_at}
+              onChange={(event) => onChange({ ...form, started_at: event.target.value })}
+              className={`mt-2 ${clientInputCls}`}
+            />
+          </div>
+          <div>
+            <label className={clientLabelCls}>Дата окончания</label>
+            <input
+              type="date"
+              value={form.expires_at}
+              onChange={(event) => onChange({ ...form, expires_at: event.target.value })}
+              className={`mt-2 ${clientInputCls}`}
+            />
+          </div>
+          <label className="flex items-center gap-3 rounded-[18px] border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[var(--text-main)]">
+            <input
+              type="checkbox"
+              checked={form.is_family}
+              onChange={(event) => onChange({ ...form, is_family: event.target.checked })}
+            />
+            Семейный
+          </label>
+          <div className="sm:col-span-2">
+            <label className={clientLabelCls}>Комментарий</label>
+            <textarea
+              rows={3}
+              value={form.note}
+              onChange={(event) => onChange({ ...form, note: event.target.value })}
+              className={`mt-2 ${clientInputCls} resize-none`}
+            />
+          </div>
+          <div className="sm:col-span-2 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={onSubmit}
+              disabled={saving}
+              className="rounded-[16px] bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[#062b26] disabled:opacity-50"
+            >
+              {saving ? "Добавляем..." : "Добавить старый абонемент"}
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-[16px] border border-[var(--line-soft)] px-4 py-2 text-sm text-[var(--text-main)]"
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -227,6 +382,9 @@ export default function ClientDetailsPage() {
   const [saving, setSaving] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [busyAction, setBusyAction] = useState<"freeze" | "unfreeze" | null>(null);
+  const [showLegacyForm, setShowLegacyForm] = useState(false);
+  const [legacySaving, setLegacySaving] = useState(false);
+  const [legacyForm, setLegacyForm] = useState(emptyLegacySubscriptionForm);
   const [reloadToken, setReloadToken] = useState(0);
 
   const [form, setForm] = useState({
@@ -241,6 +399,7 @@ export default function ClientDetailsPage() {
   });
 
   const canUpdateClient = hasModuleAccess(currentModules, "clients_update");
+  const canCreateLegacySubscription = hasModuleAccess(currentModules, "clients_legacy_subscriptions");
 
   useEffect(() => {
     let cancelled = false;
@@ -425,6 +584,45 @@ export default function ClientDetailsPage() {
       setError(unfreezeError instanceof Error ? unfreezeError.message : "Не удалось разморозить абонемент");
     } finally {
       setBusyAction(null);
+    }
+  }
+
+  async function handleCreateLegacySubscription() {
+    if (!client) {
+      return;
+    }
+
+    if (!canCreateLegacySubscription) {
+      setError("Недостаточно прав доступа");
+      return;
+    }
+
+    setLegacySaving(true);
+    setError(null);
+
+    const visitsTotal = legacyForm.visits_total ? Number.parseInt(legacyForm.visits_total, 10) : null;
+    const visitsLeft = legacyForm.visits_left ? Number.parseInt(legacyForm.visits_left, 10) : visitsTotal;
+
+    try {
+      await createManualLegacySubscription({
+        client_id: client.id,
+        type: legacyForm.type,
+        visits_total: Number.isFinite(visitsTotal) ? visitsTotal : null,
+        visits_left: Number.isFinite(visitsLeft) ? visitsLeft : null,
+        started_at: legacyForm.started_at || null,
+        expires_at: legacyForm.expires_at || null,
+        is_family: legacyForm.is_family,
+        status: legacyForm.status,
+        note: legacyForm.note.trim() || null,
+      });
+
+      setShowLegacyForm(false);
+      setLegacyForm(emptyLegacySubscriptionForm);
+      setReloadToken((value) => value + 1);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Не удалось добавить старый абонемент");
+    } finally {
+      setLegacySaving(false);
     }
   }
 
@@ -708,6 +906,21 @@ export default function ClientDetailsPage() {
               Абонементы оформляются только через продажи. Если нужно выдать доступ вручную, проведите услугу через кассу со скидкой 100%.
             </div>
           </div>
+
+          {canCreateLegacySubscription && (
+            <ManualLegacySubscriptionPanel
+              form={legacyForm}
+              saving={legacySaving}
+              open={showLegacyForm}
+              onToggle={() => setShowLegacyForm((value) => !value)}
+              onChange={setLegacyForm}
+              onSubmit={() => void handleCreateLegacySubscription()}
+              onCancel={() => {
+                setShowLegacyForm(false);
+                setLegacyForm(emptyLegacySubscriptionForm);
+              }}
+            />
+          )}
 
           <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-6">
             <p className="font-[family:var(--font-heading)] text-xl font-semibold text-[var(--text-main)]">
