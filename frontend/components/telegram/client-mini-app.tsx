@@ -1221,6 +1221,14 @@ export function ClientMiniApp() {
   useLockedMiniAppBody();
   usePreventMiniAppRubberBand(scrollRef);
 
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeTab]);
+
   async function authenticate() {
     await ensureTelegramWebAppScript();
 
