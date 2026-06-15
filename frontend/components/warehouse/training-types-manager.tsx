@@ -391,7 +391,7 @@ export function TrainingTypesManager({ onClose }: { onClose: () => void }) {
                     </div>
 
                     {item.description && <p className="mt-1 text-xs text-slate-500">{item.description}</p>}
-                    {(item.audience || item.location || item.booking_note || item.tags?.length) && (
+                    {(item.audience || item.location || item.booking_note || Boolean(item.tags?.length)) && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {[item.audience, item.location, item.booking_note, ...(item.tags ?? [])].filter(Boolean).map((tag) => (
                           <span key={tag} className="rounded-full bg-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
