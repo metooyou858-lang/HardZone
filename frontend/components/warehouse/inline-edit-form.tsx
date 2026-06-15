@@ -267,15 +267,18 @@ export function InlineEditForm({
   }
 
   async function handleArchive() {
-    if (!window.confirm(`Архивировать "${product.name}"?`)) {
+    const nextArchived = !product.is_archived;
+    const actionLabel = nextArchived ? "Архивировать" : "Вернуть из архива";
+
+    if (!window.confirm(`${actionLabel} "${product.name}"?`)) {
       return;
     }
 
     setArchiving(true);
 
     try {
-      await archiveProduct(product.id, true);
-      onSuccess(product);
+      const updated = await archiveProduct(product.id, nextArchived);
+      onSuccess({ ...product, ...updated });
       onClose();
     } finally {
       setArchiving(false);
@@ -723,9 +726,19 @@ export function InlineEditForm({
             void handleArchive();
           }}
           disabled={archiving}
-          className="ml-auto rounded-xl border border-red-900 px-5 py-2 text-sm text-red-500 hover:bg-red-950 disabled:opacity-50"
+          className={`ml-auto rounded-xl border px-5 py-2 text-sm disabled:opacity-50 ${
+            product.is_archived
+              ? "border-teal-900 text-teal-400 hover:bg-teal-950"
+              : "border-red-900 text-red-500 hover:bg-red-950"
+          }`}
         >
-          {archiving ? "Архивируем..." : "Архивировать"}
+          {archiving
+            ? product.is_archived
+              ? "Возвращаем..."
+              : "Архивируем..."
+            : product.is_archived
+              ? "Вернуть из архива"
+              : "Архивировать"}
         </button>
       </div>
     </div>

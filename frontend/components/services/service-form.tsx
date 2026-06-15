@@ -261,7 +261,10 @@ export function ServiceForm({
       return;
     }
 
-    if (!window.confirm(`Архивировать "${product.name}"?`)) {
+    const nextArchived = !product.is_archived;
+    const actionLabel = nextArchived ? "Архивировать" : "Вернуть из архива";
+
+    if (!window.confirm(`${actionLabel} "${product.name}"?`)) {
       return;
     }
 
@@ -269,10 +272,16 @@ export function ServiceForm({
     setError(null);
 
     try {
-      await archiveProduct(product.id, true);
-      onSaved(product);
+      const updated = await archiveProduct(product.id, nextArchived);
+      onSaved({ ...product, ...updated });
     } catch (archiveError) {
-      setError(archiveError instanceof Error ? archiveError.message : "Не удалось архивировать услугу");
+      setError(
+        archiveError instanceof Error
+          ? archiveError.message
+          : nextArchived
+            ? "Не удалось архивировать услугу"
+            : "Не удалось вернуть услугу из архива"
+      );
     } finally {
       setArchiving(false);
     }
@@ -564,9 +573,19 @@ export function ServiceForm({
               void handleArchive();
             }}
             disabled={archiving}
-            className="ml-auto rounded-[18px] border border-[rgba(248,81,73,0.35)] px-5 py-3 text-sm text-[var(--danger)] transition-colors hover:bg-[rgba(248,81,73,0.08)] disabled:opacity-50"
+            className={`ml-auto rounded-[18px] border px-5 py-3 text-sm transition-colors disabled:opacity-50 ${
+              product.is_archived
+                ? "border-[rgba(0,191,165,0.35)] text-[var(--accent)] hover:bg-[rgba(0,191,165,0.08)]"
+                : "border-[rgba(248,81,73,0.35)] text-[var(--danger)] hover:bg-[rgba(248,81,73,0.08)]"
+            }`}
           >
-            {archiving ? "Архивируем..." : "Архивировать"}
+            {archiving
+              ? product.is_archived
+                ? "Возвращаем..."
+                : "Архивируем..."
+              : product.is_archived
+                ? "Вернуть из архива"
+                : "Архивировать"}
           </button>
         )}
       </div>
