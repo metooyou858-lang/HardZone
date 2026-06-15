@@ -94,6 +94,42 @@ router.delete('/legacy-import/:batchId', requireClientsImport, async (req, res) 
   }
 });
 
+router.get('/legacy-services', requireLegacySubscriptions, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        p.id,
+        p.name,
+        psp.subscription_type,
+        psp.visits_total,
+        psp.validity_days,
+        psp.activation_type,
+        psp.is_family,
+        COALESCE(
+          json_agg(
+            json_build_object('id', tt.id, 'name', tt.name, 'color', tt.color)
+            ORDER BY tt.name
+          ) FILTER (WHERE tt.id IS NOT NULL),
+          '[]'
+        ) AS training_types
+      FROM products p
+      JOIN product_types pt ON pt.id = p.product_type_id
+      JOIN product_subscription_params psp ON psp.product_id = p.id
+      LEFT JOIN product_training_types ptt ON ptt.product_id = p.id
+      LEFT JOIN training_types tt ON tt.id = ptt.training_type_id
+      WHERE p.is_archived = false
+        AND pt.has_stock = false
+        AND pt.has_sale_price = true
+      GROUP BY p.id, p.name, psp.id
+      ORDER BY p.name
+    `);
+
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    sendInternalError(res, err, { route: 'subscriptions.legacy_services' });
+  }
+});
+
 router.post('/legacy-manual', requireLegacySubscriptions, async (req, res) => {
   const client = await pool.connect();
 
@@ -101,48 +137,83 @@ router.post('/legacy-manual', requireLegacySubscriptions, async (req, res) => {
     const {
       client_id,
       product_id,
-      type,
-      visits_total,
       visits_left,
       started_at,
-      expires_at,
-      is_family,
-      status,
       note,
     } = req.body;
 
-    if (!client_id || !type) {
-      return res.status(422).json({ success: false, error: 'Укажите клиента и тип абонемента' });
+    if (!client_id || !product_id || !started_at) {
+      return res.status(422).json({ success: false, error: 'Укажите клиента, услугу и дату начала' });
     }
 
-    if (!['single', 'visits', 'period', 'unlimited'].includes(type)) {
-      return res.status(422).json({ success: false, error: 'Некорректный тип абонемента' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(started_at))) {
+      return res.status(422).json({ success: false, error: 'Некорректная дата начала' });
     }
 
     await client.query('BEGIN');
     await expireActiveSubscriptions(client, { clientId: client_id });
 
-    const requestedStatus = ['active', 'frozen', 'expired', 'exhausted'].includes(status) ? status : 'active';
-    if (requestedStatus === 'active') {
-      const { rows: activeRows } = await client.query(
-        "SELECT id FROM client_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1",
-        [client_id]
-      );
-      if (activeRows[0]) {
-        await client.query('ROLLBACK');
-        return res.status(409).json({
-          success: false,
-          error: `У клиента уже есть активный абонемент #${activeRows[0].id}`,
-        });
-      }
+    const { rows: serviceRows } = await client.query(
+      `
+        SELECT
+          p.id,
+          psp.subscription_type,
+          psp.visits_total,
+          psp.validity_days,
+          psp.is_family
+        FROM products p
+        JOIN product_types pt ON pt.id = p.product_type_id
+        JOIN product_subscription_params psp ON psp.product_id = p.id
+        WHERE p.id = $1
+          AND p.is_archived = false
+          AND pt.has_stock = false
+          AND pt.has_sale_price = true
+      `,
+      [product_id]
+    );
+    const service = serviceRows[0];
+
+    if (!service) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Услуга с параметрами абонемента не найдена' });
     }
 
-    const visitsTotal = visits_total === null || visits_total === undefined || visits_total === ''
+    const { rows: activeRows } = await client.query(
+      "SELECT id FROM client_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1",
+      [client_id]
+    );
+    if (activeRows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        success: false,
+        error: `У клиента уже есть активный абонемент #${activeRows[0].id}`,
+      });
+    }
+
+    const visitsTotal = service.visits_total === null || service.visits_total === undefined
       ? null
-      : Number.parseInt(visits_total, 10);
+      : Number.parseInt(service.visits_total, 10);
     const visitsLeft = visits_left === null || visits_left === undefined || visits_left === ''
       ? visitsTotal
       : Number.parseInt(visits_left, 10);
+    const validityDays = service.validity_days === null || service.validity_days === undefined
+      ? null
+      : Number.parseInt(service.validity_days, 10);
+
+    if (!Number.isFinite(visitsLeft) && (service.subscription_type === 'single' || service.subscription_type === 'visits')) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({ success: false, error: 'Укажите остаток посещений для выбранной услуги' });
+    }
+
+    if (Number.isFinite(visitsLeft) && visitsLeft < 0) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({ success: false, error: 'Остаток посещений не может быть меньше нуля' });
+    }
+
+    if (Number.isFinite(visitsLeft) && Number.isFinite(visitsTotal) && visitsLeft > visitsTotal) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({ success: false, error: 'Остаток посещений не может быть больше лимита услуги' });
+    }
 
     const { rows } = await client.query(
       `
@@ -151,21 +222,37 @@ router.post('/legacy-manual', requireLegacySubscriptions, async (req, res) => {
           started_at, expires_at, is_family, status,
           legacy_source, legacy_note
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        VALUES (
+          $1,
+          $2,
+          $3,
+          $4,
+          $5,
+          $6,
+          CASE WHEN $7::INT IS NULL THEN NULL ELSE $6::DATE + $7::INT END,
+          $8,
+          CASE
+            WHEN $3 IN ('single', 'visits') AND COALESCE($5::INT, 0) <= 0 THEN 'exhausted'::subscription_status
+            WHEN $7::INT IS NOT NULL AND ($6::DATE + $7::INT) < (NOW() AT TIME ZONE $11)::date THEN 'expired'::subscription_status
+            ELSE 'active'::subscription_status
+          END,
+          $9,
+          $10
+        )
         RETURNING *
       `,
       [
         client_id,
-        product_id || null,
-        type,
-        Number.isFinite(visitsTotal) ? visitsTotal : null,
+        product_id,
+        service.subscription_type,
+        visitsTotal,
         Number.isFinite(visitsLeft) ? visitsLeft : null,
-        started_at || null,
-        expires_at || null,
-        Boolean(is_family),
-        requestedStatus,
+        started_at,
+        validityDays,
+        service.is_family === true,
         'manual_legacy',
         [note || null, req.user?.username ? `created_by=${req.user.username}` : null].filter(Boolean).join(' | ') || null,
+        CLUB_TIME_ZONE,
       ]
     );
 

@@ -3,16 +3,19 @@
 Purpose: move active/remaining subscriptions from the old CRM into HardZone without creating orders, payments, receipts, or AQSI operations.
 
 For one client at a time, use the client card action `Старый абонемент`. It requires the separate permission `clients_legacy_subscriptions`.
+Manual entry must select an existing non-archived service with subscription parameters. The service defines subscription type, validity period, total visit limit, family flag, and allowed training types. The operator only enters the start date, remaining visits for visit-based services, and an optional note.
 
 ## Safety Rules
 
 - Import writes directly to `client_subscriptions`.
-- Manual legacy creation from a client card also writes directly to `client_subscriptions`.
+- Manual legacy creation from a client card also writes directly to `client_subscriptions`, using parameters from the selected service.
 - Imported rows are marked with:
   - `legacy_import_batch_id`
   - `legacy_source = legacy_crm`
   - `legacy_note`
 - Manually created legacy subscriptions are marked with `legacy_source = manual_legacy`.
+- Manual legacy creation does not create orders, payments, receipts, or AQSI operations.
+- Manual legacy creation does not allow arbitrary subscription type, status, total visits, expiry date, or family flag. These fields come from the selected service and current date rules.
 - The import UI must run preview first. Preview does not mutate data.
 - Confirm imports only rows without errors.
 - If a client already has an actually valid active subscription, an active legacy row is blocked as a conflict.

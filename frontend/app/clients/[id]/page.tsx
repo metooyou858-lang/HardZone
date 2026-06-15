@@ -7,9 +7,9 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   ClientDetail,
-  SubscriptionStatus,
-  SubscriptionType,
+  LegacySubscriptionService,
   createManualLegacySubscription,
+  fetchLegacySubscriptionServices,
   fetchClient,
   freezeSubscription,
   unfreezeSubscription,
@@ -39,13 +39,9 @@ function normalizeDateValue(value: string | null | undefined) {
 }
 
 const emptyLegacySubscriptionForm = {
-  type: "visits" as SubscriptionType,
-  visits_total: "",
+  product_id: "",
   visits_left: "",
   started_at: "",
-  expires_at: "",
-  is_family: false,
-  status: "active" as SubscriptionStatus,
   note: "Перенос из старой CRM",
 };
 
@@ -118,6 +114,7 @@ function ClientPhoto({
 
 function ManualLegacySubscriptionPanel({
   form,
+  services,
   saving,
   open,
   onToggle,
@@ -126,6 +123,7 @@ function ManualLegacySubscriptionPanel({
   onCancel,
 }: {
   form: typeof emptyLegacySubscriptionForm;
+  services: LegacySubscriptionService[];
   saving: boolean;
   open: boolean;
   onToggle: () => void;
@@ -133,6 +131,15 @@ function ManualLegacySubscriptionPanel({
   onSubmit: () => void;
   onCancel: () => void;
 }) {
+  const selectedService = services.find((service) => String(service.id) === String(form.product_id)) || null;
+  const needsVisitsLeft = selectedService?.subscription_type === "single" || selectedService?.subscription_type === "visits";
+  const calculatedExpiresAt =
+    selectedService?.validity_days && form.started_at
+      ? new Date(new Date(form.started_at).getTime() + selectedService.validity_days * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .slice(0, 10)
+      : null;
+
   return (
     <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -153,52 +160,39 @@ function ManualLegacySubscriptionPanel({
 
       {open && (
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className={clientLabelCls}>Тип</label>
+          <div className="sm:col-span-2">
+            <label className={clientLabelCls}>Услуга</label>
             <select
-              value={form.type}
-              onChange={(event) => onChange({ ...form, type: event.target.value as SubscriptionType })}
+              value={form.product_id}
+              onChange={(event) => onChange({ ...form, product_id: event.target.value, visits_left: "" })}
+              disabled={services.length === 0}
               className={`mt-2 ${clientInputCls}`}
             >
-              <option value="single">Разовый</option>
-              <option value="visits">По посещениям</option>
-              <option value="period">По сроку</option>
-              <option value="unlimited">Безлимит</option>
+              <option value="">Выберите услугу</option>
+              {services.map((service) => (
+                <option key={service.id} value={service.id}>
+                  {service.name}
+                </option>
+              ))}
             </select>
+            {services.length === 0 && (
+              <p className="mt-2 text-xs text-[var(--text-muted)]">Нет активных услуг с параметрами абонемента.</p>
+            )}
           </div>
-          <div>
-            <label className={clientLabelCls}>Статус</label>
-            <select
-              value={form.status}
-              onChange={(event) => onChange({ ...form, status: event.target.value as SubscriptionStatus })}
-              className={`mt-2 ${clientInputCls}`}
-            >
-              <option value="active">Активен</option>
-              <option value="expired">Истек</option>
-              <option value="exhausted">Исчерпан</option>
-              <option value="frozen">Заморожен</option>
-            </select>
-          </div>
-          <div>
-            <label className={clientLabelCls}>Всего посещений</label>
-            <input
-              type="number"
-              min="0"
-              value={form.visits_total}
-              onChange={(event) => onChange({ ...form, visits_total: event.target.value })}
-              className={`mt-2 ${clientInputCls}`}
-            />
-          </div>
-          <div>
-            <label className={clientLabelCls}>Осталось посещений</label>
-            <input
-              type="number"
-              min="0"
-              value={form.visits_left}
-              onChange={(event) => onChange({ ...form, visits_left: event.target.value })}
-              className={`mt-2 ${clientInputCls}`}
-            />
-          </div>
+
+          {selectedService && (
+            <div className="sm:col-span-2 rounded-[18px] border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[var(--text-muted)]">
+              <p className="text-[var(--text-main)]">{getSubscriptionTypeLabel(selectedService.subscription_type)}</p>
+              <p className="mt-1">
+                Лимит: {selectedService.visits_total ?? "без лимита"} · срок: {selectedService.validity_days ? `${selectedService.validity_days} дн.` : "без срока"} · {selectedService.is_family ? "семейный" : "обычный"}
+              </p>
+              <p className="mt-1">
+                Занятия: {selectedService.training_types.length > 0 ? selectedService.training_types.map((item) => item.name).join(", ") : "все виды"}
+              </p>
+              {calculatedExpiresAt && <p className="mt-1">Окончание будет: {formatClientDate(calculatedExpiresAt)}</p>}
+            </div>
+          )}
+
           <div>
             <label className={clientLabelCls}>Дата начала</label>
             <input
@@ -208,23 +202,19 @@ function ManualLegacySubscriptionPanel({
               className={`mt-2 ${clientInputCls}`}
             />
           </div>
-          <div>
-            <label className={clientLabelCls}>Дата окончания</label>
-            <input
-              type="date"
-              value={form.expires_at}
-              onChange={(event) => onChange({ ...form, expires_at: event.target.value })}
-              className={`mt-2 ${clientInputCls}`}
-            />
-          </div>
-          <label className="flex items-center gap-3 rounded-[18px] border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[var(--text-main)]">
-            <input
-              type="checkbox"
-              checked={form.is_family}
-              onChange={(event) => onChange({ ...form, is_family: event.target.checked })}
-            />
-            Семейный
-          </label>
+          {needsVisitsLeft && (
+            <div>
+              <label className={clientLabelCls}>Осталось посещений</label>
+              <input
+                type="number"
+                min="0"
+                max={selectedService?.visits_total ?? undefined}
+                value={form.visits_left}
+                onChange={(event) => onChange({ ...form, visits_left: event.target.value })}
+                className={`mt-2 ${clientInputCls}`}
+              />
+            </div>
+          )}
           <div className="sm:col-span-2">
             <label className={clientLabelCls}>Комментарий</label>
             <textarea
@@ -238,7 +228,7 @@ function ManualLegacySubscriptionPanel({
             <button
               type="button"
               onClick={onSubmit}
-              disabled={saving}
+              disabled={saving || services.length === 0}
               className="rounded-[16px] bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[#062b26] disabled:opacity-50"
             >
               {saving ? "Добавляем..." : "Добавить старый абонемент"}
@@ -385,6 +375,7 @@ export default function ClientDetailsPage() {
   const [showLegacyForm, setShowLegacyForm] = useState(false);
   const [legacySaving, setLegacySaving] = useState(false);
   const [legacyForm, setLegacyForm] = useState(emptyLegacySubscriptionForm);
+  const [legacyServices, setLegacyServices] = useState<LegacySubscriptionService[]>([]);
   const [reloadToken, setReloadToken] = useState(0);
 
   const [form, setForm] = useState({
@@ -433,6 +424,36 @@ export default function ClientDetailsPage() {
       setEditing(false);
     }
   }, [canUpdateClient, editing]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLegacyServices() {
+      if (!canCreateLegacySubscription) {
+        setLegacyServices([]);
+        setShowLegacyForm(false);
+        return;
+      }
+
+      try {
+        const data = await fetchLegacySubscriptionServices();
+        if (!cancelled) {
+          setLegacyServices(data);
+        }
+      } catch (servicesError) {
+        if (!cancelled) {
+          setLegacyServices([]);
+          setError(servicesError instanceof Error ? servicesError.message : "Не удалось загрузить услуги для старых абонементов");
+        }
+      }
+    }
+
+    void loadLegacyServices();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canCreateLegacySubscription]);
 
   useEffect(() => {
     let cancelled = false;
@@ -597,22 +618,47 @@ export default function ClientDetailsPage() {
       return;
     }
 
-    setLegacySaving(true);
     setError(null);
 
-    const visitsTotal = legacyForm.visits_total ? Number.parseInt(legacyForm.visits_total, 10) : null;
-    const visitsLeft = legacyForm.visits_left ? Number.parseInt(legacyForm.visits_left, 10) : visitsTotal;
+    if (!legacyForm.product_id) {
+      setError("Выберите услугу");
+      return;
+    }
+
+    if (!legacyForm.started_at) {
+      setError("Укажите дату начала");
+      return;
+    }
+
+    const selectedService = legacyServices.find((service) => String(service.id) === String(legacyForm.product_id)) || null;
+    if (!selectedService) {
+      setError("Выбранная услуга недоступна");
+      return;
+    }
+
+    const needsVisitsLeft = selectedService?.subscription_type === "single" || selectedService?.subscription_type === "visits";
+    const visitsLeft = needsVisitsLeft && legacyForm.visits_left
+      ? Number.parseInt(legacyForm.visits_left, 10)
+      : null;
+
+    if (needsVisitsLeft && legacyForm.visits_left && !Number.isFinite(visitsLeft)) {
+      setError("Укажите корректный остаток посещений");
+      return;
+    }
+
+    if (needsVisitsLeft && visitsLeft !== null && selectedService.visits_total !== null && visitsLeft > selectedService.visits_total) {
+      setError("Остаток посещений не может быть больше лимита услуги");
+      return;
+    }
+
+    setLegacySaving(true);
 
     try {
       await createManualLegacySubscription({
         client_id: client.id,
-        type: legacyForm.type,
-        visits_total: Number.isFinite(visitsTotal) ? visitsTotal : null,
         visits_left: Number.isFinite(visitsLeft) ? visitsLeft : null,
-        started_at: legacyForm.started_at || null,
-        expires_at: legacyForm.expires_at || null,
-        is_family: legacyForm.is_family,
-        status: legacyForm.status,
+        product_id: legacyForm.product_id,
+        started_at: legacyForm.started_at,
         note: legacyForm.note.trim() || null,
       });
 
@@ -910,6 +956,7 @@ export default function ClientDetailsPage() {
           {canCreateLegacySubscription && (
             <ManualLegacySubscriptionPanel
               form={legacyForm}
+              services={legacyServices}
               saving={legacySaving}
               open={showLegacyForm}
               onToggle={() => setShowLegacyForm((value) => !value)}

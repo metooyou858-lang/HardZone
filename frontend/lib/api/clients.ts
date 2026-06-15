@@ -102,6 +102,17 @@ export type LegacySubscriptionImportResult = LegacySubscriptionImportPlan & {
   skipped: number;
 };
 
+export type LegacySubscriptionService = {
+  id: string;
+  name: string;
+  subscription_type: SubscriptionType;
+  visits_total: number | null;
+  validity_days: number | null;
+  activation_type: "purchase" | "first_visit";
+  is_family: boolean;
+  training_types: Array<{ id: string; name: string; color: string | null }>;
+};
+
 type ApiEnvelope<T> = {
   success: boolean;
   data: T;
@@ -233,16 +244,16 @@ export async function importLegacySubscriptionsCsv(file: File): Promise<LegacySu
   return response.data;
 }
 
+export async function fetchLegacySubscriptionServices(): Promise<LegacySubscriptionService[]> {
+  const response = await apiFetch<ApiEnvelope<LegacySubscriptionService[]>>("/subscriptions/legacy-services");
+  return response.data;
+}
+
 export async function createManualLegacySubscription(data: {
   client_id: string | number;
-  product_id?: string | number | null;
-  type: SubscriptionType;
-  visits_total?: number | null;
+  product_id: string | number;
   visits_left?: number | null;
   started_at?: string | null;
-  expires_at?: string | null;
-  is_family?: boolean;
-  status?: SubscriptionStatus;
   note?: string | null;
 }): Promise<ClientSubscription> {
   const response = await apiFetch<ApiEnvelope<ClientSubscription>>("/subscriptions/legacy-manual", {
