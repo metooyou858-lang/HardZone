@@ -1,13 +1,97 @@
 const express = require('express');
+const multer = require('multer');
 
+const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
 const {
   CLUB_TIME_ZONE,
   expireActiveSubscriptions,
 } = require('../services/subscription-validity');
+const {
+  buildLegacySubscriptionImportPlan,
+  importLegacySubscriptions,
+} = require('../services/legacy-subscription-import');
 const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 },
+});
+const requireClientsImport = authMiddleware.requireModule('clients_import');
+
+router.post('/legacy-import/preview', requireClientsImport, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(422).json({ success: false, error: 'Загрузите CSV-файл' });
+    }
+
+    const plan = await buildLegacySubscriptionImportPlan(pool, req.file.buffer);
+    res.json({ success: true, data: plan });
+  } catch (err) {
+    sendInternalError(res, err, { route: 'subscriptions.legacy_import_preview' });
+  }
+});
+
+router.post('/legacy-import/confirm', requireClientsImport, upload.single('file'), async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    if (!req.file) {
+      return res.status(422).json({ success: false, error: 'Загрузите CSV-файл' });
+    }
+
+    await client.query('BEGIN');
+    const result = await importLegacySubscriptions(client, req.file.buffer, req.user?.username || req.user?.email || null);
+    await client.query('COMMIT');
+
+    res.status(201).json({ success: true, data: result });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    sendInternalError(res, err, { route: 'subscriptions.legacy_import_confirm' });
+  } finally {
+    client.release();
+  }
+});
+
+router.delete('/legacy-import/:batchId', requireClientsImport, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const { rows: visitRows } = await client.query(
+      `
+        SELECT COUNT(*)::INT AS count
+        FROM client_visits cv
+        JOIN client_subscriptions cs ON cs.id = cv.subscription_id
+        WHERE cs.legacy_import_batch_id = $1
+      `,
+      [req.params.batchId]
+    );
+
+    if ((visitRows[0]?.count || 0) > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        success: false,
+        error: 'По этой пачке уже есть посещения, автоматический откат запрещён',
+      });
+    }
+
+    const { rowCount } = await client.query(
+      'DELETE FROM client_subscriptions WHERE legacy_import_batch_id = $1',
+      [req.params.batchId]
+    );
+
+    await client.query('COMMIT');
+    res.json({ success: true, data: { deleted: rowCount || 0 } });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    sendInternalError(res, err, { route: 'subscriptions.legacy_import_rollback' });
+  } finally {
+    client.release();
+  }
+});
 
 router.post('/', async (req, res) => {
   try {

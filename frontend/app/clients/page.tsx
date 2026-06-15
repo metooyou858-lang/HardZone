@@ -3,7 +3,16 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { ClientListItem, createClient, fetchClients, importClientsCsv } from "@/lib/api/clients";
+import {
+  ClientListItem,
+  LegacySubscriptionImportPlan,
+  LegacySubscriptionImportResult,
+  createClient,
+  fetchClients,
+  importClientsCsv,
+  importLegacySubscriptionsCsv,
+  previewLegacySubscriptionsCsv,
+} from "@/lib/api/clients";
 import { hasModuleAccess, type AuthModulePermission } from "@/lib/access";
 import {
   clientInputCls,
@@ -98,6 +107,12 @@ export default function ClientsPage() {
     errors: string[];
   } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [legacyFile, setLegacyFile] = useState<File | null>(null);
+  const [legacyPreviewing, setLegacyPreviewing] = useState(false);
+  const [legacyImporting, setLegacyImporting] = useState(false);
+  const [legacyPlan, setLegacyPlan] = useState<LegacySubscriptionImportPlan | null>(null);
+  const [legacyResult, setLegacyResult] = useState<LegacySubscriptionImportResult | null>(null);
+  const [legacyError, setLegacyError] = useState<string | null>(null);
 
   const canCreateClient = hasModuleAccess(currentModules, "clients_create");
   const canImportClients = hasModuleAccess(currentModules, "clients_import");
@@ -238,6 +253,47 @@ export default function ClientsPage() {
       setImportError(uploadError instanceof Error ? uploadError.message : "Не удалось загрузить файл");
     } finally {
       setImporting(false);
+    }
+  }
+
+  async function handleLegacyPreview() {
+    if (!legacyFile) {
+      setLegacyError("Выберите CSV-файл со старыми абонементами");
+      return;
+    }
+
+    setLegacyPreviewing(true);
+    setLegacyError(null);
+    setLegacyResult(null);
+
+    try {
+      const result = await previewLegacySubscriptionsCsv(legacyFile);
+      setLegacyPlan(result);
+    } catch (previewError) {
+      setLegacyError(previewError instanceof Error ? previewError.message : "Не удалось проверить файл");
+    } finally {
+      setLegacyPreviewing(false);
+    }
+  }
+
+  async function handleLegacyImport() {
+    if (!legacyFile) {
+      setLegacyError("Выберите CSV-файл со старыми абонементами");
+      return;
+    }
+
+    setLegacyImporting(true);
+    setLegacyError(null);
+
+    try {
+      const result = await importLegacySubscriptionsCsv(legacyFile);
+      setLegacyResult(result);
+      setLegacyPlan(result);
+      setReloadToken((value) => value + 1);
+    } catch (importError) {
+      setLegacyError(importError instanceof Error ? importError.message : "Не удалось импортировать абонементы");
+    } finally {
+      setLegacyImporting(false);
     }
   }
 
@@ -518,6 +574,96 @@ export default function ClientsPage() {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            <div className="border-t border-[var(--line-soft)] pt-5">
+              <p className="font-[family:var(--font-heading)] text-xl font-semibold text-[var(--text-main)]">
+                Импорт старых абонементов
+              </p>
+              <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+                CSV переносит остатки напрямую в карточки клиентов: без заказа, оплаты, чека и AQSI. Сначала проверьте файл,
+                затем импортируйте только готовые строки.
+              </p>
+            </div>
+
+            <div className="rounded-[24px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-5">
+              <label className={clientLabelCls}>CSV старых абонементов</label>
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(event) => {
+                  setLegacyFile(event.target.files?.[0] ?? null);
+                  setLegacyPlan(null);
+                  setLegacyResult(null);
+                  setLegacyError(null);
+                }}
+                className="mt-3 block w-full text-sm text-[var(--text-main)] file:mr-4 file:rounded-full file:border-0 file:bg-[var(--accent-soft)] file:px-4 file:py-2 file:text-sm file:font-medium file:text-[var(--accent)]"
+              />
+
+              <div className="mt-5 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => void handleLegacyPreview()}
+                  disabled={legacyPreviewing || legacyImporting}
+                  className="rounded-[18px] border border-[var(--line-soft)] px-5 py-3 text-sm font-semibold text-[var(--text-main)] transition-all hover:bg-[rgba(255,255,255,0.04)] disabled:opacity-50"
+                >
+                  {legacyPreviewing ? "Проверяем..." : "Проверить файл"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void handleLegacyImport()}
+                  disabled={!legacyPlan || legacyPlan.ready === 0 || legacyPreviewing || legacyImporting}
+                  className="rounded-[18px] bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110 disabled:opacity-50"
+                >
+                  {legacyImporting ? "Импортируем..." : "Импортировать готовые"}
+                </button>
+              </div>
+            </div>
+
+            {legacyError && (
+              <div className="rounded-[20px] border border-[rgba(248,81,73,0.28)] bg-[rgba(248,81,73,0.12)] px-4 py-3 text-sm text-[var(--danger)]">
+                {legacyError}
+              </div>
+            )}
+
+            {legacyPlan && (
+              <div className="rounded-[20px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-4 text-sm text-[var(--text-main)]">
+                <div className="flex flex-wrap gap-4">
+                  <span>Всего строк: {legacyPlan.total}</span>
+                  <span className="text-[var(--accent)]">Готово: {legacyPlan.ready}</span>
+                  <span className="text-[var(--warning)]">Конфликты: {legacyPlan.conflicts}</span>
+                  {legacyResult && <span>Batch: {legacyResult.batch_id}</span>}
+                </div>
+
+                <div className="mt-4 max-h-80 space-y-2 overflow-auto pr-2">
+                  {legacyPlan.rows.slice(0, 30).map((row) => (
+                    <div
+                      key={`${row.row_number}-${row.phone}-${row.email}-${row.product_name}`}
+                      className={`rounded-[16px] border px-3 py-3 ${
+                        row.ready
+                          ? "border-[rgba(0,191,165,0.22)] bg-[rgba(0,191,165,0.08)]"
+                          : "border-[rgba(248,81,73,0.24)] bg-[rgba(248,81,73,0.1)]"
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-medium">
+                          Строка {row.row_number}:{" "}
+                          {row.client
+                            ? [row.client.last_name, row.client.first_name].filter(Boolean).join(" ")
+                            : [row.last_name, row.first_name].filter(Boolean).join(" ") || row.phone || row.email || "клиент не указан"}
+                        </p>
+                        <p className="text-xs text-[var(--text-muted)]">
+                          {row.type || "тип ?"} · осталось {row.visits_left ?? "без лимита"} · до {row.expires_at || "без даты"}
+                        </p>
+                      </div>
+                      {row.product?.name && <p className="mt-1 text-xs text-[var(--text-muted)]">Услуга: {row.product.name}</p>}
+                      {row.errors.length > 0 && <p className="mt-2 text-xs text-[var(--danger)]">{row.errors.join("; ")}</p>}
+                      {row.warnings.length > 0 && <p className="mt-2 text-xs text-[var(--warning)]">{row.warnings.join("; ")}</p>}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

@@ -65,6 +65,43 @@ export type ClientDetail = Client & {
   visits: ClientVisit[];
 };
 
+export type LegacySubscriptionImportRow = {
+  row_number: number;
+  client_id: number | null;
+  phone: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  product_id: number | null;
+  product_name: string;
+  type: SubscriptionType | null;
+  visits_total: number | null;
+  visits_left: number | null;
+  started_at: string | null;
+  expires_at: string | null;
+  is_family: boolean;
+  status: SubscriptionStatus | null;
+  note: string;
+  client: Pick<Client, "id" | "first_name" | "last_name" | "phone" | "email"> | null;
+  product: { id: string; name: string } | null;
+  errors: string[];
+  warnings: string[];
+  ready: boolean;
+};
+
+export type LegacySubscriptionImportPlan = {
+  total: number;
+  ready: number;
+  conflicts: number;
+  rows: LegacySubscriptionImportRow[];
+};
+
+export type LegacySubscriptionImportResult = LegacySubscriptionImportPlan & {
+  batch_id: string;
+  imported: number;
+  skipped: number;
+};
+
 type ApiEnvelope<T> = {
   success: boolean;
   data: T;
@@ -171,6 +208,28 @@ export async function importClientsCsv(file: File): Promise<{
       body: formData,
     }
   );
+  return response.data;
+}
+
+export async function previewLegacySubscriptionsCsv(file: File): Promise<LegacySubscriptionImportPlan> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await apiFetch<ApiEnvelope<LegacySubscriptionImportPlan>>("/subscriptions/legacy-import/preview", {
+    method: "POST",
+    body: formData,
+  });
+  return response.data;
+}
+
+export async function importLegacySubscriptionsCsv(file: File): Promise<LegacySubscriptionImportResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await apiFetch<ApiEnvelope<LegacySubscriptionImportResult>>("/subscriptions/legacy-import/confirm", {
+    method: "POST",
+    body: formData,
+  });
   return response.data;
 }
 
