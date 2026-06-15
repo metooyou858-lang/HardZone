@@ -50,8 +50,8 @@ export function useTrainingTypes() {
     return updated;
   }
 
-  async function remove(id: string) {
-    await deleteTrainingType(id);
+  async function remove(id: string, options?: { force?: boolean }) {
+    await deleteTrainingType(id, options);
     setTrainingTypes((previous) => previous.filter((current) => current.id !== id));
   }
 

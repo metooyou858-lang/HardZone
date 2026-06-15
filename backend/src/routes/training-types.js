@@ -20,6 +20,47 @@ function normalizeTextArray(value) {
   return [];
 }
 
+async function getTrainingTypeUsage(client, id) {
+  const productLinks = await client.query(
+    'SELECT COUNT(*)::INT AS count FROM product_training_types WHERE training_type_id = $1',
+    [id]
+  );
+  const trainerLinks = await client.query(
+    'SELECT COUNT(*)::INT AS count FROM trainer_training_types WHERE training_type_id = $1',
+    [id]
+  );
+  const templateLinks = await client.query(
+    'SELECT COUNT(*)::INT AS count FROM schedule_templates WHERE training_type_id = $1',
+    [id]
+  );
+  const slotLinks = await client.query(
+    'SELECT COUNT(*)::INT AS count FROM schedule_slots WHERE training_type_id = $1',
+    [id]
+  );
+
+  return {
+    products: productLinks.rows[0]?.count || 0,
+    trainers: trainerLinks.rows[0]?.count || 0,
+    schedule_templates: templateLinks.rows[0]?.count || 0,
+    schedule_slots: slotLinks.rows[0]?.count || 0,
+  };
+}
+
+function getUsageTotal(usage) {
+  return Object.values(usage).reduce((sum, count) => sum + Number(count || 0), 0);
+}
+
+function formatUsageMessage(usage) {
+  const parts = [
+    usage.products ? `${usage.products} услуг/абонементов` : null,
+    usage.trainers ? `${usage.trainers} тренеров` : null,
+    usage.schedule_templates ? `${usage.schedule_templates} шаблонов расписания` : null,
+    usage.schedule_slots ? `${usage.schedule_slots} занятий в расписании` : null,
+  ].filter(Boolean);
+
+  return parts.join(', ');
+}
+
 // GET /api/training-types — список видов тренировок
 router.get('/', requireTrainingTypesRead, async (req, res) => {
   try {
@@ -147,22 +188,61 @@ router.patch('/:id', requireTrainingTypesManage, async (req, res) => {
   }
 });
 
-// DELETE /api/training-types/:id — удалить (только если не используется)
+// DELETE /api/training-types/:id — удалить; при force=true сначала отвязать от связанных сущностей
 router.delete('/:id', requireTrainingTypesManage, async (req, res) => {
+  const client = await pool.connect();
+
   try {
-    const { rows: used } = await pool.query(
-      'SELECT id FROM product_training_types WHERE training_type_id = $1 LIMIT 1',
+    await client.query('BEGIN');
+
+    const { rows: existingRows } = await client.query(
+      'SELECT id, name FROM training_types WHERE id = $1 FOR UPDATE',
       [req.params.id]
     );
 
-    if (used.length) {
-      return res.status(409).json({ success: false, error: 'Вид тренировки используется в абонементах' });
+    if (!existingRows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Вид тренировки не найден' });
     }
 
-    await pool.query('DELETE FROM training_types WHERE id = $1', [req.params.id]);
+    const usage = await getTrainingTypeUsage(client, req.params.id);
+    const usageTotal = getUsageTotal(usage);
+    const forceDelete = req.query.force === 'true' || req.body?.force === true;
+
+    if (usageTotal > 0 && !forceDelete) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        success: false,
+        error: `Вид тренировки используется: ${formatUsageMessage(usage)}. Можно удалить с отвязкой связей.`,
+        code: 'training_type_in_use',
+        data: {
+          usage,
+          can_force_delete: true,
+        },
+      });
+    }
+
+    if (usageTotal > 0) {
+      await client.query('DELETE FROM product_training_types WHERE training_type_id = $1', [req.params.id]);
+      await client.query('DELETE FROM trainer_training_types WHERE training_type_id = $1', [req.params.id]);
+      await client.query(
+        'UPDATE schedule_templates SET training_type_id = NULL, updated_at = NOW() WHERE training_type_id = $1',
+        [req.params.id]
+      );
+      await client.query(
+        'UPDATE schedule_slots SET training_type_id = NULL, updated_at = NOW() WHERE training_type_id = $1',
+        [req.params.id]
+      );
+    }
+
+    await client.query('DELETE FROM training_types WHERE id = $1', [req.params.id]);
+    await client.query('COMMIT');
     res.status(204).end();
   } catch (err) {
+    await client.query('ROLLBACK');
     sendInternalError(res, err, { route: 'training_types.delete' });
+  } finally {
+    client.release();
   }
 });
 

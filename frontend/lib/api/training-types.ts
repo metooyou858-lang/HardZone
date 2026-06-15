@@ -23,6 +23,13 @@ type ApiEnvelope<T> = {
   error?: string;
 };
 
+export type TrainingTypeUsage = {
+  products: number;
+  trainers: number;
+  schedule_templates: number;
+  schedule_slots: number;
+};
+
 export async function fetchTrainingTypes(params?: {
   slot_type?: "group" | "personal";
   include_inactive?: boolean;
@@ -86,6 +93,7 @@ export async function updateTrainingType(
   return response.data;
 }
 
-export async function deleteTrainingType(id: string): Promise<void> {
-  await apiFetch(`/training-types/${id}`, { method: "DELETE" });
+export async function deleteTrainingType(id: string, options?: { force?: boolean }): Promise<void> {
+  const suffix = options?.force ? "?force=true" : "";
+  await apiFetch(`/training-types/${id}${suffix}`, { method: "DELETE" });
 }

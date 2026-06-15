@@ -3,7 +3,8 @@
 import { useState } from "react";
 
 import { useTrainingTypes } from "@/hooks/useTrainingTypes";
-import { TrainingType } from "@/lib/api/training-types";
+import { ApiError } from "@/lib/api/client";
+import { TrainingType, TrainingTypeUsage } from "@/lib/api/training-types";
 
 const inputCls =
   "w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20";
@@ -37,6 +38,24 @@ function toFormState(item?: TrainingType): TrainingTypeFormState {
     tags: (item?.tags ?? []).join(", "),
     is_active: item?.is_active ?? true,
   };
+}
+
+function getTrainingTypeUsageParts(usage: TrainingTypeUsage) {
+  return [
+    usage.products ? `${usage.products} услуг/абонементов` : null,
+    usage.trainers ? `${usage.trainers} тренеров` : null,
+    usage.schedule_templates ? `${usage.schedule_templates} шаблонов расписания` : null,
+    usage.schedule_slots ? `${usage.schedule_slots} занятий в расписании` : null,
+  ].filter(Boolean);
+}
+
+function getTrainingTypeUsageFromError(error: unknown): TrainingTypeUsage | null {
+  if (!(error instanceof ApiError) || error.status !== 409) {
+    return null;
+  }
+
+  const data = error.data as { code?: string; data?: { usage?: TrainingTypeUsage } } | null;
+  return data?.code === "training_type_in_use" ? data.data?.usage ?? null : null;
 }
 
 function TrainingTypeForm({
@@ -273,12 +292,40 @@ export function TrainingTypesManager({ onClose }: { onClose: () => void }) {
     }
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(item: TrainingType) {
     setActionError(null);
 
+    if (!window.confirm(`Удалить тип тренировки "${item.name}"?`)) {
+      return;
+    }
+
     try {
-      await remove(id);
+      await remove(item.id);
     } catch (error: unknown) {
+      const usage = getTrainingTypeUsageFromError(error);
+
+      if (usage) {
+        const usageText = getTrainingTypeUsageParts(usage).join(", ");
+        const confirmed = window.confirm(
+          `Тип тренировки "${item.name}" используется: ${usageText}.\n\n` +
+            "При удалении тип будет отвязан от услуг, тренеров, шаблонов и занятий. " +
+            "Сами услуги, тренеры, занятия и записи клиентов останутся.\n\n" +
+            "Удалить и отвязать связи?"
+        );
+
+        if (!confirmed) {
+          return;
+        }
+
+        try {
+          await remove(item.id, { force: true });
+          return;
+        } catch (forceError: unknown) {
+          setActionError(forceError instanceof Error ? forceError.message : "Ошибка");
+          return;
+        }
+      }
+
       setActionError(error instanceof Error ? error.message : "Ошибка");
     }
   }
@@ -360,7 +407,7 @@ export function TrainingTypesManager({ onClose }: { onClose: () => void }) {
                     </button>
                     <button
                       onClick={() => {
-                        void handleDelete(item.id);
+                        void handleDelete(item);
                       }}
                       className="rounded-lg border border-red-900 px-3 py-1.5 text-xs text-red-500 hover:bg-red-950"
                     >

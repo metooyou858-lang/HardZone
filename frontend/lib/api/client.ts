@@ -4,6 +4,18 @@ export const defaultHeaders = {
   "Content-Type": "application/json",
 };
 
+export class ApiError extends Error {
+  status: number;
+  data: unknown;
+
+  constructor(message: string, status: number, data: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.data = data;
+  }
+}
+
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers ?? {});
   const hasFormData = typeof FormData !== "undefined" && options?.body instanceof FormData;
@@ -44,7 +56,7 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
     }
 
     const errorData = data as { error?: string; hint?: string } | null;
-    throw new Error(errorData?.error ?? errorData?.hint ?? "Неизвестная ошибка сервера");
+    throw new ApiError(errorData?.error ?? errorData?.hint ?? "Неизвестная ошибка сервера", response.status, data);
   }
 
   return data as T;
