@@ -94,6 +94,11 @@ router.post('/', requireModule('schedule_clients'), async (req, res) => {
         }
       }
 
+      if (!covered_by_booking_id && !subscription_id) {
+        await client.query('ROLLBACK');
+        return res.status(422).json({ success: false, error: 'Выберите подходящий абонемент для записи' });
+      }
+
       let placesCount = 1;
       if (subscription_id) {
         const subscription = await assertSubscriptionAccess(client, {

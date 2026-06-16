@@ -31,6 +31,7 @@
 - Новые маршруты расписания, CRM, staff и Telegram не должны писать собственный decrement/increment `visits_left`; они должны вызывать этот сервис.
 - `expireActiveSubscriptions` закрывает активные абонементы не только по истекшему `expires_at`, но и по нулевому остатку занятий для `single` / `visits`.
 - `POST /api/products/:id/subscription-params` нормализует связи с видами тренировок: свободное посещение не хранит `product_training_types`, групповой доступ принимает только `slot_type = group`, персональный - только `slot_type = personal`.
+- `bookings`, `staff/bookings`, `schedule/open-gym/check-in` и Telegram Mini App должны проверять абонемент через `assertSubscriptionAccess` / `chargeSubscriptionVisit`; UI может фильтровать список, но не является источником допуска.
 
 ## Sub-permissions расписания
 

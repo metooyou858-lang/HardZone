@@ -588,7 +588,6 @@ async function bookClientSlot(telegramId, slotId) {
             OR COALESCE(visits_left, 0) > 0
           )
         ORDER BY expires_at NULLS LAST, created_at DESC
-        LIMIT 1
       `,
       [clientId]
     );

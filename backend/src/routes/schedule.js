@@ -6,7 +6,7 @@ const {
   chargeSubscriptionVisit,
   refundSubscriptionVisit,
 } = require('../services/subscription-access');
-const { sendInternalError } = require('../utils/http-response');
+const { getPublicErrorMessage, sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
 const requireModule = authMiddleware.requireModule;
@@ -238,17 +238,18 @@ router.post('/open-gym/check-in', requireModule('schedule_gym'), async (req, res
       }
 
       // Валидация и списание абонемента
-      let resolvedSubscriptionId = null;
-
-      if (subscription_id) {
-        const subscription = await chargeSubscriptionVisit(client, {
-          subscriptionId: subscription_id,
-          clientId: customer.id,
-          context: { kind: 'free_visit' },
-        });
-
-        resolvedSubscriptionId = subscription.id;
+      if (!subscription_id) {
+        await client.query('ROLLBACK');
+        return res.status(422).json({ success: false, error: 'Выберите абонемент для свободного посещения' });
       }
+
+      const subscription = await chargeSubscriptionVisit(client, {
+        subscriptionId: subscription_id,
+        clientId: customer.id,
+        context: { kind: 'free_visit' },
+      });
+
+      const resolvedSubscriptionId = subscription.id;
       const { rows: insertedRows } = await client.query(
         `INSERT INTO client_visits (client_id, subscription_id, visit_type, created_by)
          VALUES ($1, $2, 'open_gym', $3)
@@ -283,7 +284,12 @@ router.post('/open-gym/check-in', requireModule('schedule_gym'), async (req, res
       client.release();
     }
   } catch (err) {
-    sendInternalError(res, err, { route: 'schedule.gym_visits.create' });
+    const statusCode = err.statusCode || 500;
+    if (statusCode >= 500) {
+      return sendInternalError(res, err, { route: 'schedule.gym_visits.create' });
+    }
+
+    return res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });
   }
 });
 

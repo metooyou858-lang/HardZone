@@ -102,7 +102,7 @@ export function GymSidebarBlock({
 
     try {
       const detail = await fetchClient(client.id);
-      const active = detail.subscriptions.filter((s) => s.status === "active");
+      const active = detail.subscriptions.filter((s) => s.status === "active" && s.allow_free_visit);
       setSubscriptions(active);
     } catch {
       setSubscriptions([]);

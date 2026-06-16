@@ -272,6 +272,9 @@ router.get('/:id', requireClientsRead, async (req, res) => {
 
     const { rows: subscriptions } = await pool.query(
       `SELECT cs.*, p.name AS product_name,
+          COALESCE(psp.allow_free_visit, false) AS allow_free_visit,
+          COALESCE(psp.allow_group_training, false) AS allow_group_training,
+          COALESCE(psp.allow_personal_training, false) AS allow_personal_training,
           COALESCE(
             ARRAY_AGG(ptt.training_type_id ORDER BY ptt.training_type_id)
               FILTER (WHERE ptt.training_type_id IS NOT NULL),
@@ -279,9 +282,10 @@ router.get('/:id', requireClientsRead, async (req, res) => {
           ) AS training_type_ids
        FROM client_subscriptions cs
        LEFT JOIN products p ON p.id = cs.product_id
+       LEFT JOIN product_subscription_params psp ON psp.product_id = cs.product_id
        LEFT JOIN product_training_types ptt ON ptt.product_id = cs.product_id
        WHERE cs.client_id = $1
-       GROUP BY cs.id, p.name
+       GROUP BY cs.id, p.name, psp.allow_free_visit, psp.allow_group_training, psp.allow_personal_training
        ORDER BY cs.created_at DESC`,
       [req.params.id]
     );

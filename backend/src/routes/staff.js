@@ -9,7 +9,7 @@ const {
   refundSubscriptionVisit,
 } = require('../services/subscription-access');
 const { expireActiveSubscriptions } = require('../services/subscription-validity');
-const { sendInternalError } = require('../utils/http-response');
+const { getPublicErrorMessage, sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
 const requireModule = authMiddleware.requireModule;
@@ -297,6 +297,11 @@ router.post('/bookings', requireModule('schedule_clients'), async (req, res) => 
       return res.status(404).json({ success: false, error: 'Slot not found or cancelled' });
     }
 
+    if (!subscription_id) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({ success: false, error: 'Выберите подходящий абонемент для записи' });
+    }
+
     let placesCount = 1;
     if (subscription_id) {
       const subscription = await assertSubscriptionAccess(client, {
@@ -345,7 +350,12 @@ router.post('/bookings', requireModule('schedule_clients'), async (req, res) => 
     res.status(201).json({ success: true, data: { booking: rows[0], ...slotBookings } });
   } catch (err) {
     await client.query('ROLLBACK');
-    sendInternalError(res, err, { route: 'staff.bookings.create' });
+    const statusCode = err.statusCode || 500;
+    if (statusCode >= 500) {
+      return sendInternalError(res, err, { route: 'staff.bookings.create' });
+    }
+
+    return res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });
   } finally {
     client.release();
   }

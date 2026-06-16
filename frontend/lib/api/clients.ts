@@ -28,6 +28,9 @@ export type ClientSubscription = {
   client_id: string;
   product_id: string | null;
   product_name: string | null;
+  allow_free_visit: boolean;
+  allow_group_training: boolean;
+  allow_personal_training: boolean;
   training_type_ids: number[];
   type: SubscriptionType;
   visits_total: number | null;

@@ -1,10 +1,11 @@
 "use client";
 
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import { formatClientName } from "@/components/clients/shared";
 import { CloseIcon, SearchIcon } from "@/components/schedule/schedule-shared";
 import type { ClientDetail, ClientListItem, ClientSubscription } from "@/lib/api/clients";
+import type { SlotType } from "@/lib/api/schedule";
 
 function formatSubLabel(sub: ClientSubscription): string {
   const name = sub.product_name || sub.type;
@@ -30,6 +31,7 @@ type SlotBookingFormProps = {
   selectedClientDetail: ClientDetail | null;
   selectedSubscriptionId: string;
   bookingSaving: boolean;
+  slotType: SlotType;
   slotTrainingTypeId?: string | null;
   // партнёр по сплиту — только для персональных с вместимостью > 1
   allowPartner: boolean;
@@ -60,6 +62,7 @@ export function SlotBookingForm({
   selectedClientDetail,
   selectedSubscriptionId,
   bookingSaving,
+  slotType,
   slotTrainingTypeId,
   allowPartner,
   partnerEnabled,
@@ -82,15 +85,24 @@ export function SlotBookingForm({
   const activeSubscriptions =
     selectedClientDetail?.subscriptions.filter((s) => s.status === "active") ?? [];
 
-  // Подходящие — без ограничений по типу или с совпадающим типом тренировки
+  // Подходящие — только по праву на формат слота и, если задано, по виду тренировки.
   const relevantSubs = activeSubscriptions.filter((s) => {
+    if (slotType === "group" && !s.allow_group_training) return false;
+    if (slotType === "personal" && !s.allow_personal_training) return false;
+    if (!["group", "personal"].includes(slotType)) return false;
     if (!slotTrainingTypeId) return true;
     if (s.training_type_ids.length === 0) return true;
     return s.training_type_ids.includes(Number(slotTrainingTypeId));
   });
 
-  // Неподходящие — есть ограничения, но не совпадают
   const otherSubs = activeSubscriptions.filter((s) => !relevantSubs.includes(s));
+  const canCreateBooking = !selectedClient || Boolean(selectedSubscriptionId);
+
+  useEffect(() => {
+    if (!selectedSubscriptionId) return;
+    if (relevantSubs.some((sub) => sub.id === selectedSubscriptionId)) return;
+    onSubscriptionChange("");
+  }, [onSubscriptionChange, relevantSubs, selectedSubscriptionId]);
 
   return (
     <section className="rounded-[26px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-5">
@@ -187,7 +199,7 @@ export function SlotBookingForm({
             ))}
 
             {relevantSubs.length === 0 && (
-              <p className="text-xs text-[var(--text-muted)] px-1">Нет абонементов для этого типа тренировки</p>
+              <p className="px-1 text-xs text-[var(--text-muted)]">Нет абонементов для этого формата занятия</p>
             )}
 
             {/* Неподходящие абонементы — только информационно, не кликабельны */}
@@ -286,7 +298,7 @@ export function SlotBookingForm({
           <button
             type="button"
             onClick={() => void onCreateBooking()}
-            disabled={bookingSaving}
+            disabled={bookingSaving || !canCreateBooking}
             className="w-full rounded-[18px] bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110 disabled:opacity-50"
           >
             {bookingSaving ? "Записываем..." : partnerEnabled && selectedPartner ? "Записать обоих" : "Записать клиента"}

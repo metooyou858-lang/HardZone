@@ -453,6 +453,7 @@ export function SlotDetailsModal({
                 selectedClientDetail={selectedClientDetail}
                 selectedSubscriptionId={selectedSubscriptionId}
                 bookingSaving={bookingSaving}
+                slotType={detail.slot_type}
                 slotTrainingTypeId={detail.training_type_id}
                 allowPartner={detail.slot_type === "personal" && detail.capacity > 1}
                 partnerEnabled={partnerEnabled}
