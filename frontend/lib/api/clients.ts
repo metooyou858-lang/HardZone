@@ -4,6 +4,7 @@ export type ClientStatus = "active" | "away" | "frozen" | "inactive";
 export type SubscriptionType = "single" | "visits" | "period" | "unlimited";
 export type SubscriptionStatus = "active" | "frozen" | "expired" | "exhausted";
 export type VisitType = "group" | "open_gym";
+export type CoverageStatus = "pending" | "covered" | "unpaid" | "comped" | "not_required";
 
 export type Client = {
   id: string;
@@ -48,6 +49,10 @@ export type ClientVisit = {
   id: string;
   client_id: string;
   subscription_id: string | null;
+  booking_id?: string | null;
+  coverage_status?: CoverageStatus;
+  coverage_reason?: string | null;
+  coverage_note?: string | null;
   visit_type: VisitType;
   visited_at: string;
   schedule_id: string | null;

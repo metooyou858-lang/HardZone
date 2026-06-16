@@ -4,11 +4,10 @@ const {
   expireActiveSubscriptions,
 } = require('./subscription-validity');
 const {
-  assertSubscriptionAccess,
-  chargeSubscriptionVisit,
-  getSlotAccessContext,
-  refundSubscriptionVisit,
-} = require('./subscription-access');
+  createTrainingBooking,
+  markTrainingBookingArrived,
+  unmarkTrainingBookingArrived,
+} = require('./booking-attendance');
 const { normalizePhone } = require('../utils/phones');
 
 const CLUB_TIME_ZONE = process.env.APP_TIMEZONE || 'Asia/Vladivostok';
@@ -359,58 +358,13 @@ async function createBooking(staff, slotId, clientId, subscriptionId = null) {
 
   try {
     await client.query('BEGIN');
-
-    const { rows: slotRows } = await client.query(
-      'SELECT * FROM schedule_slots WHERE id = $1 AND status = $2',
-      [slotId, 'active']
-    );
-    const slot = slotRows[0];
-    if (!slot) {
-      await client.query('ROLLBACK');
-      throw new Error('Занятие не найдено или отменено');
-    }
-
-    let placesCount = 1;
-    if (subscriptionId) {
-      const subscription = await assertSubscriptionAccess(client, {
-        subscriptionId,
-        clientId,
-        context: await getSlotAccessContext(client, slotId),
-      });
-
-      if (subscription.is_family) {
-        placesCount = 2;
-      }
-    }
-
-    if ((slot.booked_count || 0) + placesCount > slot.capacity) {
-      await client.query('ROLLBACK');
-      throw new Error('Нет свободных мест');
-    }
-
-    const { rows: existingRows } = await client.query(
-      "SELECT id FROM bookings WHERE slot_id = $1 AND client_id = $2 AND status IN ('confirmed', 'attended')",
-      [slotId, clientId]
-    );
-
-    if (existingRows.length > 0) {
-      await client.query('ROLLBACK');
-      throw new Error('Клиент уже записан');
-    }
-
-    await client.query(
-      `
-        INSERT INTO bookings (slot_id, client_id, subscription_id, places_count, booked_by)
-        VALUES ($1, $2, $3, $4, $5)
-      `,
-      [slotId, clientId, subscriptionId || null, placesCount, `telegram:${staff.username || staff.id}`]
-    );
-
-    await client.query(
-      'UPDATE schedule_slots SET booked_count = booked_count + $1, updated_at = NOW() WHERE id = $2',
-      [placesCount, slotId]
-    );
-
+    await createTrainingBooking(client, {
+      slotId,
+      clientId,
+      subscriptionId: subscriptionId || null,
+      bookedBy: `telegram:${staff.username || staff.id}`,
+      allowUnpaid: false,
+    });
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
@@ -426,38 +380,10 @@ async function markBookingAsAttended(staff, bookingId) {
 
   try {
     await client.query('BEGIN');
-
-    const { rows: bookingRows } = await client.query(
-      'SELECT * FROM bookings WHERE id = $1 AND status = $2',
-      [bookingId, 'confirmed']
-    );
-    const booking = bookingRows[0];
-    if (!booking) {
-      await client.query('ROLLBACK');
-      throw new Error('Запись не найдена');
-    }
-
-    await client.query(
-      'UPDATE bookings SET status = $1, updated_at = NOW() WHERE id = $2',
-      ['attended', bookingId]
-    );
-
-    if (booking.subscription_id) {
-      await chargeSubscriptionVisit(client, {
-        subscriptionId: booking.subscription_id,
-        clientId: booking.client_id,
-        context: await getSlotAccessContext(client, booking.slot_id),
-      });
-    }
-
-    await client.query(
-      `
-        INSERT INTO client_visits (client_id, subscription_id, visit_type, slot_id, created_by)
-        VALUES ($1, $2, 'group', $3, $4)
-      `,
-      [booking.client_id, booking.subscription_id || null, booking.slot_id, `telegram:${staff.username || staff.id}`]
-    );
-
+    const booking = await markTrainingBookingArrived(client, {
+      bookingId,
+      createdBy: `telegram:${staff.username || staff.id}`,
+    });
     await client.query('COMMIT');
     return booking.slot_id;
   } catch (error) {
@@ -474,39 +400,7 @@ async function markBookingAsUnattended(staff, bookingId) {
 
   try {
     await client.query('BEGIN');
-
-    const { rows: bookingRows } = await client.query(
-      'SELECT * FROM bookings WHERE id = $1 AND status = $2',
-      [bookingId, 'attended']
-    );
-    const booking = bookingRows[0];
-    if (!booking) {
-      await client.query('ROLLBACK');
-      throw new Error('Запись не найдена или посещение не отмечено');
-    }
-
-    const { rows: visitRows } = await client.query(
-      `DELETE FROM client_visits
-       WHERE id = (
-         SELECT id FROM client_visits
-         WHERE client_id = $1 AND slot_id = $2 AND visit_type = 'group'
-         ORDER BY visited_at DESC
-         LIMIT 1
-       )
-       RETURNING subscription_id`,
-      [booking.client_id, booking.slot_id]
-    );
-
-    const chargedSubscriptionId = visitRows[0]?.subscription_id ?? null;
-    if (chargedSubscriptionId) {
-      await refundSubscriptionVisit(client, chargedSubscriptionId);
-    }
-
-    await client.query(
-      "UPDATE bookings SET status = 'confirmed', updated_at = NOW() WHERE id = $1",
-      [booking.id]
-    );
-
+    const booking = await unmarkTrainingBookingArrived(client, bookingId);
     await client.query('COMMIT');
     return booking.slot_id;
   } catch (error) {

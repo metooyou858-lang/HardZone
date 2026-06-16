@@ -118,6 +118,7 @@ export function GymSidebarBlock({
       const response = await checkInOpenGym({
         client_id: client.id,
         subscription_id: subscriptionId,
+        attendance_mode: subscriptionId ? "auto" : "unpaid",
         created_by: "admin",
       });
 
@@ -305,6 +306,15 @@ export function GymSidebarBlock({
                 style={{ background: "var(--energy-soft)" }}
               >
                 Нет абонемента
+              </button>
+              <button
+                type="button"
+                disabled={checkingIn}
+                onClick={() => void handleCheckIn(selectedClient, null)}
+                className="w-full rounded-[1.25rem] border border-[rgba(248,191,0,0.35)] px-4 py-2.5 text-left text-sm font-semibold text-[#f8bf00] transition-colors disabled:opacity-50"
+                style={{ background: "rgba(248,191,0,0.1)" }}
+              >
+                Отметить вход к оплате
               </button>
             </div>
           )}

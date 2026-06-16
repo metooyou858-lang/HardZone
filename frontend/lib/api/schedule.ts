@@ -9,6 +9,7 @@ type ApiEnvelope<T> = {
 export type SlotType = "group" | "personal" | "rental";
 export type SlotStatus = "active" | "cancelled" | "completed";
 export type BookingStatus = "confirmed" | "cancelled" | "attended" | "missed";
+export type CoverageStatus = "pending" | "covered" | "unpaid" | "comped" | "not_required";
 export type GymHour = {
   day_of_week: number;
   is_open: boolean;
@@ -21,6 +22,9 @@ export type OpenGymVisit = {
   id: string;
   client_id: string;
   subscription_id: string | null;
+  coverage_status: CoverageStatus;
+  coverage_reason: string | null;
+  coverage_note: string | null;
   visit_type: "open_gym";
   visited_at: string;
   schedule_id: string | null;
@@ -78,6 +82,9 @@ export type ScheduleBooking = {
   client_id: string;
   subscription_id: string | null;
   covered_by_booking_id: string | null;
+  coverage_status: CoverageStatus;
+  coverage_reason: string | null;
+  coverage_note: string | null;
   places_count: number;
   status: BookingStatus;
   booked_by: string | null;
@@ -230,6 +237,8 @@ export async function checkInOpenGym(data: {
   client_id?: string | number;
   barcode?: string;
   subscription_id?: string | number | null;
+  attendance_mode?: "auto" | "unpaid" | "comped";
+  coverage_note?: string | null;
   created_by?: string;
 }): Promise<{
   visit: OpenGymVisit;
@@ -304,6 +313,8 @@ export async function createBooking(data: {
   slot_id: string | number;
   client_id: string | number;
   subscription_id?: string | number | null;
+  allow_unpaid?: boolean;
+  unpaid_reason?: string;
   booked_by?: string;
   covered_by_booking_id?: string | null;
 }): Promise<ScheduleBooking> {
@@ -322,10 +333,17 @@ export async function cancelBooking(id: string | number, cancel_reason?: string 
   });
 }
 
-export async function attendBooking(id: string | number, options?: { skipSubscription?: boolean }): Promise<void> {
+export async function attendBooking(
+  id: string | number,
+  options?: { skipSubscription?: boolean; attendanceMode?: "auto" | "unpaid" | "comped"; coverageNote?: string | null }
+): Promise<void> {
   await apiFetch<ApiEnvelope<unknown>>(`/bookings/${id}/attend`, {
     method: "POST",
-    body: JSON.stringify({ skip_subscription: options?.skipSubscription ?? false }),
+    body: JSON.stringify({
+      skip_subscription: options?.skipSubscription ?? false,
+      attendance_mode: options?.attendanceMode,
+      coverage_note: options?.coverageNote ?? null,
+    }),
   });
 }
 

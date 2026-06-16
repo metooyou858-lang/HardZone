@@ -6,6 +6,8 @@ type ApiEnvelope<T> = {
   error?: string;
 };
 
+export type CoverageStatus = "pending" | "covered" | "unpaid" | "comped" | "not_required";
+
 export type StaffSlot = {
   id: string;
   slot_type: string;
@@ -30,6 +32,9 @@ export type StaffBooking = {
   status: "confirmed" | "attended";
   places_count: number;
   subscription_id: string | null;
+  coverage_status: CoverageStatus;
+  coverage_reason: string | null;
+  coverage_note: string | null;
   created_at: string;
   client_id: string;
   client_name: string;
@@ -100,9 +105,16 @@ export async function fetchStaffBookings(slotId: string | number): Promise<Staff
   return response.data;
 }
 
-export async function attendStaffBooking(bookingId: string | number): Promise<StaffSlotBookings> {
+export async function attendStaffBooking(
+  bookingId: string | number,
+  options?: { attendanceMode?: "auto" | "unpaid" | "comped"; coverageNote?: string | null }
+): Promise<StaffSlotBookings> {
   const response = await apiFetch<ApiEnvelope<StaffSlotBookings>>(`/staff/bookings/${bookingId}/attend`, {
     method: "POST",
+    body: JSON.stringify({
+      attendance_mode: options?.attendanceMode,
+      coverage_note: options?.coverageNote ?? null,
+    }),
   });
   return response.data;
 }
@@ -124,6 +136,8 @@ export async function createStaffBooking(data: {
   slot_id: string | number;
   client_id: string | number;
   subscription_id?: string | number | null;
+  allow_unpaid?: boolean;
+  unpaid_reason?: string;
 }): Promise<StaffSlotBookings> {
   const response = await apiFetch<ApiEnvelope<StaffSlotBookings>>("/staff/bookings", {
     method: "POST",

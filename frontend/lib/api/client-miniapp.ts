@@ -24,6 +24,8 @@ export type ClientMiniAppSubscription = {
 export type ClientMiniAppBooking = {
   id: string;
   status: "confirmed" | "cancelled" | "attended" | "missed";
+  coverage_status?: "pending" | "covered" | "unpaid" | "comped" | "not_required";
+  coverage_reason?: string | null;
   date: string;
   start_time: string;
   duration_minutes: number;
@@ -62,6 +64,8 @@ export type ClientMiniAppVisit = {
   id: string;
   visit_type: "group" | "open_gym";
   visited_at: string;
+  coverage_status?: "pending" | "covered" | "unpaid" | "comped" | "not_required";
+  coverage_reason?: string | null;
   date: string | null;
   start_time: string | null;
   training_type_name: string | null;

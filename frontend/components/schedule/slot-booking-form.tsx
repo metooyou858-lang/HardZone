@@ -57,6 +57,7 @@ type SlotBookingFormProps = {
   onClearClient: () => void;
   onSubscriptionChange: (value: string) => void;
   onCreateBooking: () => void | Promise<void>;
+  onCreateUnpaidBooking: () => void | Promise<void>;
 };
 
 export function SlotBookingForm({
@@ -87,6 +88,7 @@ export function SlotBookingForm({
   onClearClient,
   onSubscriptionChange,
   onCreateBooking,
+  onCreateUnpaidBooking,
 }: SlotBookingFormProps) {
   const activeSubscriptions =
     selectedClientDetail?.subscriptions.filter((s) => s.status === "active") ?? [];
@@ -104,6 +106,7 @@ export function SlotBookingForm({
 
   const otherSubs = activeSubscriptions.filter((s) => !relevantSubs.includes(s));
   const canCreateBooking = !selectedClient || Boolean(selectedSubscriptionId);
+  const canCreateUnpaidBooking = Boolean(selectedClient) && !partnerEnabled;
 
   useEffect(() => {
     if (!selectedSubscriptionId) {
@@ -315,6 +318,17 @@ export function SlotBookingForm({
           >
             {bookingSaving ? "Записываем..." : partnerEnabled && selectedPartner ? "Записать обоих" : "Записать клиента"}
           </button>
+
+          {selectedClient && relevantSubs.length === 0 && (
+            <button
+              type="button"
+              onClick={() => void onCreateUnpaidBooking()}
+              disabled={bookingSaving || !canCreateUnpaidBooking}
+              className="w-full rounded-[18px] border border-[rgba(248,191,0,0.35)] bg-[rgba(248,191,0,0.1)] px-4 py-3 text-sm font-semibold text-[#f8bf00] transition-all hover:bg-[rgba(248,191,0,0.18)] disabled:opacity-50"
+            >
+              Записать к оплате
+            </button>
+          )}
         </div>
       )}
     </section>

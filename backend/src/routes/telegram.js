@@ -6,6 +6,7 @@ const { resolveModules } = require('../authz');
 const { pool, query } = require('../db');
 const logger = require('../services/logger');
 const { expireActiveSubscriptions } = require('../services/subscription-validity');
+const { createTrainingBooking } = require('../services/booking-attendance');
 const { assertSubscriptionAccess } = require('../services/subscription-access');
 const { sendInternalError } = require('../utils/http-response');
 const { normalizePhone } = require('../utils/phones');
@@ -239,6 +240,8 @@ async function buildClientMiniAppPayload(clientId) {
       SELECT
         b.id,
         b.status,
+        b.coverage_status,
+        b.coverage_reason,
         ss.date,
         ss.start_time,
         ss.duration_minutes,
@@ -264,6 +267,8 @@ async function buildClientMiniAppPayload(clientId) {
         cv.id,
         cv.visit_type,
         cv.visited_at,
+        cv.coverage_status,
+        cv.coverage_reason,
         ss.date,
         ss.start_time,
         tt.name AS training_type_name
@@ -652,18 +657,13 @@ async function bookClientSlot(telegramId, slotId) {
       return { status: 'already_booked' };
     }
 
-    await dbClient.query(
-      `
-        INSERT INTO bookings (slot_id, client_id, subscription_id, places_count, booked_by)
-        VALUES ($1, $2, $3, $4, $5)
-      `,
-      [slot.id, clientId, subscription.id, placesCount, `telegram-client:${telegramId}`]
-    );
-
-    await dbClient.query(
-      'UPDATE schedule_slots SET booked_count = booked_count + $1, updated_at = NOW() WHERE id = $2',
-      [placesCount, slot.id]
-    );
+    await createTrainingBooking(dbClient, {
+      slotId: slot.id,
+      clientId,
+      subscriptionId: subscription.id,
+      bookedBy: `telegram-client:${telegramId}`,
+      allowUnpaid: false,
+    });
 
     await dbClient.query('COMMIT');
     return { status: 'booked', data: await buildClientMiniAppPayload(clientId) };

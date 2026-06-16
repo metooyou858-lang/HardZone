@@ -4,9 +4,12 @@ const {
   restoreSubscriptionToActiveIfValid,
 } = require('./subscription-validity');
 
-function createHttpError(statusCode, message) {
+function createHttpError(statusCode, message, code = null) {
   const error = new Error(message);
   error.statusCode = statusCode;
+  if (code) {
+    error.code = code;
+  }
   return error;
 }
 
@@ -27,7 +30,7 @@ async function getSlotAccessContext(executor, slotId) {
 
   const slot = rows[0];
   if (!slot) {
-    throw createHttpError(404, 'Занятие не найдено');
+    throw createHttpError(404, 'Занятие не найдено', 'slot_not_found');
   }
 
   return {
@@ -142,17 +145,17 @@ async function assertSubscriptionAccess(executor, {
   let subscription = await loadSubscriptionForAccess(executor, subscriptionId, clientId);
 
   if (!subscription) {
-    throw createHttpError(404, 'Абонемент не найден');
+    throw createHttpError(404, 'Абонемент не найден', 'subscription_not_found');
   }
 
   subscription = await activateOnFirstVisitIfNeeded(executor, subscription);
 
   if (subscription.status !== 'active') {
-    throw createHttpError(409, 'Абонемент истёк или неактивен');
+    throw createHttpError(409, 'Абонемент истёк или неактивен', 'subscription_inactive');
   }
 
   if (['single', 'visits'].includes(subscription.type) && (subscription.visits_left || 0) <= 0) {
-    throw createHttpError(409, 'Посещения по абонементу исчерпаны');
+    throw createHttpError(409, 'Посещения по абонементу исчерпаны', 'subscription_exhausted');
   }
 
   if (!subscription.product_id || subscription.allow_free_visit === null) {
@@ -161,7 +164,7 @@ async function assertSubscriptionAccess(executor, {
 
   const accessColumn = getContextAccessColumn(context);
   if (!accessColumn || subscription[accessColumn] !== true) {
-    throw createHttpError(409, getAccessDeniedMessage(context));
+    throw createHttpError(409, getAccessDeniedMessage(context), 'subscription_access_denied');
   }
 
   if (context.kind === 'slot' && subscription.has_training_type_limits && context.trainingTypeId) {
@@ -177,7 +180,7 @@ async function assertSubscriptionAccess(executor, {
     );
 
     if (!rows[0]) {
-      throw createHttpError(409, 'Абонемент не действует на этот вид тренировки');
+      throw createHttpError(409, 'Абонемент не действует на этот вид тренировки', 'subscription_training_type_denied');
     }
   }
 

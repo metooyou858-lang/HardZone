@@ -199,6 +199,40 @@ export function SlotDetailsModal({
     }
   }
 
+  async function handleCreateUnpaidBooking() {
+    if (!detail || !selectedClient) {
+      return;
+    }
+
+    setBookingSaving(true);
+
+    try {
+      await createBooking({
+        slot_id: detail.id,
+        client_id: selectedClient.id,
+        subscription_id: null,
+        allow_unpaid: true,
+        unpaid_reason: "no_subscription",
+        booked_by: "admin",
+      });
+
+      setClientQuery("");
+      setClientResults([]);
+      setSelectedClient(null);
+      setSelectedClientDetail(null);
+      setSelectedSubscriptionId("");
+      resetPartner();
+
+      await loadDetail(detail.id);
+      onChanged();
+      onNotice({ tone: "info", text: "Клиент записан к оплате" });
+    } catch (bookingError) {
+      setClientError(bookingError instanceof Error ? bookingError.message : "Не удалось записать клиента");
+    } finally {
+      setBookingSaving(false);
+    }
+  }
+
   async function handleAttendBooking(bookingId: string) {
     if (!detail) {
       return;
@@ -492,6 +526,7 @@ export function SlotDetailsModal({
                 }}
                 onSubscriptionChange={setSelectedSubscriptionId}
                 onCreateBooking={handleCreateBooking}
+                onCreateUnpaidBooking={handleCreateUnpaidBooking}
               />
             )}
 

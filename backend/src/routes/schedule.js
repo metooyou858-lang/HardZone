@@ -2,8 +2,8 @@ const express = require('express');
 
 const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
+const { markOpenGymVisit } = require('../services/booking-attendance');
 const {
-  chargeSubscriptionVisit,
   refundSubscriptionVisit,
 } = require('../services/subscription-access');
 const { getPublicErrorMessage, sendInternalError } = require('../utils/http-response');
@@ -191,7 +191,14 @@ router.put('/gym-hours', requireModule('schedule_gym'), async (req, res) => {
 
 router.post('/open-gym/check-in', requireModule('schedule_gym'), async (req, res) => {
   try {
-    const { client_id, barcode, subscription_id, created_by = 'admin' } = req.body || {};
+    const {
+      client_id,
+      barcode,
+      subscription_id,
+      attendance_mode = 'auto',
+      coverage_note,
+      created_by = 'admin',
+    } = req.body || {};
 
     if (!client_id && !barcode) {
       return res.status(422).json({ success: false, error: 'Укажите клиента или штрихкод' });
@@ -237,31 +244,27 @@ router.post('/open-gym/check-in', requireModule('schedule_gym'), async (req, res
         return res.status(409).json({ success: false, error: 'Сегодня клиент уже отмечен в зале' });
       }
 
-      // Валидация и списание абонемента
-      if (!subscription_id) {
+      if (!subscription_id && attendance_mode === 'auto') {
         await client.query('ROLLBACK');
-        return res.status(422).json({ success: false, error: 'Выберите абонемент для свободного посещения' });
+        return res.status(422).json({
+          success: false,
+          error: 'Выберите абонемент или отметьте вход как неоплаченное посещение',
+        });
       }
 
-      const subscription = await chargeSubscriptionVisit(client, {
-        subscriptionId: subscription_id,
+      const visitRow = await markOpenGymVisit(client, {
         clientId: customer.id,
-        context: { kind: 'free_visit' },
+        subscriptionId: subscription_id || null,
+        attendanceMode: attendance_mode,
+        coverageNote: coverage_note || null,
+        createdBy: created_by,
       });
-
-      const resolvedSubscriptionId = subscription.id;
-      const { rows: insertedRows } = await client.query(
-        `INSERT INTO client_visits (client_id, subscription_id, visit_type, created_by)
-         VALUES ($1, $2, 'open_gym', $3)
-         RETURNING *`,
-        [customer.id, resolvedSubscriptionId, created_by]
-      );
 
       await client.query('COMMIT');
 
       const overview = await buildGymOverview();
       const visit = {
-        ...insertedRows[0],
+        ...visitRow,
         client_name: `${customer.first_name} ${customer.last_name}`,
         client_phone: customer.phone,
         client_barcode: customer.barcode,

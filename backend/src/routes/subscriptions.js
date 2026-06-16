@@ -11,10 +11,6 @@ const {
   buildLegacySubscriptionImportPlan,
   importLegacySubscriptions,
 } = require('../services/legacy-subscription-import');
-const {
-  chargeSubscriptionVisit,
-  getSlotAccessContext,
-} = require('../services/subscription-access');
 const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
@@ -420,39 +416,10 @@ router.post('/:id/unfreeze', async (req, res) => {
 });
 
 router.post('/:id/visit', async (req, res) => {
-  const client = await pool.connect();
-
-  try {
-    const { visit_type = 'group', schedule_id, created_by } = req.body;
-
-    await client.query('BEGIN');
-
-    const context = visit_type === 'open_gym'
-      ? { kind: 'free_visit' }
-      : await getSlotAccessContext(client, schedule_id);
-
-    const subscription = await chargeSubscriptionVisit(client, {
-      subscriptionId: req.params.id,
-      context,
-    });
-
-    const { rows } = await client.query(
-      `
-        INSERT INTO client_visits (client_id, subscription_id, visit_type, schedule_id, created_by)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING *
-      `,
-      [subscription.client_id, subscription.id, visit_type, schedule_id || null, created_by || null]
-    );
-
-    await client.query('COMMIT');
-    res.status(201).json({ success: true, data: rows[0] });
-  } catch (err) {
-    await client.query('ROLLBACK');
-    sendInternalError(res, err, { route: 'subscriptions.use_visit' });
-  } finally {
-    client.release();
-  }
+  res.status(410).json({
+    success: false,
+    error: 'Прямое списание абонемента отключено. Используйте запись в расписании или вход в зал.',
+  });
 });
 
 module.exports = router;

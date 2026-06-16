@@ -3,11 +3,10 @@ const express = require('express');
 const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
 const {
-  assertSubscriptionAccess,
-  chargeSubscriptionVisit,
-  getSlotAccessContext,
-  refundSubscriptionVisit,
-} = require('../services/subscription-access');
+  createTrainingBooking,
+  markTrainingBookingArrived,
+  unmarkTrainingBookingArrived,
+} = require('../services/booking-attendance');
 const { expireActiveSubscriptions } = require('../services/subscription-validity');
 const { getPublicErrorMessage, sendInternalError } = require('../utils/http-response');
 
@@ -74,6 +73,9 @@ async function getSlotBookings(executor, slotId) {
         b.status,
         b.places_count,
         b.subscription_id,
+        b.coverage_status,
+        b.coverage_reason,
+        b.coverage_note,
         b.created_at,
         c.id AS client_id,
         c.first_name || ' ' || c.last_name AS client_name,
@@ -95,47 +97,6 @@ async function getSlotBookings(executor, slotId) {
   );
 
   return { slot: slotRows[0], bookings };
-}
-
-async function markBookingAsAttended(executor, bookingId, { skipSubscription = false } = {}) {
-  const { rows: bookingRows } = await executor.query(
-    'SELECT * FROM bookings WHERE id = $1 AND status = $2',
-    [bookingId, 'confirmed']
-  );
-  const booking = bookingRows[0];
-
-  if (!booking) {
-    const error = new Error('Booking not found');
-    error.statusCode = 404;
-    throw error;
-  }
-
-  const isCoveredPartner = !!booking.covered_by_booking_id;
-  const effectiveSubscriptionId = (skipSubscription || isCoveredPartner) ? null : booking.subscription_id;
-
-  await executor.query(
-    'UPDATE bookings SET status = $1, subscription_id = $2, updated_at = NOW() WHERE id = $3',
-    ['attended', effectiveSubscriptionId, bookingId]
-  );
-
-  if (effectiveSubscriptionId) {
-    await chargeSubscriptionVisit(executor, {
-      subscriptionId: effectiveSubscriptionId,
-      clientId: booking.client_id,
-      context: await getSlotAccessContext(executor, booking.slot_id),
-    });
-
-  }
-
-  await executor.query(
-    `
-      INSERT INTO client_visits (client_id, subscription_id, visit_type, slot_id)
-      VALUES ($1, $2, 'group', $3)
-    `,
-    [booking.client_id, effectiveSubscriptionId, booking.slot_id]
-  );
-
-  return booking;
 }
 
 router.get('/me', async (req, res) => {
@@ -248,6 +209,9 @@ router.get('/bookings', requireModule('schedule'), async (req, res) => {
           b.status,
           b.places_count,
           b.subscription_id,
+          b.coverage_status,
+          b.coverage_reason,
+          b.coverage_note,
           b.created_at,
           c.id AS client_id,
           c.first_name || ' ' || c.last_name AS client_name,
@@ -278,7 +242,13 @@ router.post('/bookings', requireModule('schedule_clients'), async (req, res) => 
   const client = await pool.connect();
 
   try {
-    const { slot_id, client_id, subscription_id } = req.body || {};
+    const {
+      slot_id,
+      client_id,
+      subscription_id,
+      allow_unpaid = false,
+      unpaid_reason = 'no_subscription',
+    } = req.body || {};
 
     if (!slot_id || !client_id) {
       return res.status(422).json({ success: false, error: 'Slot and client are required' });
@@ -286,68 +256,19 @@ router.post('/bookings', requireModule('schedule_clients'), async (req, res) => 
 
     await client.query('BEGIN');
 
-    const { rows: slotRows } = await client.query(
-      'SELECT * FROM schedule_slots WHERE id = $1 AND status = $2',
-      [slot_id, 'active']
-    );
-    const slot = slotRows[0];
-
-    if (!slot) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ success: false, error: 'Slot not found or cancelled' });
-    }
-
-    if (!subscription_id) {
-      await client.query('ROLLBACK');
-      return res.status(422).json({ success: false, error: 'Выберите подходящий абонемент для записи' });
-    }
-
-    let placesCount = 1;
-    if (subscription_id) {
-      const subscription = await assertSubscriptionAccess(client, {
-        subscriptionId: subscription_id,
-        clientId: client_id,
-        context: await getSlotAccessContext(client, slot_id),
-      });
-
-      if (subscription.is_family) {
-        placesCount = 2;
-      }
-    }
-
-    if ((slot.booked_count || 0) + placesCount > slot.capacity) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ success: false, error: 'No free places' });
-    }
-
-    const { rows: existingRows } = await client.query(
-      "SELECT id FROM bookings WHERE slot_id = $1 AND client_id = $2 AND status IN ('confirmed', 'attended')",
-      [slot_id, client_id]
-    );
-
-    if (existingRows.length > 0) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ success: false, error: 'Client already booked' });
-    }
-
-    const { rows } = await client.query(
-      `
-        INSERT INTO bookings (slot_id, client_id, subscription_id, places_count, booked_by)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING *
-      `,
-      [slot_id, client_id, subscription_id || null, placesCount, `staff:${req.user.username || req.user.email || req.user.id}`]
-    );
-
-    await client.query(
-      'UPDATE schedule_slots SET booked_count = booked_count + $1, updated_at = NOW() WHERE id = $2',
-      [placesCount, slot_id]
-    );
+    const booking = await createTrainingBooking(client, {
+      slotId: slot_id,
+      clientId: client_id,
+      subscriptionId: subscription_id || null,
+      bookedBy: `staff:${req.user.username || req.user.email || req.user.id}`,
+      allowUnpaid: allow_unpaid === true,
+      unpaidReason: unpaid_reason,
+    });
 
     const slotBookings = await getSlotBookings(client, slot_id);
 
     await client.query('COMMIT');
-    res.status(201).json({ success: true, data: { booking: rows[0], ...slotBookings } });
+    res.status(201).json({ success: true, data: { booking, ...slotBookings } });
   } catch (err) {
     await client.query('ROLLBACK');
     const statusCode = err.statusCode || 500;
@@ -366,8 +287,14 @@ router.post('/bookings/:id/attend', requireModule('schedule_attendance'), async 
 
   try {
     await client.query('BEGIN');
-    const booking = await markBookingAsAttended(client, req.params.id, {
-      skipSubscription: req.body?.skip_subscription === true,
+    const attendanceMode = req.body?.skip_subscription === true
+      ? 'unpaid'
+      : req.body?.attendance_mode || 'auto';
+    const booking = await markTrainingBookingArrived(client, {
+      bookingId: req.params.id,
+      attendanceMode,
+      coverageNote: req.body?.coverage_note || null,
+      createdBy: `staff:${req.user.username || req.user.email || req.user.id}`,
     });
     const slotBookings = await getSlotBookings(client, booking.slot_id);
     await client.query('COMMIT');
@@ -390,40 +317,7 @@ router.post('/bookings/:id/unattend', requireModule('schedule_attendance'), asyn
 
   try {
     await client.query('BEGIN');
-
-    const { rows: bookingRows } = await client.query(
-      'SELECT * FROM bookings WHERE id = $1 AND status = $2',
-      [req.params.id, 'attended']
-    );
-    const booking = bookingRows[0];
-
-    if (!booking) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ success: false, error: 'Booking not found or not attended' });
-    }
-
-    const { rows: visitRows } = await client.query(
-      `DELETE FROM client_visits
-       WHERE id = (
-         SELECT id FROM client_visits
-         WHERE client_id = $1 AND slot_id = $2 AND visit_type = 'group'
-         ORDER BY visited_at DESC
-         LIMIT 1
-       )
-       RETURNING subscription_id`,
-      [booking.client_id, booking.slot_id]
-    );
-
-    const chargedSubscriptionId = visitRows[0]?.subscription_id ?? null;
-    if (chargedSubscriptionId) {
-      await refundSubscriptionVisit(client, chargedSubscriptionId);
-    }
-
-    await client.query('DELETE FROM bookings WHERE id = $1', [booking.id]);
-    await client.query(
-      'UPDATE schedule_slots SET booked_count = GREATEST(booked_count - $1, 0), updated_at = NOW() WHERE id = $2',
-      [booking.places_count, booking.slot_id]
-    );
+    const booking = await unmarkTrainingBookingArrived(client, req.params.id);
 
     const slotBookings = await getSlotBookings(client, booking.slot_id);
 

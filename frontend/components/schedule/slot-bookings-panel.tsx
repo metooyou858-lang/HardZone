@@ -3,6 +3,14 @@
 import { getBookingStatusMeta } from "@/components/schedule/schedule-shared";
 import type { ScheduleBooking } from "@/lib/api/schedule";
 
+const coverageLabels: Record<string, string> = {
+  pending: "Ожидает",
+  covered: "Списано",
+  unpaid: "К оплате",
+  comped: "Без списания",
+  not_required: "Не требуется",
+};
+
 function CircleCheckBtn({
   onClick,
   disabled,
@@ -118,8 +126,9 @@ export function SlotBookingsPanel({
             const meta = getBookingStatusMeta(booking.status);
             const isActing = bookingActionId === booking.id;
             const isCoveredPartner = !!booking.covered_by_booking_id;
-            const attendedOk = booking.status === "attended" && (booking.subscription_id || isCoveredPartner);
-            const attendedNoSub = booking.status === "attended" && !booking.subscription_id && !isCoveredPartner;
+            const coverageStatus = booking.coverage_status || (booking.subscription_id || isCoveredPartner ? "covered" : "unpaid");
+            const attendedOk = booking.status === "attended" && ["covered", "not_required", "comped"].includes(coverageStatus);
+            const attendedNoSub = booking.status === "attended" && coverageStatus === "unpaid";
 
             const rowClass = attendedOk
               ? "rounded-[22px] border border-[rgba(63,185,80,0.3)] bg-[rgba(63,185,80,0.08)] px-4 py-4"
@@ -139,19 +148,36 @@ export function SlotBookingsPanel({
                         Сплит
                       </span>
                     )}
+                    <span
+                      className={`shrink-0 inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-medium ${
+                        coverageStatus === "unpaid"
+                          ? "border-[rgba(248,191,0,0.35)] bg-[rgba(248,191,0,0.12)] text-[#f8bf00]"
+                          : coverageStatus === "covered"
+                            ? "border-[rgba(63,185,80,0.3)] bg-[rgba(63,185,80,0.1)] text-[var(--success)]"
+                            : "border-[var(--line-soft)] bg-[var(--bg-card-soft)] text-[var(--text-muted)]"
+                      }`}
+                    >
+                      {coverageLabels[coverageStatus] || coverageStatus}
+                    </span>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
                     {booking.status === "confirmed" && canManageAttendance && (
                       <>
-                        {isCoveredPartner || booking.subscription_id ? (
-                          <CircleCheckBtn
-                            onClick={() => void onAttend(booking.id)}
-                            disabled={isActing}
-                            loading={isActing}
-                            title={isCoveredPartner ? "Пришёл (сплит — оплачено партнёром)" : "Пришёл — списать с абонемента"}
-                          />
-                        ) : (
+                        <CircleCheckBtn
+                          onClick={() => void onAttend(booking.id)}
+                          disabled={isActing}
+                          loading={isActing}
+                          danger={coverageStatus === "unpaid" && !booking.subscription_id}
+                          title={
+                            isCoveredPartner
+                              ? "Пришёл (сплит — оплачено партнёром)"
+                              : coverageStatus === "unpaid" && !booking.subscription_id
+                                ? "Пришёл — отметить к оплате без списания"
+                                : "Пришёл — проверить и списать, если абонемент действует"
+                          }
+                        />
+                        {coverageStatus === "unpaid" && !booking.subscription_id && (
                           <button
                             type="button"
                             onClick={() => onGoToSales?.(booking.client_id)}
