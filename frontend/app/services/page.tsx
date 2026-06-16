@@ -6,6 +6,7 @@ import { ServiceForm, describeServiceParams } from "@/components/services/servic
 import { TrainingTypesManager } from "@/components/warehouse/training-types-manager";
 import { formatMoney } from "@/components/warehouse/shared";
 import { fetchProductSubscriptionParams, fetchProducts, Product, searchProducts } from "@/lib/api/products";
+import { describeServiceAccess } from "@/lib/service-access-labels";
 
 type ServicesTab = "services" | "training-types";
 
@@ -65,10 +66,7 @@ export default function ServicesPage() {
             return {
               product,
               paramsLabel: describeServiceParams(response.params),
-              trainingTypesLabel:
-                response.training_types.length > 0
-                  ? response.training_types.map((item) => item.name).join(", ")
-                  : "Все виды тренировок",
+              trainingTypesLabel: describeServiceAccess(response.params, response.training_types),
             };
           })
         );

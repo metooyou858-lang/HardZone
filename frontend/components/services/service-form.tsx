@@ -600,9 +600,11 @@ export function ServiceForm({
           <div>
             <div className="flex items-center justify-between gap-3">
               <label className={labelCls}>Виды тренировок</label>
-              <span className="text-xs text-[var(--text-muted)]">
-                Если ничего не выбрано — действует на все виды
-              </span>
+              {showTrainingTypeSelector && (
+                <span className="text-xs text-[var(--text-muted)]">
+                  Если ничего не выбрано — действует на все выбранные форматы
+                </span>
+              )}
             </div>
 
             {!showTrainingTypeSelector ? (

@@ -17,6 +17,7 @@ import {
   uploadClientPhoto,
 } from "@/lib/api/clients";
 import { hasModuleAccess, type AuthModulePermission } from "@/lib/access";
+import { describeServiceAccess } from "@/lib/service-access-labels";
 import {
   BarcodeVisual,
   clientInputCls,
@@ -187,7 +188,7 @@ function ManualLegacySubscriptionPanel({
                 Лимит: {selectedService.visits_total ?? "без лимита"} · срок: {selectedService.validity_days ? `${selectedService.validity_days} дн.` : "без срока"} · {selectedService.is_family ? "семейный" : "обычный"}
               </p>
               <p className="mt-1">
-                Занятия: {selectedService.training_types.length > 0 ? selectedService.training_types.map((item) => item.name).join(", ") : "все виды"}
+                Занятия: {describeServiceAccess(selectedService, selectedService.training_types, { lowercase: true })}
               </p>
               {calculatedExpiresAt && <p className="mt-1">Окончание будет: {formatClientDate(calculatedExpiresAt)}</p>}
             </div>

@@ -744,7 +744,9 @@ export function InlineEditForm({
               <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className={labelCls}>Виды тренировок</p>
-                  <span className="text-xs text-slate-500">Если ничего не выбрано — действует на все виды</span>
+                  {showTrainingTypeSelector && (
+                    <span className="text-xs text-slate-500">Если ничего не выбрано — действует на все выбранные форматы</span>
+                  )}
                 </div>
 
                 {!showTrainingTypeSelector ? (
