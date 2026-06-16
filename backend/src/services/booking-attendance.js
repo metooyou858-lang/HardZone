@@ -144,6 +144,64 @@ async function createTrainingBooking(executor, {
   return rows[0];
 }
 
+async function findEligibleSubscriptionForBooking(executor, booking, context) {
+  const { rows: candidateRows } = await executor.query(
+    `
+      SELECT id
+      FROM client_subscriptions
+      WHERE client_id = $1
+        AND status = 'active'
+        AND (
+          type IN ('period', 'unlimited')
+          OR COALESCE(visits_left, 0) > 0
+        )
+      ORDER BY expires_at NULLS LAST, created_at DESC
+    `,
+    [booking.client_id]
+  );
+
+  for (const candidate of candidateRows) {
+    try {
+      return await assertSubscriptionAccess(executor, {
+        subscriptionId: candidate.id,
+        clientId: booking.client_id,
+        context,
+      });
+    } catch (error) {
+      if (![404, 409].includes(error.statusCode)) {
+        throw error;
+      }
+    }
+  }
+
+  return null;
+}
+
+async function ensureBookingCapacityForSubscription(executor, booking, subscription) {
+  const placesCount = subscription.is_family ? 2 : 1;
+  const placeDelta = placesCount - Number(booking.places_count || 1);
+
+  if (placeDelta > 0) {
+    const { rows: slotRows } = await executor.query(
+      'SELECT booked_count, capacity FROM schedule_slots WHERE id = $1 FOR UPDATE',
+      [booking.slot_id]
+    );
+    const slot = slotRows[0];
+    if (!slot || Number(slot.booked_count || 0) + placeDelta > Number(slot.capacity || 0)) {
+      throw createHttpError(409, 'Нет свободных мест для семейного абонемента', 'no_places');
+    }
+  }
+
+  if (placeDelta !== 0) {
+    await executor.query(
+      'UPDATE schedule_slots SET booked_count = GREATEST(booked_count + $1, 0), updated_at = NOW() WHERE id = $2',
+      [placeDelta, booking.slot_id]
+    );
+  }
+
+  return placesCount;
+}
+
 async function markTrainingBookingArrived(executor, {
   bookingId,
   attendanceMode = 'auto',
@@ -162,6 +220,8 @@ async function markTrainingBookingArrived(executor, {
 
   const isCoveredPartner = !!booking.covered_by_booking_id;
   let effectiveSubscriptionId = null;
+  let resolvedSubscriptionId = booking.subscription_id || null;
+  let resolvedPlacesCount = Number(booking.places_count || 1);
   let coverageStatus = 'unpaid';
   let coverageReason = 'no_subscription';
 
@@ -174,14 +234,32 @@ async function markTrainingBookingArrived(executor, {
   } else if (attendanceMode === 'unpaid') {
     coverageStatus = 'unpaid';
     coverageReason = booking.subscription_id ? 'manual_without_charge' : 'no_subscription';
-  } else if (booking.subscription_id) {
+  } else if (attendanceMode === 'auto') {
     try {
+      const context = await getSlotAccessContext(executor, booking.slot_id);
+      let subscriptionId = booking.subscription_id;
+
+      if (!subscriptionId) {
+        const matchedSubscription = await findEligibleSubscriptionForBooking(executor, booking, context);
+        if (matchedSubscription) {
+          await ensureBookingCapacityForSubscription(executor, booking, matchedSubscription);
+          subscriptionId = matchedSubscription.id;
+          resolvedSubscriptionId = matchedSubscription.id;
+          resolvedPlacesCount = matchedSubscription.is_family ? 2 : 1;
+        }
+      }
+
+      if (!subscriptionId) {
+        throw createHttpError(404, 'Абонемент не найден', 'subscription_not_found');
+      }
+
       const chargedSubscription = await chargeSubscriptionVisit(executor, {
-        subscriptionId: booking.subscription_id,
+        subscriptionId,
         clientId: booking.client_id,
-        context: await getSlotAccessContext(executor, booking.slot_id),
+        context,
       });
       effectiveSubscriptionId = chargedSubscription.id;
+      resolvedSubscriptionId = chargedSubscription.id;
       coverageStatus = 'covered';
       coverageReason = 'subscription_charged';
     } catch (error) {
@@ -197,14 +275,16 @@ async function markTrainingBookingArrived(executor, {
     `
       UPDATE bookings
       SET status = 'attended',
-          coverage_status = $1::coverage_status,
-          coverage_reason = $2,
-          coverage_note = $3,
+          subscription_id = $1,
+          places_count = $2,
+          coverage_status = $3::coverage_status,
+          coverage_reason = $4,
+          coverage_note = $5,
           updated_at = NOW()
-      WHERE id = $4
+      WHERE id = $6
       RETURNING *
     `,
-    [coverageStatus, coverageReason, coverageNote, booking.id]
+    [resolvedSubscriptionId, resolvedPlacesCount, coverageStatus, coverageReason, coverageNote, booking.id]
   );
 
   await executor.query(
@@ -235,7 +315,7 @@ async function attachEligibleSubscriptionToBooking(executor, bookingId) {
       SELECT *
       FROM bookings
       WHERE id = $1
-        AND status = 'confirmed'
+        AND status IN ('confirmed', 'attended')
       FOR UPDATE
     `,
     [bookingId]
@@ -252,53 +332,67 @@ async function attachEligibleSubscriptionToBooking(executor, bookingId) {
 
   const context = await getSlotAccessContext(executor, booking.slot_id);
 
-  const { rows: candidateRows } = await executor.query(
-    `
-      SELECT id
-      FROM client_subscriptions
-      WHERE client_id = $1
-        AND status = 'active'
-        AND (
-          type IN ('period', 'unlimited')
-          OR COALESCE(visits_left, 0) > 0
-        )
-      ORDER BY expires_at NULLS LAST, created_at DESC
-    `,
-    [booking.client_id]
-  );
-
-  let matchedSubscription = null;
-  for (const candidate of candidateRows) {
-    try {
-      matchedSubscription = await assertSubscriptionAccess(executor, {
-        subscriptionId: candidate.id,
-        clientId: booking.client_id,
-        context,
-      });
-      break;
-    } catch (error) {
-      if (![404, 409].includes(error.statusCode)) {
-        throw error;
-      }
-    }
-  }
+  const matchedSubscription = await findEligibleSubscriptionForBooking(executor, booking, context);
 
   if (!matchedSubscription) {
     return { attached: false, booking, subscription: null };
   }
 
-  const placesCount = matchedSubscription.is_family ? 2 : 1;
-  const placeDelta = placesCount - Number(booking.places_count || 1);
+  const placesCount = await ensureBookingCapacityForSubscription(executor, booking, matchedSubscription);
 
-  if (placeDelta > 0) {
-    const { rows: slotRows } = await executor.query(
-      'SELECT booked_count, capacity FROM schedule_slots WHERE id = $1 FOR UPDATE',
-      [booking.slot_id]
+  if (booking.status === 'attended') {
+    const chargedSubscription = await chargeSubscriptionVisit(executor, {
+      subscriptionId: matchedSubscription.id,
+      clientId: booking.client_id,
+      context,
+    });
+
+    const { rows: updatedRows } = await executor.query(
+      `
+        UPDATE bookings
+        SET subscription_id = $1,
+            places_count = $2,
+            coverage_status = 'covered'::coverage_status,
+            coverage_reason = 'subscription_charged',
+            coverage_note = NULL,
+            updated_at = NOW()
+        WHERE id = $3
+        RETURNING *
+      `,
+      [chargedSubscription.id, placesCount, booking.id]
     );
-    const slot = slotRows[0];
-    if (!slot || Number(slot.booked_count || 0) + placeDelta > Number(slot.capacity || 0)) {
-      throw createHttpError(409, 'Нет свободных мест для семейного абонемента', 'no_places');
+
+    const { rowCount } = await executor.query(
+      `
+        UPDATE client_visits
+        SET subscription_id = $1,
+            coverage_status = 'covered'::coverage_status,
+            coverage_reason = 'subscription_charged',
+            coverage_note = NULL
+        WHERE id = (
+          SELECT id
+          FROM client_visits
+          WHERE booking_id = $2
+          ORDER BY visited_at DESC
+          LIMIT 1
+        )
+      `,
+      [chargedSubscription.id, booking.id]
+    );
+
+    if (rowCount === 0) {
+      await executor.query(
+        `
+          INSERT INTO client_visits
+            (client_id, subscription_id, visit_type, slot_id, booking_id,
+             coverage_status, coverage_reason)
+          VALUES ($1, $2, 'group', $3, $4, 'covered'::coverage_status, 'subscription_charged')
+        `,
+        [booking.client_id, chargedSubscription.id, booking.slot_id, booking.id]
+      );
     }
+
+    return { attached: true, booking: updatedRows[0], subscription: chargedSubscription };
   }
 
   const { rows: updatedRows } = await executor.query(
@@ -315,13 +409,6 @@ async function attachEligibleSubscriptionToBooking(executor, bookingId) {
     `,
     [matchedSubscription.id, placesCount, booking.id]
   );
-
-  if (placeDelta !== 0) {
-    await executor.query(
-      'UPDATE schedule_slots SET booked_count = GREATEST(booked_count + $1, 0), updated_at = NOW() WHERE id = $2',
-      [placeDelta, booking.slot_id]
-    );
-  }
 
   return { attached: true, booking: updatedRows[0], subscription: matchedSubscription };
 }

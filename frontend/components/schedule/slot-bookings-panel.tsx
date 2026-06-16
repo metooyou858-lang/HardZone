@@ -199,12 +199,24 @@ export function SlotBookingsPanel({
                     )}
 
                     {booking.status === "attended" && canManageAttendance && (
-                      <CircleXBtn
+                      <>
+                        {coverageStatus === "unpaid" && (
+                          <button
+                            type="button"
+                            onClick={() => void onResolveUnpaid?.(booking)}
+                            disabled={isActing}
+                            className="shrink-0 inline-flex items-center rounded-2xl border border-[rgba(248,191,0,0.4)] bg-[rgba(248,191,0,0.12)] px-3 py-1.5 text-xs font-semibold text-[#f8bf00] transition-colors hover:bg-[rgba(248,191,0,0.22)] disabled:opacity-50"
+                          >
+                            РќРµ РѕРїР»Р°С‡РµРЅРѕ
+                          </button>
+                        )}
+                        <CircleXBtn
                         onClick={() => void onUnattend(booking.id)}
                         disabled={isActing}
                         loading={isActing}
                         title="Удалить строку и вернуть визит"
-                      />
+                        />
+                      </>
                     )}
                   </div>
                 </div>

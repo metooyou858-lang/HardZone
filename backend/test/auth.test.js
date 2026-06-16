@@ -631,6 +631,151 @@ test('staff booking API creates bookings and toggles attendance for authorized s
   assert.equal(afterUnattend.rows[0].visits_left, 2);
 });
 
+test('booking attendance charges an eligible subscription added to an unpaid booking', async () => {
+  const staffUser = await createUser();
+  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  const { rows: clientRows } = await query(
+    `
+      INSERT INTO clients (first_name, last_name, barcode)
+      VALUES ($1, $2, $3)
+      RETURNING id
+    `,
+    ['CI', 'Manual Subscription', `ci-manual-${suffix}`]
+  );
+
+  const { rows: subscriptionRows } = await query(
+    `
+      INSERT INTO client_subscriptions (client_id, type, visits_total, visits_left, started_at, expires_at)
+      VALUES ($1, 'visits', 4, 4, '2026-06-01', '2026-12-31')
+      RETURNING id
+    `,
+    [clientRows[0].id]
+  );
+
+  const { rows: slotRows } = await query(
+    `
+      INSERT INTO schedule_slots (date, start_time, capacity)
+      VALUES ('2026-06-04', '11:00', 2)
+      RETURNING id
+    `
+  );
+
+  const sessionUser = {
+    id: Number(staffUser.id),
+    name: staffUser.name,
+    username: staffUser.username,
+    role: staffUser.role,
+  };
+  const headers = {
+    'content-type': 'application/json',
+    'x-hardzone-session': createSessionToken(sessionUser),
+  };
+
+  const create = await request('/api/staff/bookings', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      slot_id: slotRows[0].id,
+      client_id: clientRows[0].id,
+      allow_unpaid: true,
+    }),
+  });
+
+  assert.equal(create.response.status, 201);
+  assert.equal(create.body.data.bookings[0].coverage_status, 'unpaid');
+
+  const attend = await request(`/api/staff/bookings/${create.body.data.booking.id}/attend`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({}),
+  });
+
+  assert.equal(attend.response.status, 200);
+  assert.equal(attend.body.data.bookings[0].coverage_status, 'covered');
+  assert.equal(Number(attend.body.data.bookings[0].subscription_id), Number(subscriptionRows[0].id));
+
+  const afterAttend = await query('SELECT visits_left FROM client_subscriptions WHERE id = $1', [subscriptionRows[0].id]);
+  assert.equal(afterAttend.rows[0].visits_left, 3);
+});
+
+test('unpaid attended booking can be resolved with an eligible subscription', async () => {
+  const staffUser = await createUser();
+  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  const { rows: clientRows } = await query(
+    `
+      INSERT INTO clients (first_name, last_name, barcode)
+      VALUES ($1, $2, $3)
+      RETURNING id
+    `,
+    ['CI', 'Resolve Unpaid', `ci-resolve-${suffix}`]
+  );
+
+  const { rows: slotRows } = await query(
+    `
+      INSERT INTO schedule_slots (date, start_time, capacity)
+      VALUES ('2026-06-04', '12:00', 2)
+      RETURNING id
+    `
+  );
+
+  const sessionUser = {
+    id: Number(staffUser.id),
+    name: staffUser.name,
+    username: staffUser.username,
+    role: staffUser.role,
+  };
+  const headers = {
+    'content-type': 'application/json',
+    'x-hardzone-session': createSessionToken(sessionUser),
+  };
+
+  const create = await request('/api/staff/bookings', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      slot_id: slotRows[0].id,
+      client_id: clientRows[0].id,
+      allow_unpaid: true,
+    }),
+  });
+
+  assert.equal(create.response.status, 201);
+
+  const attend = await request(`/api/staff/bookings/${create.body.data.booking.id}/attend`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({}),
+  });
+
+  assert.equal(attend.response.status, 200);
+  assert.equal(attend.body.data.bookings[0].coverage_status, 'unpaid');
+
+  const { rows: subscriptionRows } = await query(
+    `
+      INSERT INTO client_subscriptions (client_id, type, visits_total, visits_left, started_at, expires_at)
+      VALUES ($1, 'visits', 4, 4, '2026-06-01', '2026-12-31')
+      RETURNING id
+    `,
+    [clientRows[0].id]
+  );
+
+  const resolve = await request(`/api/bookings/${create.body.data.booking.id}/attach-eligible-subscription`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({}),
+  });
+
+  assert.equal(resolve.response.status, 200);
+  assert.equal(resolve.body.data.attached, true);
+  assert.equal(resolve.body.data.booking.coverage_status, 'covered');
+  assert.equal(Number(resolve.body.data.booking.subscription_id), Number(subscriptionRows[0].id));
+
+  const afterResolve = await query('SELECT visits_left FROM client_subscriptions WHERE id = $1', [subscriptionRows[0].id]);
+  assert.equal(afterResolve.rows[0].visits_left, 3);
+});
+
 test('staff without client sub-permissions cannot create, edit, or import clients by direct request', async () => {
   const staffUser = await createUser({
     module_revokes: ['clients_create', 'clients_update', 'clients_import'],
