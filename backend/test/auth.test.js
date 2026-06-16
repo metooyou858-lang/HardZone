@@ -610,6 +610,7 @@ test('staff booking API creates bookings and toggles attendance for authorized s
   assert.equal(attend.response.status, 200);
   assert.equal(attend.body.success, true);
   assert.equal(attend.body.data.bookings[0].status, 'attended');
+  assert.equal(attend.body.data.bookings[0].coverage_status, 'covered');
 
   const afterAttend = await query('SELECT visits_left FROM client_subscriptions WHERE id = $1', [subscriptionRows[0].id]);
   assert.equal(afterAttend.rows[0].visits_left, 1);
@@ -622,7 +623,9 @@ test('staff booking API creates bookings and toggles attendance for authorized s
 
   assert.equal(unattend.response.status, 200);
   assert.equal(unattend.body.success, true);
-  assert.equal(unattend.body.data.bookings.length, 0);
+  assert.equal(unattend.body.data.bookings.length, 1);
+  assert.equal(unattend.body.data.bookings[0].status, 'confirmed');
+  assert.equal(unattend.body.data.bookings[0].coverage_status, 'pending');
 
   const afterUnattend = await query('SELECT visits_left FROM client_subscriptions WHERE id = $1', [subscriptionRows[0].id]);
   assert.equal(afterUnattend.rows[0].visits_left, 2);
