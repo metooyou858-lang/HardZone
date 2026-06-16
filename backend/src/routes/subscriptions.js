@@ -232,14 +232,14 @@ router.post('/legacy-manual', requireLegacySubscriptions, async (req, res) => {
         VALUES (
           $1,
           $2,
-          $3,
+          $3::subscription_type,
           $4,
           $5,
           $6,
           CASE WHEN $7::INT IS NULL THEN NULL ELSE $6::DATE + $7::INT END,
           $8,
           CASE
-            WHEN $3 IN ('single', 'visits') AND COALESCE($5::INT, 0) <= 0 THEN 'exhausted'::subscription_status
+            WHEN $3::subscription_type IN ('single'::subscription_type, 'visits'::subscription_type) AND COALESCE($5::INT, 0) <= 0 THEN 'exhausted'::subscription_status
             WHEN $7::INT IS NOT NULL AND ($6::DATE + $7::INT) < (NOW() AT TIME ZONE $11)::date THEN 'expired'::subscription_status
             ELSE 'active'::subscription_status
           END,
