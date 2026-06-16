@@ -333,6 +333,22 @@ export async function cancelBooking(id: string | number, cancel_reason?: string 
   });
 }
 
+export async function attachEligibleSubscriptionToBooking(id: string | number): Promise<{
+  attached: boolean;
+  booking: ScheduleBooking;
+  subscription: unknown | null;
+}> {
+  const response = await apiFetch<ApiEnvelope<{
+    attached: boolean;
+    booking: ScheduleBooking;
+    subscription: unknown | null;
+  }>>(`/bookings/${id}/attach-eligible-subscription`, {
+    method: "POST",
+  });
+
+  return response.data;
+}
+
 export async function attendBooking(
   id: string | number,
   options?: { skipSubscription?: boolean; attendanceMode?: "auto" | "unpaid" | "comped"; coverageNote?: string | null }

@@ -89,7 +89,7 @@ type SlotBookingsPanelProps = {
   onAttend: (bookingId: string) => void | Promise<void>;
   onUnattend: (bookingId: string) => void | Promise<void>;
   onCancel: (bookingId: string) => void | Promise<void>;
-  onGoToSales?: (clientId: string | number) => void;
+  onResolveUnpaid?: (booking: ScheduleBooking) => void | Promise<void>;
 };
 
 export function SlotBookingsPanel({
@@ -100,7 +100,7 @@ export function SlotBookingsPanel({
   onAttend,
   onUnattend,
   onCancel,
-  onGoToSales,
+  onResolveUnpaid,
 }: SlotBookingsPanelProps) {
   return (
     <section className="rounded-[26px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-5">
@@ -180,7 +180,7 @@ export function SlotBookingsPanel({
                         {coverageStatus === "unpaid" && !booking.subscription_id && (
                           <button
                             type="button"
-                            onClick={() => onGoToSales?.(booking.client_id)}
+                            onClick={() => void onResolveUnpaid?.(booking)}
                             disabled={isActing}
                             className="shrink-0 inline-flex items-center rounded-2xl border border-[rgba(248,191,0,0.4)] bg-[rgba(248,191,0,0.12)] px-3 py-1.5 text-xs font-semibold text-[#f8bf00] transition-colors hover:bg-[rgba(248,191,0,0.22)] disabled:opacity-50"
                           >

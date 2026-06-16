@@ -3,6 +3,7 @@ const express = require('express');
 const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
 const {
+  attachEligibleSubscriptionToBooking,
   createTrainingBooking,
   markTrainingBookingArrived,
   unmarkTrainingBookingArrived,
@@ -137,6 +138,24 @@ router.post('/:id/attend', requireModule('schedule_attendance'), async (req, res
   } catch (err) {
     const statusCode = err.statusCode || 500;
     res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });
+  }
+});
+
+router.post('/:id/attach-eligible-subscription', requireModule('schedule_clients'), async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+    const result = await attachEligibleSubscriptionToBooking(client, req.params.id);
+    await client.query('COMMIT');
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    const statusCode = err.statusCode || 500;
+    res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });
+  } finally {
+    client.release();
   }
 });
 

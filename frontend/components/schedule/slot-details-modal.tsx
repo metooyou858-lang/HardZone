@@ -16,6 +16,7 @@ import {
   findClientByBarcode,
 } from "@/lib/api/clients";
 import {
+  attachEligibleSubscriptionToBooking,
   attendBooking,
   cancelBooking,
   cancelScheduleSlot,
@@ -23,6 +24,7 @@ import {
   fetchScheduleSlot,
   unattendBooking,
   type ScheduleSlotDetail,
+  type ScheduleBooking,
 } from "@/lib/api/schedule";
 
 export function SlotDetailsModal({
@@ -303,6 +305,34 @@ export function SlotDetailsModal({
     }
   }
 
+  async function handleResolveUnpaidBooking(booking: ScheduleBooking) {
+    if (!detail) {
+      return;
+    }
+
+    setBookingActionId(booking.id);
+
+    try {
+      const result = await attachEligibleSubscriptionToBooking(booking.id);
+      if (result.attached) {
+        await loadDetail(detail.id);
+        onChanged();
+        onNotice({ tone: "success", text: "Абонемент найден и привязан к записи" });
+        return;
+      }
+
+      onClose();
+      router.push(`/sales?client_id=${booking.client_id}`);
+    } catch (resolveError) {
+      onNotice({
+        tone: "error",
+        text: resolveError instanceof Error ? resolveError.message : "Не удалось проверить абонемент",
+      });
+    } finally {
+      setBookingActionId(null);
+    }
+  }
+
   async function handleCancelSlot() {
     if (!detail) {
       return;
@@ -538,10 +568,7 @@ export function SlotDetailsModal({
               onAttend={handleAttendBooking}
               onUnattend={handleUnattendBooking}
               onCancel={handleCancelBooking}
-              onGoToSales={(clientId: string | number) => {
-                onClose();
-                router.push(`/sales?client_id=${clientId}`);
-              }}
+              onResolveUnpaid={handleResolveUnpaidBooking}
             />
           </div>
         ) : null}

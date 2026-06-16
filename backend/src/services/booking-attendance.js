@@ -229,6 +229,103 @@ async function markTrainingBookingArrived(executor, {
   return updatedRows[0];
 }
 
+async function attachEligibleSubscriptionToBooking(executor, bookingId) {
+  const { rows: bookingRows } = await executor.query(
+    `
+      SELECT *
+      FROM bookings
+      WHERE id = $1
+        AND status = 'confirmed'
+      FOR UPDATE
+    `,
+    [bookingId]
+  );
+  const booking = bookingRows[0];
+
+  if (!booking) {
+    throw createHttpError(404, 'Запись не найдена', 'booking_not_found');
+  }
+
+  if (booking.subscription_id && booking.coverage_status !== 'unpaid') {
+    return { attached: true, booking, subscription: null };
+  }
+
+  const context = await getSlotAccessContext(executor, booking.slot_id);
+
+  const { rows: candidateRows } = await executor.query(
+    `
+      SELECT id
+      FROM client_subscriptions
+      WHERE client_id = $1
+        AND status = 'active'
+        AND (
+          type IN ('period', 'unlimited')
+          OR COALESCE(visits_left, 0) > 0
+        )
+      ORDER BY expires_at NULLS LAST, created_at DESC
+    `,
+    [booking.client_id]
+  );
+
+  let matchedSubscription = null;
+  for (const candidate of candidateRows) {
+    try {
+      matchedSubscription = await assertSubscriptionAccess(executor, {
+        subscriptionId: candidate.id,
+        clientId: booking.client_id,
+        context,
+      });
+      break;
+    } catch (error) {
+      if (![404, 409].includes(error.statusCode)) {
+        throw error;
+      }
+    }
+  }
+
+  if (!matchedSubscription) {
+    return { attached: false, booking, subscription: null };
+  }
+
+  const placesCount = matchedSubscription.is_family ? 2 : 1;
+  const placeDelta = placesCount - Number(booking.places_count || 1);
+
+  if (placeDelta > 0) {
+    const { rows: slotRows } = await executor.query(
+      'SELECT booked_count, capacity FROM schedule_slots WHERE id = $1 FOR UPDATE',
+      [booking.slot_id]
+    );
+    const slot = slotRows[0];
+    if (!slot || Number(slot.booked_count || 0) + placeDelta > Number(slot.capacity || 0)) {
+      throw createHttpError(409, 'Нет свободных мест для семейного абонемента', 'no_places');
+    }
+  }
+
+  const { rows: updatedRows } = await executor.query(
+    `
+      UPDATE bookings
+      SET subscription_id = $1,
+          places_count = $2,
+          coverage_status = 'pending'::coverage_status,
+          coverage_reason = 'subscription_planned',
+          coverage_note = NULL,
+          updated_at = NOW()
+      WHERE id = $3
+      RETURNING *
+    `,
+    [matchedSubscription.id, placesCount, booking.id]
+  );
+
+  if (placeDelta !== 0) {
+    await executor.query(
+      'UPDATE schedule_slots SET booked_count = GREATEST(booked_count + $1, 0), updated_at = NOW() WHERE id = $2',
+      [placeDelta, booking.slot_id]
+    );
+  }
+
+  return { attached: true, booking: updatedRows[0], subscription: matchedSubscription };
+}
+
 async function unmarkTrainingBookingArrived(executor, bookingId) {
   const { rows: bookingRows } = await executor.query(
     'SELECT * FROM bookings WHERE id = $1 AND status = $2 FOR UPDATE',
@@ -337,6 +434,7 @@ async function markOpenGymVisit(executor, {
 
 module.exports = {
   createHttpError,
+  attachEligibleSubscriptionToBooking,
   createTrainingBooking,
   markOpenGymVisit,
   markTrainingBookingArrived,
