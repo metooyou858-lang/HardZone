@@ -22,6 +22,12 @@ function formatSubLabel(sub: ClientSubscription): string {
   return `${name}${family}`;
 }
 
+function getTrainingTypeIds(sub: ClientSubscription): number[] {
+  return sub.training_type_ids
+    .map((id) => Number(id))
+    .filter((id) => Number.isFinite(id));
+}
+
 type SlotBookingFormProps = {
   clientQuery: string;
   clientResults: ClientListItem[];
@@ -91,17 +97,23 @@ export function SlotBookingForm({
     if (slotType === "personal" && !s.allow_personal_training) return false;
     if (!["group", "personal"].includes(slotType)) return false;
     if (!slotTrainingTypeId) return true;
-    if (s.training_type_ids.length === 0) return true;
-    return s.training_type_ids.includes(Number(slotTrainingTypeId));
+    const trainingTypeIds = getTrainingTypeIds(s);
+    if (trainingTypeIds.length === 0) return true;
+    return trainingTypeIds.includes(Number(slotTrainingTypeId));
   });
 
   const otherSubs = activeSubscriptions.filter((s) => !relevantSubs.includes(s));
   const canCreateBooking = !selectedClient || Boolean(selectedSubscriptionId);
 
   useEffect(() => {
-    if (!selectedSubscriptionId) return;
-    if (relevantSubs.some((sub) => sub.id === selectedSubscriptionId)) return;
-    onSubscriptionChange("");
+    if (!selectedSubscriptionId) {
+      if (relevantSubs[0]) {
+        onSubscriptionChange(String(relevantSubs[0].id));
+      }
+      return;
+    }
+    if (relevantSubs.some((sub) => String(sub.id) === String(selectedSubscriptionId))) return;
+    onSubscriptionChange(relevantSubs[0] ? String(relevantSubs[0].id) : "");
   }, [onSubscriptionChange, relevantSubs, selectedSubscriptionId]);
 
   return (
@@ -187,9 +199,9 @@ export function SlotBookingForm({
               <button
                 key={sub.id}
                 type="button"
-                onClick={() => onSubscriptionChange(selectedSubscriptionId === sub.id ? "" : sub.id)}
+                onClick={() => onSubscriptionChange(String(selectedSubscriptionId) === String(sub.id) ? "" : String(sub.id))}
                 className={`w-full rounded-[16px] border px-4 py-3 text-left text-sm transition-colors ${
-                  selectedSubscriptionId === sub.id
+                  String(selectedSubscriptionId) === String(sub.id)
                     ? "border-[var(--accent)] bg-[rgba(0,191,165,0.12)] text-[var(--text-main)]"
                     : "border-[rgba(0,191,165,0.24)] bg-[rgba(0,191,165,0.06)] text-[var(--text-main)] hover:bg-[rgba(0,191,165,0.12)]"
                 }`}

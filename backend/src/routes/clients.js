@@ -276,9 +276,9 @@ router.get('/:id', requireClientsRead, async (req, res) => {
           COALESCE(psp.allow_group_training, false) AS allow_group_training,
           COALESCE(psp.allow_personal_training, false) AS allow_personal_training,
           COALESCE(
-            ARRAY_AGG(ptt.training_type_id ORDER BY ptt.training_type_id)
+            ARRAY_AGG(ptt.training_type_id::INT ORDER BY ptt.training_type_id)
               FILTER (WHERE ptt.training_type_id IS NOT NULL),
-            ARRAY[]::bigint[]
+            ARRAY[]::INT[]
           ) AS training_type_ids
        FROM client_subscriptions cs
        LEFT JOIN products p ON p.id = cs.product_id
