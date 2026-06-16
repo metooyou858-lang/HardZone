@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useCategories } from "@/hooks/useCategories";
 import { useEditProduct } from "@/hooks/useEditProduct";
@@ -15,6 +15,7 @@ import {
   ProductSubscriptionType,
   saveProductSubscriptionParams,
 } from "@/lib/api/products";
+import type { TrainingType } from "@/lib/api/training-types";
 
 const inputCls =
   "w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20";
@@ -97,6 +98,35 @@ function parseInteger(value: string, fallback: number | null = null) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+type AccessField = "allow_free_visit" | "allow_group_training" | "allow_personal_training";
+
+function isTrainingTypeAllowedForAccess(item: TrainingType, form: ServiceParamsForm) {
+  return (
+    (item.slot_type === "group" && form.allow_group_training) ||
+    (item.slot_type === "personal" && form.allow_personal_training)
+  );
+}
+
+function normalizeTrainingTypeIds(
+  ids: string[],
+  trainingTypes: TrainingType[],
+  form: ServiceParamsForm
+) {
+  if (!form.allow_group_training && !form.allow_personal_training) {
+    return [];
+  }
+
+  if (trainingTypes.length === 0) {
+    return ids;
+  }
+
+  const allowedIds = new Set(
+    trainingTypes.filter((item) => isTrainingTypeAllowedForAccess(item, form)).map((item) => item.id)
+  );
+
+  return ids.filter((id) => allowedIds.has(id));
+}
+
 export function InlineEditForm({
   product,
   onSuccess,
@@ -152,6 +182,11 @@ export function InlineEditForm({
     serviceForm.subscription_type === "period" ||
     serviceForm.subscription_type === "unlimited" ||
     serviceForm.subscription_type === "visits";
+  const showTrainingTypeSelector = serviceForm.allow_group_training || serviceForm.allow_personal_training;
+  const allowedTrainingTypes = useMemo(
+    () => trainingTypes.filter((item) => isTrainingTypeAllowedForAccess(item, serviceForm)),
+    [serviceForm.allow_group_training, serviceForm.allow_personal_training, trainingTypes]
+  );
 
   const currentMargin =
     cfg.has_cost_price && cfg.has_sale_price && costPrice !== "" && salePrice !== ""
@@ -207,7 +242,36 @@ export function InlineEditForm({
     };
   }, [product.id, serviceParamsLoaded, supportsServiceParams]);
 
+  useEffect(() => {
+    setServiceForm((previous) => {
+      const trainingTypeIds = normalizeTrainingTypeIds(previous.training_type_ids, trainingTypes, previous);
+      if (
+        trainingTypeIds.length === previous.training_type_ids.length &&
+        trainingTypeIds.every((id, index) => id === previous.training_type_ids[index])
+      ) {
+        return previous;
+      }
+
+      return { ...previous, training_type_ids: trainingTypeIds };
+    });
+  }, [serviceForm.allow_group_training, serviceForm.allow_personal_training, trainingTypes]);
+
+  function updateAccess(field: AccessField, checked: boolean) {
+    setServiceForm((previous) => {
+      const next = { ...previous, [field]: checked };
+      return {
+        ...next,
+        training_type_ids: normalizeTrainingTypeIds(next.training_type_ids, trainingTypes, next),
+      };
+    });
+  }
+
   function toggleTrainingType(id: string) {
+    const trainingType = trainingTypes.find((item) => item.id === id);
+    if (!trainingType || !isTrainingTypeAllowedForAccess(trainingType, serviceForm)) {
+      return;
+    }
+
     setServiceForm((previous) => ({
       ...previous,
       training_type_ids: previous.training_type_ids.includes(id)
@@ -244,6 +308,7 @@ export function InlineEditForm({
       setServiceSaving(true);
 
       try {
+        const trainingTypeIds = normalizeTrainingTypeIds(serviceForm.training_type_ids, trainingTypes, serviceForm);
         await saveProductSubscriptionParams(product.id, {
           subscription_type: serviceForm.subscription_type,
           visits_total: showVisitsTotal
@@ -263,7 +328,7 @@ export function InlineEditForm({
           allow_free_visit: serviceForm.allow_free_visit,
           allow_group_training: serviceForm.allow_group_training,
           allow_personal_training: serviceForm.allow_personal_training,
-          training_type_ids: serviceForm.training_type_ids.map((item) => Number.parseInt(item, 10)),
+          training_type_ids: trainingTypeIds.map((item) => Number.parseInt(item, 10)),
         });
       } catch (error: unknown) {
         setServiceError(error instanceof Error ? error.message : "Не удалось сохранить параметры услуги");
@@ -667,12 +732,7 @@ export function InlineEditForm({
                       <input
                         type="checkbox"
                         checked={Boolean(serviceForm[field as keyof ServiceParamsForm])}
-                        onChange={(event) =>
-                          setServiceForm((previous) => ({
-                            ...previous,
-                            [field]: event.target.checked,
-                          }))
-                        }
+                        onChange={(event) => updateAccess(field as AccessField, event.target.checked)}
                         className="h-4 w-4 rounded border-slate-600"
                       />
                       {title}
@@ -687,13 +747,15 @@ export function InlineEditForm({
                   <span className="text-xs text-slate-500">Если ничего не выбрано — действует на все виды</span>
                 </div>
 
-                {trainingTypesLoading ? (
+                {!showTrainingTypeSelector ? (
+                  <p className="mt-3 text-sm text-slate-500">Для свободного посещения виды тренировок не выбираются.</p>
+                ) : trainingTypesLoading ? (
                   <p className="mt-3 text-sm text-slate-500">Загружаем виды тренировок...</p>
-                ) : trainingTypes.length === 0 ? (
-                  <p className="mt-3 text-sm text-slate-500">Виды тренировок ещё не созданы</p>
+                ) : allowedTrainingTypes.length === 0 ? (
+                  <p className="mt-3 text-sm text-slate-500">Нет видов тренировок для выбранных прав доступа.</p>
                 ) : (
                   <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-                    {trainingTypes.map((item) => {
+                    {allowedTrainingTypes.map((item) => {
                       const checked = serviceForm.training_type_ids.includes(item.id);
 
                       return (

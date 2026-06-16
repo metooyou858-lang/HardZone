@@ -15,6 +15,7 @@ import {
   saveProductSubscriptionParams,
   updateProduct,
 } from "@/lib/api/products";
+import type { TrainingType } from "@/lib/api/training-types";
 
 const inputCls =
   "w-full rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-4 py-2.5 text-sm text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)] transition focus:border-[var(--accent)] focus:ring-4 focus:ring-[rgba(0,191,165,0.12)]";
@@ -93,6 +94,35 @@ function parseInteger(value: string, fallback: number | null = null) {
 
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+type AccessField = "allow_free_visit" | "allow_group_training" | "allow_personal_training";
+
+function isTrainingTypeAllowedForAccess(item: TrainingType, form: ServiceParamsForm) {
+  return (
+    (item.slot_type === "group" && form.allow_group_training) ||
+    (item.slot_type === "personal" && form.allow_personal_training)
+  );
+}
+
+function normalizeTrainingTypeIds(
+  ids: string[],
+  trainingTypes: TrainingType[],
+  form: ServiceParamsForm
+) {
+  if (!form.allow_group_training && !form.allow_personal_training) {
+    return [];
+  }
+
+  if (trainingTypes.length === 0) {
+    return ids;
+  }
+
+  const allowedIds = new Set(
+    trainingTypes.filter((item) => isTrainingTypeAllowedForAccess(item, form)).map((item) => item.id)
+  );
+
+  return ids.filter((id) => allowedIds.has(id));
 }
 
 export function describeServiceParams(params: ProductSubscriptionParams | null) {
@@ -201,8 +231,42 @@ export function ServiceForm({
     paramsForm.subscription_type === "period" ||
     paramsForm.subscription_type === "unlimited" ||
     paramsForm.subscription_type === "visits";
+  const showTrainingTypeSelector = paramsForm.allow_group_training || paramsForm.allow_personal_training;
+  const allowedTrainingTypes = useMemo(
+    () => trainingTypes.filter((item) => isTrainingTypeAllowedForAccess(item, paramsForm)),
+    [paramsForm.allow_group_training, paramsForm.allow_personal_training, trainingTypes]
+  );
+
+  useEffect(() => {
+    setParamsForm((previous) => {
+      const trainingTypeIds = normalizeTrainingTypeIds(previous.training_type_ids, trainingTypes, previous);
+      if (
+        trainingTypeIds.length === previous.training_type_ids.length &&
+        trainingTypeIds.every((id, index) => id === previous.training_type_ids[index])
+      ) {
+        return previous;
+      }
+
+      return { ...previous, training_type_ids: trainingTypeIds };
+    });
+  }, [paramsForm.allow_group_training, paramsForm.allow_personal_training, trainingTypes]);
+
+  function updateAccess(field: AccessField, checked: boolean) {
+    setParamsForm((previous) => {
+      const next = { ...previous, [field]: checked };
+      return {
+        ...next,
+        training_type_ids: normalizeTrainingTypeIds(next.training_type_ids, trainingTypes, next),
+      };
+    });
+  }
 
   function toggleTrainingType(id: string) {
+    const trainingType = trainingTypes.find((item) => item.id === id);
+    if (!trainingType || !isTrainingTypeAllowedForAccess(trainingType, paramsForm)) {
+      return;
+    }
+
     setParamsForm((previous) => ({
       ...previous,
       training_type_ids: previous.training_type_ids.includes(id)
@@ -226,6 +290,7 @@ export function ServiceForm({
     setError(null);
 
     try {
+      const trainingTypeIds = normalizeTrainingTypeIds(paramsForm.training_type_ids, trainingTypes, paramsForm);
       const savedProduct = product
         ? await updateProduct(product.id, {
             name: name.trim(),
@@ -257,7 +322,7 @@ export function ServiceForm({
         allow_free_visit: paramsForm.allow_free_visit,
         allow_group_training: paramsForm.allow_group_training,
         allow_personal_training: paramsForm.allow_personal_training,
-        training_type_ids: paramsForm.training_type_ids.map((item) => Number.parseInt(item, 10)),
+        training_type_ids: trainingTypeIds.map((item) => Number.parseInt(item, 10)),
       });
 
       onSaved(savedProduct);
@@ -523,12 +588,7 @@ export function ServiceForm({
                   <input
                     type="checkbox"
                     checked={Boolean(paramsForm[field as keyof ServiceParamsForm])}
-                    onChange={(event) =>
-                      setParamsForm((previous) => ({
-                        ...previous,
-                        [field]: event.target.checked,
-                      }))
-                    }
+                    onChange={(event) => updateAccess(field as AccessField, event.target.checked)}
                     className="h-4 w-4"
                   />
                   {title}
@@ -545,13 +605,15 @@ export function ServiceForm({
               </span>
             </div>
 
-            {trainingTypesLoading ? (
+            {!showTrainingTypeSelector ? (
+              <p className="mt-3 text-sm text-[var(--text-muted)]">Для свободного посещения виды тренировок не выбираются.</p>
+            ) : trainingTypesLoading ? (
               <p className="mt-3 text-sm text-[var(--text-muted)]">Загружаем виды тренировок...</p>
-            ) : trainingTypes.length === 0 ? (
-              <p className="mt-3 text-sm text-[var(--text-muted)]">Виды тренировок ещё не созданы</p>
+            ) : allowedTrainingTypes.length === 0 ? (
+              <p className="mt-3 text-sm text-[var(--text-muted)]">Нет видов тренировок для выбранных прав доступа.</p>
             ) : (
               <div className="mt-3 grid gap-2 md:grid-cols-2">
-                {trainingTypes.map((item) => {
+                {allowedTrainingTypes.map((item) => {
                   const checked = paramsForm.training_type_ids.includes(item.id);
 
                   return (

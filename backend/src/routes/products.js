@@ -51,6 +51,16 @@ function asInt(v) {
   return isNaN(n) || n < 0 ? null : n;
 }
 
+function normalizeTrainingTypeIds(value) {
+  if (!Array.isArray(value)) return [];
+
+  return [...new Set(
+    value
+      .map((item) => parseInt(item, 10))
+      .filter((item) => Number.isInteger(item) && item > 0)
+  )];
+}
+
 // GET /api/products
 router.get('/', requireProductsRead, async (req, res, next) => {
   try {
@@ -213,11 +223,47 @@ router.post('/:id/subscription-params', requireServiceSettingsManage, async (req
       allow_personal_training,
       training_type_ids,
     } = req.body;
+    const allowFreeVisit = allow_free_visit === true;
+    const allowGroupTraining = allow_group_training === true;
+    const allowPersonalTraining = allow_personal_training === true;
+    const allowedSlotTypes = [
+      allowGroupTraining ? 'group' : null,
+      allowPersonalTraining ? 'personal' : null,
+    ].filter(Boolean);
 
     const client = await pool.connect();
 
     try {
       await client.query('BEGIN');
+      const requestedTrainingTypeIds = normalizeTrainingTypeIds(training_type_ids);
+      let trainingTypeIdsToSave = [];
+
+      if (requestedTrainingTypeIds.length > 0 && allowedSlotTypes.length > 0) {
+        const { rows: trainingTypeRows } = await client.query(
+          `
+            SELECT id, slot_type
+            FROM training_types
+            WHERE id = ANY($1::INT[])
+          `,
+          [requestedTrainingTypeIds]
+        );
+
+        if (trainingTypeRows.length !== requestedTrainingTypeIds.length) {
+          await client.query('ROLLBACK');
+          return res.status(422).json({ success: false, error: 'Некоторые виды тренировок не найдены' });
+        }
+
+        const invalidTrainingType = trainingTypeRows.find((item) => !allowedSlotTypes.includes(item.slot_type));
+        if (invalidTrainingType) {
+          await client.query('ROLLBACK');
+          return res.status(422).json({
+            success: false,
+            error: 'Виды тренировок не соответствуют правам доступа услуги',
+          });
+        }
+
+        trainingTypeIdsToSave = requestedTrainingTypeIds;
+      }
 
       const { rows } = await client.query(
         `
@@ -251,16 +297,16 @@ router.post('/:id/subscription-params', requireServiceSettingsManage, async (req
           freeze_min_days || 1,
           freeze_max_count || null,
           is_family || false,
-          allow_free_visit === true,
-          allow_group_training === true,
-          allow_personal_training === true,
+          allowFreeVisit,
+          allowGroupTraining,
+          allowPersonalTraining,
         ]
       );
 
       await client.query('DELETE FROM product_training_types WHERE product_id = $1', [req.params.id]);
 
-      if (Array.isArray(training_type_ids) && training_type_ids.length > 0) {
-        for (const trainingTypeId of training_type_ids) {
+      if (trainingTypeIdsToSave.length > 0) {
+        for (const trainingTypeId of trainingTypeIdsToSave) {
           await client.query(
             'INSERT INTO product_training_types (product_id, training_type_id) VALUES ($1, $2)',
             [req.params.id, trainingTypeId]

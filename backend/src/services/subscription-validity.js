@@ -3,8 +3,10 @@ const CLUB_TIME_ZONE = process.env.APP_TIMEZONE || 'Asia/Vladivostok';
 async function expireActiveSubscriptions(executor, options = {}) {
   const conditions = [
     "status = 'active'",
-    'expires_at IS NOT NULL',
-    'expires_at < (NOW() AT TIME ZONE $1)::date',
+    `(
+      (expires_at IS NOT NULL AND expires_at < (NOW() AT TIME ZONE $1)::date)
+      OR (type IN ('single', 'visits') AND visits_left IS NOT NULL AND visits_left <= 0)
+    )`,
   ];
   const params = [CLUB_TIME_ZONE];
 
@@ -21,7 +23,12 @@ async function expireActiveSubscriptions(executor, options = {}) {
   const { rowCount } = await executor.query(
     `
       UPDATE client_subscriptions
-      SET status = 'expired', updated_at = NOW()
+      SET status = CASE
+            WHEN expires_at IS NOT NULL AND expires_at < (NOW() AT TIME ZONE $1)::date
+              THEN 'expired'::subscription_status
+            ELSE 'exhausted'::subscription_status
+          END,
+          updated_at = NOW()
       WHERE ${conditions.join(' AND ')}
     `,
     params
@@ -37,6 +44,8 @@ async function restoreSubscriptionToActiveIfValid(executor, subscriptionId) {
       SET status = CASE
             WHEN expires_at IS NOT NULL AND expires_at < (NOW() AT TIME ZONE $1)::date
               THEN 'expired'::subscription_status
+            WHEN type IN ('single', 'visits') AND visits_left IS NOT NULL AND visits_left <= 0
+              THEN 'exhausted'::subscription_status
             ELSE 'active'::subscription_status
           END,
           updated_at = NOW()

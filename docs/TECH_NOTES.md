@@ -29,6 +29,8 @@
 - `chargeSubscriptionVisit` списывает посещение через эти правила.
 - `refundSubscriptionVisit` возвращает посещение и восстанавливает `active`, если абонемент был `exhausted` и срок ещё действителен.
 - Новые маршруты расписания, CRM, staff и Telegram не должны писать собственный decrement/increment `visits_left`; они должны вызывать этот сервис.
+- `expireActiveSubscriptions` закрывает активные абонементы не только по истекшему `expires_at`, но и по нулевому остатку занятий для `single` / `visits`.
+- `POST /api/products/:id/subscription-params` нормализует связи с видами тренировок: свободное посещение не хранит `product_training_types`, групповой доступ принимает только `slot_type = group`, персональный - только `slot_type = personal`.
 
 ## Sub-permissions расписания
 
