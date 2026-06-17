@@ -118,9 +118,14 @@ router.get('/', requireClientsRead, async (req, res) => {
           cs.expires_at,
           cs.is_family
         FROM clients c
-        LEFT JOIN client_subscriptions cs
-          ON cs.client_id = c.id
-          AND cs.status = 'active'
+        LEFT JOIN LATERAL (
+          SELECT *
+          FROM client_subscriptions cs
+          WHERE cs.client_id = c.id
+            AND cs.status = 'active'
+          ORDER BY cs.expires_at NULLS LAST, cs.created_at DESC
+          LIMIT 1
+        ) cs ON true
         ${where}
         ORDER BY c.last_name, c.first_name
         LIMIT $${params.length - 1} OFFSET $${params.length}
@@ -242,9 +247,14 @@ router.get('/barcode/:barcode', requireClientsRead, async (req, res) => {
           cs.expires_at,
           cs.is_family
         FROM clients c
-        LEFT JOIN client_subscriptions cs
-          ON cs.client_id = c.id
-          AND cs.status = 'active'
+        LEFT JOIN LATERAL (
+          SELECT *
+          FROM client_subscriptions cs
+          WHERE cs.client_id = c.id
+            AND cs.status = 'active'
+          ORDER BY cs.expires_at NULLS LAST, cs.created_at DESC
+          LIMIT 1
+        ) cs ON true
         WHERE c.barcode = $1
       `,
       [req.params.barcode]

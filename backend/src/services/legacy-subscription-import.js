@@ -271,7 +271,7 @@ async function buildLegacySubscriptionImportPlan(executor, buffer) {
         [resolvedClient.id, today]
       );
       if (activeRows[0] && item.status === 'active') {
-        errors.push(`У клиента уже есть активный абонемент #${activeRows[0].id}`);
+        warnings.push(`У клиента уже есть активный абонемент #${activeRows[0].id}`);
       }
     }
 

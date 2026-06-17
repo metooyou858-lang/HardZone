@@ -20,6 +20,129 @@ const upload = multer({
 });
 const requireClientsImport = authMiddleware.requireModule('clients_import');
 const requireLegacySubscriptions = authMiddleware.requireModule('clients_legacy_subscriptions');
+const requireClientsUpdate = authMiddleware.requireModule('clients_update');
+
+const SUBSCRIPTION_TYPES = new Set(['single', 'visits', 'period', 'unlimited']);
+const SUBSCRIPTION_STATUSES = new Set(['active', 'frozen', 'expired', 'exhausted', 'cancelled']);
+
+function parseNullableInt(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const parsed = Number.parseInt(String(value), 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseNullableDate(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const normalized = String(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : undefined;
+}
+
+function getActor(req) {
+  return req.user?.username || req.user?.email || null;
+}
+
+async function loadEditableSubscription(executor, subscriptionId) {
+  const { rows } = await executor.query(
+    `
+      SELECT cs.*
+      FROM client_subscriptions cs
+      WHERE cs.id = $1
+      FOR UPDATE
+    `,
+    [subscriptionId]
+  );
+
+  return rows[0] || null;
+}
+
+async function assertSubscriptionProduct(executor, productId) {
+  if (productId === null || productId === undefined || productId === '') {
+    return null;
+  }
+
+  const { rows } = await executor.query(
+    `
+      SELECT
+        p.id,
+        psp.subscription_type,
+        psp.visits_total,
+        psp.validity_days,
+        psp.activation_type,
+        psp.is_family
+      FROM products p
+      JOIN product_types pt ON pt.id = p.product_type_id
+      JOIN product_subscription_params psp ON psp.product_id = p.id
+      WHERE p.id = $1
+        AND p.is_archived = false
+        AND pt.has_stock = false
+        AND pt.has_sale_price = true
+    `,
+    [productId]
+  );
+
+  return rows[0] || null;
+}
+
+async function recordSubscriptionAdjustment(executor, {
+  subscriptionId,
+  action,
+  reason,
+  beforeData,
+  afterData,
+  changedBy,
+}) {
+  await executor.query(
+    `
+      INSERT INTO subscription_adjustments
+        (subscription_id, action, reason, before_data, after_data, changed_by)
+      VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)
+    `,
+    [
+      subscriptionId,
+      action,
+      reason,
+      JSON.stringify(beforeData),
+      JSON.stringify(afterData),
+      changedBy,
+    ]
+  );
+}
+
+function addDays(dateOnly, days) {
+  const date = new Date(`${dateOnly}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+async function inferStatus(executor, { type, visitsLeft, expiresAt, preferredStatus = 'active' }) {
+  if (preferredStatus === 'cancelled' || preferredStatus === 'frozen') {
+    return preferredStatus;
+  }
+
+  const { rows } = await executor.query(
+    'SELECT (NOW() AT TIME ZONE $1)::date::text AS today',
+    [CLUB_TIME_ZONE]
+  );
+  const today = rows[0].today;
+
+  if (expiresAt && expiresAt < today) {
+    return 'expired';
+  }
+
+  if (['single', 'visits'].includes(type) && visitsLeft !== null && visitsLeft <= 0) {
+    return 'exhausted';
+  }
+
+  return SUBSCRIPTION_STATUSES.has(preferredStatus) && preferredStatus !== 'expired' && preferredStatus !== 'exhausted'
+    ? preferredStatus
+    : 'active';
+}
 
 router.post('/legacy-import/preview', requireClientsImport, upload.single('file'), async (req, res) => {
   try {
@@ -94,7 +217,7 @@ router.delete('/legacy-import/:batchId', requireClientsImport, async (req, res) 
   }
 });
 
-router.get('/legacy-services', requireLegacySubscriptions, async (_req, res) => {
+router.get('/legacy-services', authMiddleware.requireModule('clients_legacy_subscriptions', 'clients_update'), async (_req, res) => {
   try {
     const { rows } = await pool.query(`
       SELECT
@@ -179,18 +302,6 @@ router.post('/legacy-manual', requireLegacySubscriptions, async (req, res) => {
     if (!service) {
       await client.query('ROLLBACK');
       return res.status(404).json({ success: false, error: 'Услуга с параметрами абонемента не найдена' });
-    }
-
-    const { rows: activeRows } = await client.query(
-      "SELECT id FROM client_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1",
-      [client_id]
-    );
-    if (activeRows[0]) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({
-        success: false,
-        error: `У клиента уже есть активный абонемент #${activeRows[0].id}`,
-      });
     }
 
     const visitsTotal = service.visits_total === null || service.visits_total === undefined
@@ -318,6 +429,228 @@ router.post('/', async (req, res) => {
     res.status(201).json({ success: true, data: rows[0] });
   } catch (err) {
     sendInternalError(res, err, { route: 'subscriptions.create' });
+  }
+});
+
+router.patch('/:id', requireClientsUpdate, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) {
+      return res.status(422).json({ success: false, error: 'Укажите причину корректировки' });
+    }
+
+    await client.query('BEGIN');
+    const before = await loadEditableSubscription(client, req.params.id);
+
+    if (!before) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Абонемент не найден' });
+    }
+
+    const nextProductId = req.body.product_id !== undefined
+      ? parseNullableInt(req.body.product_id)
+      : (before.product_id === null ? null : Number.parseInt(before.product_id, 10));
+    if (req.body.product_id !== undefined && nextProductId !== null) {
+      const product = await assertSubscriptionProduct(client, nextProductId);
+      if (!product) {
+        await client.query('ROLLBACK');
+        return res.status(422).json({ success: false, error: 'Выберите активную услугу с параметрами абонемента' });
+      }
+    }
+
+    const nextType = req.body.type !== undefined ? String(req.body.type) : before.type;
+    if (!SUBSCRIPTION_TYPES.has(nextType)) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({ success: false, error: 'Некорректный тип абонемента' });
+    }
+
+    const nextVisitsTotal = req.body.visits_total !== undefined
+      ? parseNullableInt(req.body.visits_total)
+      : before.visits_total;
+    const nextVisitsLeft = req.body.visits_left !== undefined
+      ? parseNullableInt(req.body.visits_left)
+      : before.visits_left;
+
+    if (nextVisitsTotal !== null && nextVisitsTotal < 0) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({ success: false, error: 'Лимит посещений не может быть меньше нуля' });
+    }
+
+    if (nextVisitsLeft !== null && nextVisitsLeft < 0) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({ success: false, error: 'Остаток посещений не может быть меньше нуля' });
+    }
+
+    if (nextVisitsTotal !== null && nextVisitsLeft !== null && nextVisitsLeft > nextVisitsTotal) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({ success: false, error: 'Остаток посещений не может быть больше лимита' });
+    }
+
+    const nextStartedAt = req.body.started_at !== undefined
+      ? parseNullableDate(req.body.started_at)
+      : before.started_at;
+    const nextExpiresAt = req.body.expires_at !== undefined
+      ? parseNullableDate(req.body.expires_at)
+      : before.expires_at;
+
+    if (nextStartedAt === undefined || nextExpiresAt === undefined) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({ success: false, error: 'Некорректная дата абонемента' });
+    }
+
+    const nextStatus = req.body.status !== undefined ? String(req.body.status) : before.status;
+    if (!SUBSCRIPTION_STATUSES.has(nextStatus)) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({ success: false, error: 'Некорректный статус абонемента' });
+    }
+
+    if (nextStatus === 'active' && !nextProductId) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({ success: false, error: 'Активный абонемент должен быть привязан к услуге' });
+    }
+
+    const nextIsFamily = before.is_family === true;
+
+    const { rows } = await client.query(
+      `
+        UPDATE client_subscriptions
+        SET product_id = $2,
+            type = $3::subscription_type,
+            visits_total = $4,
+            visits_left = $5,
+            started_at = $6,
+            expires_at = $7,
+            status = $8::subscription_status,
+            is_family = $9,
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+      `,
+      [
+        before.id,
+        nextProductId,
+        nextType,
+        nextVisitsTotal,
+        nextVisitsLeft,
+        nextStartedAt,
+        nextExpiresAt,
+        nextStatus,
+        nextIsFamily,
+      ]
+    );
+
+    await recordSubscriptionAdjustment(client, {
+      subscriptionId: before.id,
+      action: 'manual_update',
+      reason,
+      beforeData: before,
+      afterData: rows[0],
+      changedBy: getActor(req),
+    });
+
+    await client.query('COMMIT');
+    res.json({ success: true, data: rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    sendInternalError(res, err, { route: 'subscriptions.update' });
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/:id/sync-product-params', requireClientsUpdate, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) {
+      return res.status(422).json({ success: false, error: 'Укажите причину синхронизации' });
+    }
+
+    await client.query('BEGIN');
+    const before = await loadEditableSubscription(client, req.params.id);
+
+    if (!before) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Абонемент не найден' });
+    }
+
+    if (!before.product_id) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({ success: false, error: 'Сначала привяжите абонемент к услуге' });
+    }
+
+    const product = await assertSubscriptionProduct(client, before.product_id);
+    if (!product) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({ success: false, error: 'У привязанной услуги нет параметров абонемента' });
+    }
+
+    const nextType = product.subscription_type;
+    const visitsPerUnit = parseNullableInt(product.visits_total) ?? (nextType === 'single' ? 1 : null);
+    const usedVisits =
+      Number.isFinite(Number(before.visits_total)) && Number.isFinite(Number(before.visits_left))
+        ? Math.max(Number(before.visits_total) - Number(before.visits_left), 0)
+        : 0;
+    const nextVisitsTotal = ['single', 'visits'].includes(nextType) ? visitsPerUnit : null;
+    const nextVisitsLeft = nextVisitsTotal === null ? null : Math.max(nextVisitsTotal - usedVisits, 0);
+    const nextStartedAt = before.started_at
+      || (product.activation_type === 'purchase'
+        ? (await client.query('SELECT (NOW() AT TIME ZONE $1)::date::text AS today', [CLUB_TIME_ZONE])).rows[0].today
+        : null);
+    const validityDays = parseNullableInt(product.validity_days);
+    const nextExpiresAt = nextStartedAt && validityDays !== null ? addDays(nextStartedAt, validityDays) : null;
+    const nextStatus = await inferStatus(client, {
+      type: nextType,
+      visitsLeft: nextVisitsLeft,
+      expiresAt: nextExpiresAt,
+      preferredStatus: ['cancelled', 'frozen'].includes(before.status) ? before.status : 'active',
+    });
+
+    const { rows } = await client.query(
+      `
+        UPDATE client_subscriptions
+        SET type = $2::subscription_type,
+            visits_total = $3,
+            visits_left = $4,
+            started_at = $5,
+            expires_at = $6,
+            status = $7::subscription_status,
+            is_family = $8,
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+      `,
+      [
+        before.id,
+        nextType,
+        nextVisitsTotal,
+        nextVisitsLeft,
+        nextStartedAt,
+        nextExpiresAt,
+        nextStatus,
+        before.is_family === true,
+      ]
+    );
+
+    await recordSubscriptionAdjustment(client, {
+      subscriptionId: before.id,
+      action: 'sync_product_params',
+      reason,
+      beforeData: before,
+      afterData: rows[0],
+      changedBy: getActor(req),
+    });
+
+    await client.query('COMMIT');
+    res.json({ success: true, data: rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    sendInternalError(res, err, { route: 'subscriptions.sync_product_params' });
+  } finally {
+    client.release();
   }
 });
 

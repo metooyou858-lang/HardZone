@@ -85,6 +85,13 @@ export function getSubscriptionStatusMeta(status: SubscriptionStatus) {
     };
   }
 
+  if (status === "cancelled") {
+    return {
+      label: "Отключён",
+      className: "border-[rgba(248,81,73,0.24)] bg-[rgba(248,81,73,0.12)] text-[var(--danger)]",
+    };
+  }
+
   return {
     label: "Исчерпан",
     className: "border-[rgba(139,148,158,0.24)] bg-[rgba(139,148,158,0.12)] text-[var(--text-muted)]",
@@ -115,18 +122,16 @@ export function describeSubscription(
   }
 
   const type = "type" in subscription ? subscription.type : subscription.subscription_type;
-  const family = subscription.is_family ? " · семейный" : "";
-
   if (type === "single") {
-    return `Разовый${family}`;
+    return "Разовый";
   }
 
   if (type === "visits") {
-    return `${subscription.visits_left ?? 0} занятий осталось${family}`;
+    return `${subscription.visits_left ?? 0} занятий осталось`;
   }
 
   if (type === "period" || type === "unlimited") {
-    return `До ${formatClientDate(subscription.expires_at)}${family}`;
+    return `До ${formatClientDate(subscription.expires_at)}`;
   }
 
   return "Нет активного абонемента";

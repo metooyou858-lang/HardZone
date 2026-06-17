@@ -2,7 +2,7 @@ import { apiFetch } from "./client";
 
 export type ClientStatus = "active" | "away" | "frozen" | "inactive";
 export type SubscriptionType = "single" | "visits" | "period" | "unlimited";
-export type SubscriptionStatus = "active" | "frozen" | "expired" | "exhausted";
+export type SubscriptionStatus = "active" | "frozen" | "expired" | "exhausted" | "cancelled";
 export type VisitType = "group" | "open_gym";
 export type CoverageStatus = "pending" | "covered" | "unpaid" | "comped" | "not_required";
 
@@ -270,6 +270,37 @@ export async function createManualLegacySubscription(data: {
   const response = await apiFetch<ApiEnvelope<ClientSubscription>>("/subscriptions/legacy-manual", {
     method: "POST",
     body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function updateSubscription(
+  id: string | number,
+  data: {
+    product_id?: string | number | null;
+    type?: SubscriptionType;
+    visits_total?: number | null;
+    visits_left?: number | null;
+    started_at?: string | null;
+    expires_at?: string | null;
+    status?: SubscriptionStatus;
+    reason: string;
+  }
+): Promise<ClientSubscription> {
+  const response = await apiFetch<ApiEnvelope<ClientSubscription>>(`/subscriptions/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function syncSubscriptionProductParams(
+  id: string | number,
+  reason: string
+): Promise<ClientSubscription> {
+  const response = await apiFetch<ApiEnvelope<ClientSubscription>>(`/subscriptions/${id}/sync-product-params`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
   });
   return response.data;
 }

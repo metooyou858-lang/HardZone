@@ -6,14 +6,19 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  ClientSubscription,
   ClientDetail,
   LegacySubscriptionService,
+  SubscriptionStatus,
+  SubscriptionType,
   createManualLegacySubscription,
   fetchLegacySubscriptionServices,
   fetchClient,
   freezeSubscription,
+  syncSubscriptionProductParams,
   unfreezeSubscription,
   updateClient,
+  updateSubscription,
   uploadClientPhoto,
 } from "@/lib/api/clients";
 import { hasModuleAccess, type AuthModulePermission } from "@/lib/access";
@@ -45,6 +50,34 @@ const emptyLegacySubscriptionForm = {
   started_at: "",
   note: "Перенос из старой CRM",
 };
+
+const subscriptionTypeOptions: Array<{ value: SubscriptionType; label: string }> = [
+  { value: "single", label: "Разовый" },
+  { value: "visits", label: "На занятия" },
+  { value: "period", label: "На период" },
+  { value: "unlimited", label: "Безлимит" },
+];
+
+const subscriptionStatusOptions: Array<{ value: SubscriptionStatus; label: string }> = [
+  { value: "active", label: "Активен" },
+  { value: "frozen", label: "Заморожен" },
+  { value: "expired", label: "Истёк" },
+  { value: "exhausted", label: "Исчерпан" },
+  { value: "cancelled", label: "Отключён" },
+];
+
+function subscriptionToForm(subscription: ClientSubscription) {
+  return {
+    product_id: subscription.product_id ?? "",
+    type: subscription.type,
+    visits_total: subscription.visits_total === null ? "" : String(subscription.visits_total),
+    visits_left: subscription.visits_left === null ? "" : String(subscription.visits_left),
+    started_at: normalizeDateValue(subscription.started_at),
+    expires_at: normalizeDateValue(subscription.expires_at),
+    status: subscription.status,
+    reason: "",
+  };
+}
 
 function ReadonlyField({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
   return (
@@ -377,6 +410,9 @@ export default function ClientDetailsPage() {
   const [legacySaving, setLegacySaving] = useState(false);
   const [legacyForm, setLegacyForm] = useState(emptyLegacySubscriptionForm);
   const [legacyServices, setLegacyServices] = useState<LegacySubscriptionService[]>([]);
+  const [editingSubscriptionId, setEditingSubscriptionId] = useState<string | null>(null);
+  const [subscriptionSaving, setSubscriptionSaving] = useState<string | null>(null);
+  const [subscriptionForm, setSubscriptionForm] = useState<ReturnType<typeof subscriptionToForm> | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   const [form, setForm] = useState({
@@ -430,7 +466,7 @@ export default function ClientDetailsPage() {
     let cancelled = false;
 
     async function loadLegacyServices() {
-      if (!canCreateLegacySubscription) {
+      if (!canCreateLegacySubscription && !canUpdateClient) {
         setLegacyServices([]);
         setShowLegacyForm(false);
         return;
@@ -454,7 +490,7 @@ export default function ClientDetailsPage() {
     return () => {
       cancelled = true;
     };
-  }, [canCreateLegacySubscription]);
+  }, [canCreateLegacySubscription, canUpdateClient]);
 
   useEffect(() => {
     let cancelled = false;
@@ -498,16 +534,12 @@ export default function ClientDetailsPage() {
     };
   }, [clientId, reloadToken]);
 
-  const currentSubscription = useMemo(() => {
+  const activeSubscriptions = useMemo(() => {
     if (!client) {
-      return null;
+      return [];
     }
 
-    return (
-      client.subscriptions.find((item) => item.status === "active") ??
-      client.subscriptions.find((item) => item.status === "frozen") ??
-      null
-    );
+    return client.subscriptions.filter((item) => item.status === "active");
   }, [client]);
 
   async function handleSave() {
@@ -572,8 +604,8 @@ export default function ClientDetailsPage() {
     }
   }
 
-  async function handleFreeze() {
-    if (!currentSubscription) {
+  async function handleFreeze(subscription: ClientSubscription) {
+    if (!subscription) {
       return;
     }
 
@@ -582,7 +614,7 @@ export default function ClientDetailsPage() {
     setError(null);
 
     try {
-      await freezeSubscription(currentSubscription.id, reason);
+      await freezeSubscription(subscription.id, reason);
       setReloadToken((value) => value + 1);
     } catch (freezeError) {
       setError(freezeError instanceof Error ? freezeError.message : "Не удалось заморозить абонемент");
@@ -591,8 +623,8 @@ export default function ClientDetailsPage() {
     }
   }
 
-  async function handleUnfreeze() {
-    if (!currentSubscription) {
+  async function handleUnfreeze(subscription: ClientSubscription) {
+    if (!subscription) {
       return;
     }
 
@@ -600,12 +632,96 @@ export default function ClientDetailsPage() {
     setError(null);
 
     try {
-      await unfreezeSubscription(currentSubscription.id);
+      await unfreezeSubscription(subscription.id);
       setReloadToken((value) => value + 1);
     } catch (unfreezeError) {
       setError(unfreezeError instanceof Error ? unfreezeError.message : "Не удалось разморозить абонемент");
     } finally {
       setBusyAction(null);
+    }
+  }
+
+  function startEditSubscription(subscription: ClientSubscription) {
+    setEditingSubscriptionId(subscription.id);
+    setSubscriptionForm(subscriptionToForm(subscription));
+    setError(null);
+  }
+
+  function cancelEditSubscription() {
+    setEditingSubscriptionId(null);
+    setSubscriptionForm(null);
+  }
+
+  async function handleSaveSubscription(subscription: ClientSubscription) {
+    if (!subscriptionForm) {
+      return;
+    }
+
+    if (!subscriptionForm.reason.trim()) {
+      setError("Укажите причину корректировки абонемента");
+      return;
+    }
+
+    const visitsTotal = subscriptionForm.visits_total === "" ? null : Number.parseInt(subscriptionForm.visits_total, 10);
+    const visitsLeft = subscriptionForm.visits_left === "" ? null : Number.parseInt(subscriptionForm.visits_left, 10);
+
+    if (subscriptionForm.visits_total !== "" && !Number.isFinite(visitsTotal)) {
+      setError("Укажите корректный лимит посещений");
+      return;
+    }
+
+    if (subscriptionForm.visits_left !== "" && !Number.isFinite(visitsLeft)) {
+      setError("Укажите корректный остаток посещений");
+      return;
+    }
+
+    if (visitsTotal !== null && visitsLeft !== null && visitsLeft > visitsTotal) {
+      setError("Остаток посещений не может быть больше лимита");
+      return;
+    }
+
+    setSubscriptionSaving(subscription.id);
+    setError(null);
+
+    try {
+      await updateSubscription(subscription.id, {
+        product_id: subscriptionForm.product_id || null,
+        type: subscriptionForm.type,
+        visits_total: visitsTotal,
+        visits_left: visitsLeft,
+        started_at: subscriptionForm.started_at || null,
+        expires_at: subscriptionForm.expires_at || null,
+        status: subscriptionForm.status,
+        reason: subscriptionForm.reason.trim(),
+      });
+
+      cancelEditSubscription();
+      setReloadToken((value) => value + 1);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Не удалось сохранить абонемент");
+    } finally {
+      setSubscriptionSaving(null);
+    }
+  }
+
+  async function handleSyncSubscription(subscription: ClientSubscription) {
+    const reason = window.prompt("Причина применения параметров услуги", "Исправление параметров оформленного абонемента") ?? "";
+
+    if (!reason.trim()) {
+      setError("Укажите причину синхронизации абонемента");
+      return;
+    }
+
+    setSubscriptionSaving(subscription.id);
+    setError(null);
+
+    try {
+      await syncSubscriptionProductParams(subscription.id, reason.trim());
+      setReloadToken((value) => value + 1);
+    } catch (syncError) {
+      setError(syncError instanceof Error ? syncError.message : "Не удалось применить параметры услуги");
+    } finally {
+      setSubscriptionSaving(null);
     }
   }
 
@@ -671,6 +787,219 @@ export default function ClientDetailsPage() {
     } finally {
       setLegacySaving(false);
     }
+  }
+
+  function renderSubscriptionCard(subscription: ClientSubscription, options?: { compact?: boolean }) {
+    const meta = getSubscriptionStatusMeta(subscription.status);
+    const activeSubscriptionForm = editingSubscriptionId === subscription.id ? subscriptionForm : null;
+    const isEditing = Boolean(activeSubscriptionForm);
+    const canEditSubscription = canUpdateClient;
+    const busy = subscriptionSaving === subscription.id;
+
+    return (
+      <div
+        key={subscription.id}
+        className="rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-4"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className={options?.compact ? "text-sm font-semibold text-[var(--text-main)]" : "text-lg font-semibold text-[var(--text-main)]"}>
+              {subscription.product_name || getSubscriptionTypeLabel(subscription.type)}
+            </p>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
+              {getSubscriptionTypeLabel(subscription.type)} · {describeSubscription(subscription)}
+            </p>
+            {subscription.order_id && (
+              <p className="mt-2 text-xs text-[var(--text-muted)]">Продажа #{String(subscription.order_id).slice(0, 8)}</p>
+            )}
+          </div>
+
+          <span className={`inline-flex rounded-full border px-3 py-1 text-xs ${meta.className}`}>
+            {meta.label}
+          </span>
+        </div>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div>
+            <p className={clientLabelCls}>Начало</p>
+            <p className="mt-1 text-xs text-[var(--text-main)]">{formatClientDate(subscription.started_at)}</p>
+          </div>
+          <div>
+            <p className={clientLabelCls}>Окончание</p>
+            <p className="mt-1 text-xs text-[var(--text-main)]">{formatClientDate(subscription.expires_at)}</p>
+          </div>
+          <div>
+            <p className={clientLabelCls}>Лимит</p>
+            <p className="mt-1 text-xs text-[var(--text-main)]">{subscription.visits_total ?? "без лимита"}</p>
+          </div>
+          <div>
+            <p className={clientLabelCls}>Осталось</p>
+            <p className="mt-1 text-xs text-[var(--text-main)]">{subscription.visits_left ?? "—"}</p>
+          </div>
+        </div>
+
+        {canEditSubscription && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => startEditSubscription(subscription)}
+              className="rounded-[14px] border border-[var(--line-soft)] px-3 py-2 text-xs text-[var(--text-main)]"
+            >
+              Редактировать
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleSyncSubscription(subscription)}
+              disabled={busy || !subscription.product_id}
+              className="rounded-[14px] border border-[rgba(0,191,165,0.24)] px-3 py-2 text-xs text-[var(--accent)] disabled:opacity-50"
+            >
+              {busy ? "Применяем..." : "Применить параметры услуги"}
+            </button>
+            {subscription.status === "active" && (
+              <button
+                type="button"
+                onClick={() => void handleFreeze(subscription)}
+                disabled={busyAction === "freeze"}
+                className="rounded-[14px] border border-[rgba(56,139,253,0.24)] px-3 py-2 text-xs text-[#6cb6ff] disabled:opacity-50"
+              >
+                {busyAction === "freeze" ? "Замораживаем..." : "Заморозить"}
+              </button>
+            )}
+            {subscription.status === "frozen" && (
+              <button
+                type="button"
+                onClick={() => void handleUnfreeze(subscription)}
+                disabled={busyAction === "unfreeze"}
+                className="rounded-[14px] border border-[rgba(0,191,165,0.24)] px-3 py-2 text-xs text-[var(--accent)] disabled:opacity-50"
+              >
+                {busyAction === "unfreeze" ? "Размораживаем..." : "Разморозить"}
+              </button>
+            )}
+          </div>
+        )}
+
+        {isEditing && activeSubscriptionForm && (
+          <div className="mt-4 grid gap-3 rounded-[16px] border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] p-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <label className={clientLabelCls}>Услуга</label>
+              <select
+                value={activeSubscriptionForm.product_id}
+                onChange={(event) => setSubscriptionForm({ ...activeSubscriptionForm, product_id: event.target.value })}
+                className={`mt-2 ${clientInputCls}`}
+              >
+                <option value="">Без привязки</option>
+                {legacyServices.map((service) => (
+                  <option key={service.id} value={service.id}>
+                    {service.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className={clientLabelCls}>Тип</label>
+              <select
+                value={activeSubscriptionForm.type}
+                onChange={(event) => setSubscriptionForm({ ...activeSubscriptionForm, type: event.target.value as SubscriptionType })}
+                className={`mt-2 ${clientInputCls}`}
+              >
+                {subscriptionTypeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className={clientLabelCls}>Статус</label>
+              <select
+                value={activeSubscriptionForm.status}
+                onChange={(event) => setSubscriptionForm({ ...activeSubscriptionForm, status: event.target.value as SubscriptionStatus })}
+                className={`mt-2 ${clientInputCls}`}
+              >
+                {subscriptionStatusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className={clientLabelCls}>Всего посещений</label>
+              <input
+                type="number"
+                min="0"
+                value={activeSubscriptionForm.visits_total}
+                onChange={(event) => setSubscriptionForm({ ...activeSubscriptionForm, visits_total: event.target.value })}
+                className={`mt-2 ${clientInputCls}`}
+              />
+            </div>
+
+            <div>
+              <label className={clientLabelCls}>Осталось посещений</label>
+              <input
+                type="number"
+                min="0"
+                value={activeSubscriptionForm.visits_left}
+                onChange={(event) => setSubscriptionForm({ ...activeSubscriptionForm, visits_left: event.target.value })}
+                className={`mt-2 ${clientInputCls}`}
+              />
+            </div>
+
+            <div>
+              <label className={clientLabelCls}>Дата начала</label>
+              <input
+                type="date"
+                value={activeSubscriptionForm.started_at}
+                onChange={(event) => setSubscriptionForm({ ...activeSubscriptionForm, started_at: event.target.value })}
+                className={`mt-2 ${clientInputCls}`}
+              />
+            </div>
+
+            <div>
+              <label className={clientLabelCls}>Дата окончания</label>
+              <input
+                type="date"
+                value={activeSubscriptionForm.expires_at}
+                onChange={(event) => setSubscriptionForm({ ...activeSubscriptionForm, expires_at: event.target.value })}
+                className={`mt-2 ${clientInputCls}`}
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className={clientLabelCls}>Причина корректировки</label>
+              <textarea
+                rows={3}
+                value={activeSubscriptionForm.reason}
+                onChange={(event) => setSubscriptionForm({ ...activeSubscriptionForm, reason: event.target.value })}
+                className={`mt-2 ${clientInputCls} resize-none`}
+                placeholder="Например: исправление ошибочно оформленного абонемента"
+              />
+            </div>
+
+            <div className="sm:col-span-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void handleSaveSubscription(subscription)}
+                disabled={busy}
+                className="rounded-[14px] bg-[var(--accent)] px-3 py-2 text-xs font-semibold text-[#062b26] disabled:opacity-50"
+              >
+                {busy ? "Сохраняем..." : "Сохранить"}
+              </button>
+              <button
+                type="button"
+                onClick={cancelEditSubscription}
+                className="rounded-[14px] border border-[var(--line-soft)] px-3 py-2 text-xs text-[var(--text-main)]"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   }
 
   if (loading) {
@@ -885,63 +1214,15 @@ export default function ClientDetailsPage() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="font-[family:var(--font-heading)] text-xl font-semibold text-[var(--text-main)]">
-                  Абонемент
+                  Активные абонементы
                 </p>
-                <p className="mt-1 text-sm text-[var(--text-muted)]">Текущий доступ и управление заморозкой</p>
+                <p className="mt-1 text-sm text-[var(--text-muted)]">Доступы, которые сейчас можно использовать для списания</p>
               </div>
             </div>
 
-            {currentSubscription ? (
-              <div className="mt-5 rounded-[22px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-lg font-semibold text-[var(--text-main)]">
-                      {getSubscriptionTypeLabel(currentSubscription.type)}
-                    </p>
-                    <p className="mt-2 text-sm text-[var(--text-muted)]">{describeSubscription(currentSubscription)}</p>
-                  </div>
-
-                  <span
-                    className={`inline-flex rounded-full border px-3 py-1 text-xs ${getSubscriptionStatusMeta(currentSubscription.status).className}`}
-                  >
-                    {getSubscriptionStatusMeta(currentSubscription.status).label}
-                  </span>
-                </div>
-
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <p className={clientLabelCls}>Начало</p>
-                    <p className="mt-2 text-sm text-[var(--text-main)]">{formatClientDate(currentSubscription.started_at)}</p>
-                  </div>
-                  <div>
-                    <p className={clientLabelCls}>Окончание</p>
-                    <p className="mt-2 text-sm text-[var(--text-main)]">{formatClientDate(currentSubscription.expires_at)}</p>
-                  </div>
-                </div>
-
-                <div className="mt-5 flex flex-wrap gap-3">
-                  {currentSubscription.status === "active" && (
-                    <button
-                      type="button"
-                      onClick={() => void handleFreeze()}
-                      disabled={busyAction === "freeze"}
-                      className="rounded-[16px] border border-[rgba(56,139,253,0.24)] px-4 py-2 text-sm text-[#6cb6ff] transition-colors hover:bg-[rgba(56,139,253,0.12)] disabled:opacity-50"
-                    >
-                      {busyAction === "freeze" ? "Замораживаем..." : "Заморозить"}
-                    </button>
-                  )}
-
-                  {currentSubscription.status === "frozen" && (
-                    <button
-                      type="button"
-                      onClick={() => void handleUnfreeze()}
-                      disabled={busyAction === "unfreeze"}
-                      className="rounded-[16px] border border-[rgba(0,191,165,0.24)] px-4 py-2 text-sm text-[var(--accent)] transition-colors hover:bg-[rgba(0,191,165,0.1)] disabled:opacity-50"
-                    >
-                      {busyAction === "unfreeze" ? "Размораживаем..." : "Разморозить"}
-                    </button>
-                  )}
-                </div>
+            {activeSubscriptions.length > 0 ? (
+              <div className="mt-5 space-y-3">
+                {activeSubscriptions.map((subscription) => renderSubscriptionCard(subscription))}
               </div>
             ) : (
               <div className="mt-5 rounded-[22px] border border-dashed border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-5 py-8 text-center text-sm text-[var(--text-muted)]">
@@ -999,43 +1280,7 @@ export default function ClientDetailsPage() {
               {client.subscriptions.length === 0 ? (
                 <p className="text-sm text-[var(--text-muted)]">Абонементов пока нет</p>
               ) : (
-                client.subscriptions.map((subscription) => {
-                  const meta = getSubscriptionStatusMeta(subscription.status);
-
-                  return (
-                    <div
-                      key={subscription.id}
-                      className="rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-4"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="text-sm font-semibold text-[var(--text-main)]">
-                            {getSubscriptionTypeLabel(subscription.type)}
-                          </p>
-                          <p className="mt-1 text-xs text-[var(--text-muted)]">{describeSubscription(subscription)}</p>
-                          {subscription.order_id && (
-                            <p className="mt-2 text-xs text-[var(--text-muted)]">Продажа #{String(subscription.order_id).slice(0, 8)}</p>
-                          )}
-                        </div>
-
-                        <span className={`inline-flex rounded-full border px-3 py-1 text-xs ${meta.className}`}>
-                          {meta.label}
-                        </span>
-                      </div>
-
-                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                        <div>
-                          <p className={clientLabelCls}>Создан</p>
-                          <p className="mt-1 text-xs text-[var(--text-main)]">{formatClientDateTime(subscription.created_at)}</p>
-                        </div>
-                        <div>
-                          <p className={clientLabelCls}>Окончание</p>
-                          <p className="mt-1 text-xs text-[var(--text-main)]">{formatClientDate(subscription.expires_at)}</p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
+                client.subscriptions.map((subscription) => renderSubscriptionCard(subscription, { compact: true }))
               )}
             </div>
           </div>
