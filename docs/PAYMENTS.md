@@ -40,6 +40,20 @@ If UI/payment behavior is changed, treat the V4 flow as the primary path unless 
 4. Do not close an order until the receipt operation is `Completed`.
 5. During network uncertainty, preserve operation IDs and AQSI traces instead of clearing fields.
 
+## Receipt Recovery Rules
+
+AQSI receipt recovery must treat card terminal payments and cash receipt processing as one shared fiscalization surface, even though they start from different endpoints.
+
+- Card terminal flow uses `aqsi_payment_operation_id`, `aqsi_slip_id`, and `aqsi_receipt_operation_id`.
+- Cash flow uses `aqsi_sent_at` and `aqsi_receipt_operation_id`; it does not have a slip.
+- If `aqsi_receipt_operation_id` exists, recovery must check `/v4/Operations/{id}` before creating any new receipt.
+- `marking_error` with fiscal data is terminal for payment/order closing: save fiscal data, confirm the order, preserve `aqsi_error`, and keep the receipt operation id for diagnostics.
+- `completed` with fiscal data is terminal: save fiscal data, confirm the order, clear transient operation locks.
+- Do not retry a receipt endlessly when slip content cannot be recovered. Mark it as `stuck`/manual reconciliation instead.
+- A bare `aqsi_receipt_status = 'pending'` without payment/slip/receipt operation traces is not enough for V4 background recovery.
+- If a cash send failed with network uncertainty and AQSI later says the order is not found, clear `aqsi_sent_at` only when there is no `aqsi_receipt_operation_id` and no `aqsi_receipt_id`; this unlocks a safe cashier retry.
+- Cash V4 receipts must save `aqsi_receipt_id`, fiscal FD/FN/FP, `aqsi_receipt_status`, and `aqsi_receipt_operation_id` before confirming the order.
+
 ## V4 Acquiring Flow
 
 UI flow:
@@ -105,3 +119,17 @@ Treat these as high-risk:
 - changing discounts and final receipt totals.
 
 For these changes, use staging first and create or confirm a recent production backup before production deploy.
+
+## Payment Regression Tests
+
+AQSI recovery changes must keep the backend payment regression tests green. The focused coverage lives in `backend/test/order-sync.test.js` and checks:
+
+- uncertain cash send unlocks after AQSI "order not found";
+- V4 background sync ignores bare pending state without operation traces;
+- cash `send-to-aqsi` stores AQSI receipt id and fiscal data from a completed V4 receipt operation.
+
+Because backend tests require PostgreSQL, run them through the remote isolated database path:
+
+```powershell
+.\scripts\test-backend-remote.ps1
+```

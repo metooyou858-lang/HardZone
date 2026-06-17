@@ -26,6 +26,17 @@ function httpError(statusCode, message) {
   return err;
 }
 
+function hasSavedReceiptResult(order) {
+  return Boolean(
+    order &&
+    (
+      order.aqsi_receipt_status === 'completed' ||
+      order.aqsi_receipt_status === 'marking_error' ||
+      (order.fiscal_fd && order.fiscal_fn && order.fiscal_fp)
+    )
+  );
+}
+
 // Сбрасывает все поля платёжного состояния. Единая точка очистки — не забыть ни одно поле.
 // Бросает если БД недоступна — не глотает ошибку молча.
 async function clearPaymentState(orderId, { status = null, error = null } = {}) {
@@ -149,8 +160,14 @@ async function checkReceiptOp(orderId, receiptOperationId) {
        aqsi_payment_operation_id = NULL,
        aqsi_payment_operation_at = NULL,
        aqsi_payment_status = NULL,
-       aqsi_receipt_operation_id = NULL,
-       aqsi_error = NULL
+       aqsi_receipt_operation_id = CASE
+         WHEN aqsi_receipt_status = 'marking_error' THEN aqsi_receipt_operation_id
+         ELSE NULL
+       END,
+       aqsi_error = CASE
+         WHEN aqsi_receipt_status = 'marking_error' THEN aqsi_error
+         ELSE NULL
+       END
      WHERE id = $1`,
     [orderId]
   ).catch(() => {});
@@ -167,11 +184,47 @@ async function startReceiptOp(orderId, slipId, slipContent) {
   const { rows: freshRows } = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
   const fresh = freshRows[0];
 
+  if (!fresh) throw httpError(404, 'Заказ не найден');
+  if (fresh.status !== 'open' || hasSavedReceiptResult(fresh)) {
+    logger.info('orders', {
+      action: 'receipt_fiscalize_skip_already_done',
+      order_id: orderId,
+      order_status: fresh.status,
+      receipt_status: fresh.aqsi_receipt_status,
+    });
+    return {
+      status: fresh.status === 'open' ? 'confirmed' : 'already_closed',
+      has_marking_errors: fresh.aqsi_receipt_status === 'marking_error',
+    };
+  }
   if (fresh.aqsi_receipt_operation_id) {
+    return { status: 'pending' };
+  }
+  if (fresh.aqsi_receipt_status === 'pending') {
     return { status: 'pending' };
   }
   if (fresh.aqsi_receipt_status === 'error') {
     return { status: 'receipt_error', message: fresh.aqsi_error || 'Фискализация завершилась с ошибкой — используйте «Восстановить»' };
+  }
+
+  const { rowCount: claimed } = await pool.query(
+    `UPDATE orders SET aqsi_receipt_status = 'pending', aqsi_error = NULL
+     WHERE id = $1 AND status = 'open' AND aqsi_receipt_operation_id IS NULL
+       AND aqsi_slip_id IS NOT NULL
+       AND (aqsi_receipt_status IS NULL OR aqsi_receipt_status = 'error')`,
+    [orderId]
+  ).catch(() => ({ rowCount: 0 }));
+
+  if (claimed === 0) {
+    const { rows: latestRows } = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
+    const latest = latestRows[0];
+    if (latest && (latest.status !== 'open' || hasSavedReceiptResult(latest))) {
+      return {
+        status: latest.status === 'open' ? 'confirmed' : 'already_closed',
+        has_marking_errors: latest.aqsi_receipt_status === 'marking_error',
+      };
+    }
+    return { status: 'pending' };
   }
 
   const { rows: itemRows } = await pool.query(
@@ -501,6 +554,9 @@ async function syncSlip(orderId) {
   const order = orderRows[0];
 
   if (!order) throw httpError(404, 'Заказ не найден');
+  if (order.status !== 'open') {
+    return { status: 'already_closed' };
+  }
 
   // Slip paid and receipt operation already created → check receipt status (single GET, no polling)
   if (order.aqsi_slip_id && order.aqsi_receipt_operation_id) {
@@ -845,8 +901,14 @@ async function syncAqsiV4(orderId) {
        aqsi_payment_operation_id = NULL,
        aqsi_payment_operation_at = NULL,
        aqsi_payment_status = NULL,
-       aqsi_receipt_operation_id = NULL,
-       aqsi_error = NULL
+       aqsi_receipt_operation_id = CASE
+         WHEN aqsi_receipt_status = 'marking_error' THEN aqsi_receipt_operation_id
+         ELSE NULL
+       END,
+       aqsi_error = CASE
+         WHEN aqsi_receipt_status = 'marking_error' THEN aqsi_error
+         ELSE NULL
+       END
      WHERE id = $1`,
     [orderId]
   ).catch(() => {});

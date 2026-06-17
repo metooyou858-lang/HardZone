@@ -1169,6 +1169,10 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
     return res.status(422).json({ success: false, error: 'Некорректный client_id' });
   }
 
+  if (req.body?.payment_type && req.body.payment_type !== 'cash') {
+    return res.status(422).json({ success: false, error: 'Этот endpoint поддерживает только оплату наличными' });
+  }
+
   // Phase 1: validate + lock order atomically to prevent concurrent or duplicate sends
   let preparedOrder;
   let preparedItems;
@@ -1188,7 +1192,14 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
       validationError = { code: 404, message: 'Заказ не найден' };
     } else if (order.status !== 'open') {
       validationError = { code: 409, message: 'Заказ уже закрыт' };
-    } else if (order.aqsi_sent_at) {
+    } else if (
+      order.aqsi_sent_at ||
+      order.aqsi_payment_operation_id ||
+      order.aqsi_slip_id ||
+      order.aqsi_receipt_operation_id ||
+      order.aqsi_receipt_status === 'pending' ||
+      order.aqsi_receipt_status === 'error'
+    ) {
       validationError = { code: 409, message: 'Заказ уже передан на кассу' };
     } else if (order.items_count === 0) {
       validationError = { code: 422, message: 'Чек пустой' };
@@ -1273,8 +1284,16 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
     const aqsiResult = await sendOrderToAqsiV4({ ...preparedOrder, items: preparedItems }, 'cash');
     receiptOpId = aqsiResult?.operationId ?? aqsiResult?.id ?? aqsiResult?.guid;
   } catch (err) {
-    // Any AQSI error — safe to reset lock, order was never created on terminal
-    await pool.query('UPDATE orders SET aqsi_sent_at = NULL WHERE id = $1', [orderId]).catch(() => {});
+    // AQSI validation errors are definite failures. Network/timeouts are uncertain:
+    // keep aqsi_sent_at so recovery/manual reconciliation can inspect the order.
+    if (err.isAqsiRejection) {
+      await pool.query('UPDATE orders SET aqsi_sent_at = NULL, aqsi_error = $2 WHERE id = $1', [orderId, err.message]).catch(() => {});
+    } else {
+      await pool.query(
+        'UPDATE orders SET aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
+        [orderId, 'error', `Неизвестный результат отправки чека в AQSI: ${err.message}. Требуется ручная сверка.`]
+      ).catch(() => {});
+    }
     return sendInternalError(res, err, { route: 'orders.sync_slip' });
   }
 
@@ -1282,30 +1301,59 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
     return res.status(500).json({ success: false, error: 'AQSI не вернул operationId' });
   }
 
+  await pool.query(
+    'UPDATE orders SET aqsi_receipt_operation_id = $2, aqsi_receipt_status = $3, aqsi_error = NULL WHERE id = $1',
+    [orderId, receiptOpId, 'pending']
+  ).catch((dbErr) => logger.error('orders', { action: 'save_cash_receipt_op_failed', order_id: orderId, message: dbErr.message }));
+
   // Poll until terminal completes receipt (usually 2-5 seconds for cash)
   let finalOp;
   try {
     finalOp = await pollOperation(receiptOpId, 2000, 30000);
   } catch (err) {
+    await pool.query(
+      'UPDATE orders SET aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
+      [orderId, 'pending', `Не удалось дождаться результата фискализации: ${err.message}`]
+    ).catch(() => {});
     return sendInternalError(res, err, { route: 'orders.sync' });
   }
 
   if (finalOp.status !== 'Completed') {
-    await pool.query('UPDATE orders SET aqsi_sent_at = NULL WHERE id = $1', [orderId]).catch(() => {});
+    await pool.query(
+      'UPDATE orders SET aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
+      [orderId, 'error', `Касса не подтвердила чек: ${finalOp.status}`]
+    ).catch(() => {});
     return res.status(500).json({ success: false, error: `Касса не подтвердила чек: ${finalOp.status}` });
   }
 
   // Save receipt + fiscal data
   const fiscal = extractReceiptFiscalData(finalOp);
+  if (!fiscal || !fiscal.fiscal_fd || !fiscal.fiscal_fn || !fiscal.fiscal_fp) {
+    await pool.query(
+      'UPDATE orders SET aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
+      [orderId, 'error', 'Чек завершён, но реквизиты ФД/ФН/ФП не получены — требуется ручная проверка']
+    ).catch(() => {});
+    return res.status(500).json({ success: false, error: 'Чек завершён, но реквизиты ФД/ФН/ФП не получены' });
+  }
+
+  const hasMarkingErrors = Boolean(fiscal.has_marking_errors);
   await pool.query(
     `UPDATE orders SET
        aqsi_receipt_id   = COALESCE($2, aqsi_receipt_id),
-       aqsi_receipt_status = 'completed',
+       aqsi_receipt_status = $8,
+       aqsi_receipt_operation_id = CASE
+         WHEN $9 THEN aqsi_receipt_operation_id
+         ELSE NULL
+       END,
        fiscal_fd         = COALESCE($3, fiscal_fd),
        fiscal_fn         = COALESCE($4, fiscal_fn),
        fiscal_fp         = COALESCE($5, fiscal_fp),
        fiscal_kkt_reg    = COALESCE($6, fiscal_kkt_reg),
-       fiscal_date       = COALESCE($7, fiscal_date)
+       fiscal_date       = COALESCE($7, fiscal_date),
+       aqsi_error        = CASE
+         WHEN $9 THEN 'Ошибка маркировки ГИС МТ (тег 2107 ФФД 1.2)'
+         ELSE aqsi_error
+       END
      WHERE id = $1`,
     [
       orderId,
@@ -1315,6 +1363,8 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
       fiscal?.fiscal_fp ?? null,
       fiscal?.fiscal_kkt_reg ?? null,
       fiscal?.fiscal_date ?? null,
+      hasMarkingErrors ? 'marking_error' : 'completed',
+      hasMarkingErrors,
     ]
   ).catch((dbErr) => logger.error('orders', { action: 'save_cash_receipt_failed', order_id: orderId, message: dbErr.message }));
 

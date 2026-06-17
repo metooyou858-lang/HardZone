@@ -1,10 +1,16 @@
 const { pool, query } = require('../db');
 const {
   extractAqsiFiscalData,
+  extractReceiptFiscalData,
+  extractSlipResultData,
   getAqsiOrder,
+  getAqsiSlip,
   getOperation,
   cancelOperation,
   isAqsiOrderNotFoundError,
+  isSlipPaid,
+  buildAqsiV4ReceiptPayload,
+  sendV4ReceiptRequest,
 } = require('./aqsi');
 
 function normalizeStatus(value) {
@@ -345,6 +351,30 @@ async function syncOrderWithAqsi(orderId, options = {}) {
     aqsiOrder = await fetchAqsiOrderWithFallback(order);
   } catch (error) {
     if (isAqsiOrderNotFoundError(error)) {
+      if (
+        order.aqsi_receipt_status === 'error' &&
+        !order.aqsi_receipt_operation_id &&
+        !order.aqsi_receipt_id
+      ) {
+        await query(
+          `UPDATE orders SET
+             aqsi_sent_at = NULL,
+             aqsi_sync_attempted_at = NULL,
+             aqsi_receipt_status = NULL,
+             aqsi_error = $2
+           WHERE id = $1`,
+          [orderId, 'AQSI не нашла чек после сетевой ошибки. Заказ разблокирован для повторной отправки.']
+        );
+
+        return {
+          order,
+          aqsiOrder: null,
+          paid: false,
+          paymentType: null,
+          reason: 'aqsi_not_found_unlocked',
+        };
+      }
+
       if (markAttempt) {
         // Always update to NOW() so the order gets rechecked on the next pass
         await query(
@@ -484,26 +514,294 @@ async function runDelayedAqsiSyncPass(limit = 20) {
 
 const V4_TTL_MS = 300000;
 const V4_STALE_BUFFER_MS = 120000;
-const V4_FORCE_CLEAR_MS = 15 * 60 * 1000; // принудительный сброс lock если AQSI не принял cancel за 15 мин
+const V4_AUTO_RECEIPT_MAX_AGE_MS = Number(process.env.AQSI_V4_AUTO_RECEIPT_MAX_AGE_MS || 48 * 60 * 60 * 1000);
 const V4_TERMINAL = new Set(['Completed', 'Canceled', 'Timeout', 'Error']);
+const V4_PENDING = new Set(['Pending', 'Processing', 'Finishing']);
 
 let v4SyncRunning = false;
 
+function isV4AutoReceiptFresh(order, operationCreatedAt = null) {
+  const candidates = [
+    operationCreatedAt ? new Date(operationCreatedAt) : null,
+    order.aqsi_payment_operation_at ? new Date(order.aqsi_payment_operation_at) : null,
+    order.created_at ? new Date(order.created_at) : null,
+  ].filter((date) => date && !Number.isNaN(date.getTime()));
+
+  if (candidates.length === 0) {
+    return false;
+  }
+
+  const newest = Math.max(...candidates.map((date) => date.getTime()));
+  return Date.now() - newest <= V4_AUTO_RECEIPT_MAX_AGE_MS;
+}
+
+async function markV4NeedsManualReconciliation(order, reason) {
+  await query(
+    'UPDATE orders SET aqsi_payment_status = $2, aqsi_receipt_status = $3, aqsi_error = $4 WHERE id = $1',
+    [order.id, 'stuck', 'error', reason]
+  );
+  console.warn(`[v4-sync] manual reconciliation required for order ${order.id}: ${reason}`);
+  return { status: 'needs_reconciliation', message: reason };
+}
+
+async function getV4SlipContent(order, slipId) {
+  if (order.aqsi_payment_operation_id) {
+    const paymentOp = await getOperation(order.aqsi_payment_operation_id).catch(() => null);
+    const slipData = extractSlipResultData(paymentOp);
+    if (slipData?.content) {
+      return { id: slipData.id ?? slipId ?? order.aqsi_payment_operation_id, content: slipData.content };
+    }
+  }
+
+  if (slipId) {
+    const slip = await getAqsiSlip(slipId).catch(() => null);
+    if (slip?.content) {
+      return { id: slip.id ?? slipId, content: slip.content };
+    }
+  }
+
+  return null;
+}
+
+async function saveV4ReceiptAndConfirm(order, receiptOp) {
+  const orderId = order.id;
+  const fiscalData = extractReceiptFiscalData(receiptOp);
+  if (!fiscalData || !fiscalData.fiscal_fd || !fiscalData.fiscal_fn || !fiscalData.fiscal_fp) {
+    await query(
+      'UPDATE orders SET aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
+      [orderId, 'error', 'Чек завершён, но реквизиты ФД/ФН/ФП не получены — требуется ручная проверка']
+    );
+    return { status: 'receipt_error' };
+  }
+
+  const hasMarkingErrors = Boolean(fiscalData.has_marking_errors);
+  await query(
+    `UPDATE orders SET
+       fiscal_fd = COALESCE($2, fiscal_fd),
+       fiscal_fn = COALESCE($3, fiscal_fn),
+       fiscal_fp = COALESCE($4, fiscal_fp),
+       fiscal_kkt_reg = COALESCE($5, fiscal_kkt_reg),
+       fiscal_date = COALESCE($6, fiscal_date),
+       aqsi_receipt_id = COALESCE($9, aqsi_receipt_id),
+       aqsi_receipt_status = $7,
+       aqsi_error = CASE WHEN $8 THEN 'Ошибка маркировки ГИС МТ (тег 2107 ФФД 1.2)' ELSE aqsi_error END
+     WHERE id = $1`,
+    [
+      orderId,
+      fiscalData.fiscal_fd,
+      fiscalData.fiscal_fn,
+      fiscalData.fiscal_fp,
+      fiscalData.fiscal_kkt_reg,
+      fiscalData.fiscal_date,
+      hasMarkingErrors ? 'marking_error' : 'completed',
+      hasMarkingErrors,
+      fiscalData.receipt_id ?? null,
+    ]
+  );
+
+  const paymentType = order.aqsi_slip_id || order.aqsi_payment_operation_id
+    ? 'card'
+    : (order.payment_type || 'cash');
+  await confirmOpenOrderPayment(orderId, paymentType);
+  await query(
+    `UPDATE orders SET
+       aqsi_payment_operation_id = NULL,
+       aqsi_payment_operation_at = NULL,
+       aqsi_payment_status = NULL,
+       aqsi_receipt_operation_id = CASE
+         WHEN aqsi_receipt_status = 'marking_error' THEN aqsi_receipt_operation_id
+         ELSE NULL
+       END,
+       aqsi_error = CASE
+         WHEN aqsi_receipt_status = 'marking_error' THEN aqsi_error
+         ELSE NULL
+       END
+     WHERE id = $1`,
+    [orderId]
+  );
+  return { status: 'confirmed' };
+}
+
+async function recoverV4Order(row) {
+  let order = row;
+
+  if (
+    (order.aqsi_receipt_status === 'completed' || order.aqsi_receipt_status === 'marking_error') &&
+    order.fiscal_fd &&
+    order.fiscal_fn &&
+    order.fiscal_fp
+  ) {
+    const paymentType = order.aqsi_slip_id || order.aqsi_payment_operation_id
+      ? 'card'
+      : (order.payment_type || 'cash');
+    await confirmOpenOrderPayment(order.id, paymentType);
+    await query(
+      `UPDATE orders SET
+         aqsi_payment_operation_id = NULL,
+         aqsi_payment_operation_at = NULL,
+         aqsi_payment_status = NULL,
+         aqsi_receipt_operation_id = CASE
+           WHEN aqsi_receipt_status = 'marking_error' THEN aqsi_receipt_operation_id
+           ELSE NULL
+         END,
+         aqsi_error = CASE
+           WHEN aqsi_receipt_status = 'marking_error' THEN aqsi_error
+           ELSE NULL
+         END
+       WHERE id = $1`,
+      [order.id]
+    );
+    console.info(`[v4-sync] confirmed open order with completed receipt ${order.id}`);
+    return { status: 'confirmed' };
+  }
+
+  if (order.aqsi_receipt_operation_id) {
+    const receiptOp = await getOperation(order.aqsi_receipt_operation_id);
+    if (V4_PENDING.has(receiptOp?.status)) {
+      return { status: 'receipt_pending', operation_status: receiptOp.status };
+    }
+    if (receiptOp?.status === 'Completed') {
+      const result = await saveV4ReceiptAndConfirm(order, receiptOp);
+      console.info(`[v4-sync] recovered completed receipt op ${order.aqsi_receipt_operation_id} for order ${order.id}`);
+      return result;
+    }
+
+    const message = receiptOp?.status === 'Timeout'
+      ? 'Тайм-аут фискализации'
+      : (receiptOp?.message || `Ошибка фискализации (${receiptOp?.status || 'unknown'})`);
+    await query(
+      'UPDATE orders SET aqsi_receipt_operation_id = NULL, aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
+      [order.id, 'error', message]
+    );
+    return { status: 'receipt_error' };
+  }
+
+  if (order.aqsi_payment_operation_id && !order.aqsi_slip_id) {
+    const paymentOp = await getOperation(order.aqsi_payment_operation_id);
+    const paymentStatus = paymentOp?.status ?? null;
+
+    if (paymentStatus === 'Completed') {
+      if (!isV4AutoReceiptFresh(order, paymentOp?.createdAt)) {
+        return markV4NeedsManualReconciliation(
+          order,
+          `Старая завершенная оплата ${order.aqsi_payment_operation_id} требует ручной сверки перед фискализацией`
+        );
+      }
+
+      const slipData = extractSlipResultData(paymentOp);
+      if (!slipData || !isSlipPaid(slipData)) {
+        await query(
+          'UPDATE orders SET aqsi_payment_status = $2, aqsi_error = $3 WHERE id = $1',
+          [order.id, 'declined', 'Операция завершена без подтвержденной оплаты']
+        );
+        return { status: 'payment_declined' };
+      }
+
+      const slipId = slipData.id ?? order.aqsi_payment_operation_id;
+      await query(
+        'UPDATE orders SET aqsi_slip_id = $2, aqsi_payment_status = $3, aqsi_error = NULL WHERE id = $1',
+        [order.id, slipId, 'completed']
+      );
+      console.info(`[v4-sync] recovered completed payment op ${order.aqsi_payment_operation_id} for order ${order.id}`);
+
+      const { rows } = await query('SELECT * FROM orders WHERE id = $1', [order.id]);
+      order = rows[0];
+    } else if (V4_TERMINAL.has(paymentStatus)) {
+      await query(
+        `UPDATE orders SET
+           aqsi_payment_operation_id = NULL,
+           aqsi_payment_operation_at = NULL,
+           aqsi_payment_status = NULL,
+           aqsi_error = NULL
+         WHERE id = $1`,
+        [order.id]
+      );
+      console.info(`[v4-sync] reset terminal unpaid op ${order.aqsi_payment_operation_id} (${paymentStatus}) for order ${order.id}`);
+      return { status: 'payment_terminal', operation_status: paymentStatus };
+    } else if (V4_PENDING.has(paymentStatus)) {
+      const opCreatedAt = paymentOp?.createdAt ? new Date(paymentOp.createdAt) : null;
+      const dbCreatedAt = order.aqsi_payment_operation_at ? new Date(order.aqsi_payment_operation_at) : null;
+      const ageMs = opCreatedAt || dbCreatedAt ? Date.now() - (opCreatedAt ?? dbCreatedAt).getTime() : 0;
+
+      if (ageMs > V4_TTL_MS + V4_STALE_BUFFER_MS && paymentStatus !== 'Finishing') {
+        await cancelOperation(order.aqsi_payment_operation_id).catch(() => {});
+      }
+
+      if (ageMs > V4_TTL_MS + V4_STALE_BUFFER_MS) {
+        await query(
+          'UPDATE orders SET aqsi_payment_status = $2, aqsi_error = $3 WHERE id = $1',
+          [order.id, 'stuck', `Операция ${order.aqsi_payment_operation_id} зависла (статус: ${paymentStatus}). Проверьте терминал/AQSI и используйте восстановление.`]
+        );
+      }
+      return { status: 'payment_pending', operation_status: paymentStatus };
+    } else {
+      return { status: 'payment_unknown', operation_status: paymentStatus };
+    }
+  }
+
+  if (!order.aqsi_slip_id) {
+    return { status: 'no_v4_slip' };
+  }
+
+  if (!isV4AutoReceiptFresh(order)) {
+    return markV4NeedsManualReconciliation(
+      order,
+      `Старый slip ${order.aqsi_slip_id} требует ручной сверки перед фискализацией`
+    );
+  }
+
+  const slip = await getV4SlipContent(order, order.aqsi_slip_id);
+  if (!slip?.content) {
+    await query(
+      'UPDATE orders SET aqsi_payment_status = $2, aqsi_receipt_status = $3, aqsi_error = $4 WHERE id = $1',
+      [order.id, 'stuck', 'error', 'Оплата прошла, но не удалось восстановить данные слипа для фискализации']
+    );
+    return { status: 'missing_slip_content' };
+  }
+
+  const { rowCount } = await query(
+    `UPDATE orders SET aqsi_receipt_status = 'pending', aqsi_error = NULL
+     WHERE id = $1 AND aqsi_slip_id IS NOT NULL AND aqsi_receipt_operation_id IS NULL
+       AND (aqsi_receipt_status IS NULL OR aqsi_receipt_status = 'error')`,
+    [order.id]
+  );
+  if (rowCount === 0) {
+    return { status: 'receipt_claim_skipped' };
+  }
+
+  const { rows: itemRows } = await query(
+    'SELECT oi.*, p.marking_type FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id WHERE oi.order_id = $1 ORDER BY oi.created_at',
+    [order.id]
+  );
+  const receiptPayload = buildAqsiV4ReceiptPayload({ ...order, items: itemRows }, 'card', slip.id, slip.content);
+  const receiptOpResponse = await sendV4ReceiptRequest(receiptPayload);
+  const receiptOpId = receiptOpResponse.operationId;
+
+  await query(
+    'UPDATE orders SET aqsi_receipt_operation_id = $2, aqsi_receipt_status = $3, aqsi_error = NULL WHERE id = $1',
+    [order.id, receiptOpId, 'pending']
+  );
+  console.info(`[v4-sync] created receipt op ${receiptOpId} for recovered order ${order.id}`);
+  return { status: 'receipt_started', receipt_operation_id: receiptOpId };
+}
+
 // Мониторит осиротевшие v4-операции: startSlipPurchase стартовал (aqsi_payment_operation_id есть),
-// но браузер закрылся до закрытия заказа (aqsi_slip_id нет).
-// Если операция в терминальном состоянии → сбрасывает наш lock.
-// Если Processing и старше TTL → отменяет у AQSI и сбрасывает lock.
+// но браузер закрылся до закрытия заказа, или receipt уже завершился, но CRM не сохранила результат.
+// Активные операции не очищаются принудительно: Finishing/Pending/Processing могут стать Completed позже.
 async function runV4SlipSyncPass(limit = 10) {
   if (v4SyncRunning) return 0;
   v4SyncRunning = true;
   try {
     const { rows } = await query(
-      `SELECT id, aqsi_payment_operation_id, aqsi_payment_operation_at
+      `SELECT *
        FROM orders
        WHERE status = 'open'
-         AND aqsi_payment_operation_id IS NOT NULL
-         AND aqsi_slip_id IS NULL
-         AND (aqsi_payment_status IS NULL OR aqsi_payment_status NOT IN ('completed'))
+         AND COALESCE(aqsi_payment_status, '') <> 'stuck'
+         AND (
+           aqsi_payment_operation_id IS NOT NULL
+           OR aqsi_slip_id IS NOT NULL
+           OR aqsi_receipt_operation_id IS NOT NULL
+         )
        ORDER BY created_at ASC
        LIMIT $1`,
       [limit]
@@ -511,70 +809,7 @@ async function runV4SlipSyncPass(limit = 10) {
 
     for (const row of rows) {
       try {
-        const op = await getOperation(row.aqsi_payment_operation_id);
-        const status = op?.status ?? null;
-
-        if (V4_TERMINAL.has(status) && status !== 'Completed') {
-          // Операция завершена без оплаты — сбрасываем lock, заказ снова доступен для оплаты
-          await query(
-            `UPDATE orders SET
-               aqsi_payment_operation_id = NULL,
-               aqsi_payment_operation_at = NULL,
-               aqsi_payment_status = NULL,
-               aqsi_error = NULL
-             WHERE id = $1`,
-            [row.id]
-          );
-          console.info(`[v4-sync] reset orphaned op ${row.aqsi_payment_operation_id} (${status}) for order ${row.id}`);
-        } else if (status === 'Processing' || status === 'Pending' || status === 'Finishing') {
-          // Возраст операции: берём из AQSI, fallback — время из нашей БД
-          const opCreatedAt = op?.createdAt ? new Date(op.createdAt) : null;
-          const dbCreatedAt = row.aqsi_payment_operation_at ? new Date(row.aqsi_payment_operation_at) : null;
-          const ageMs = opCreatedAt || dbCreatedAt ? Date.now() - (opCreatedAt ?? dbCreatedAt).getTime() : 0;
-
-          if (ageMs > V4_FORCE_CLEAR_MS) {
-            // Операция не отменяется 15+ минут — принудительно снимаем наш lock.
-            // При Processing деньги ещё не списаны (иначе был бы Completed), сброс безопасен.
-            await query(
-              `UPDATE orders SET
-                 aqsi_payment_operation_id = NULL,
-                 aqsi_payment_operation_at = NULL,
-                 aqsi_payment_status = NULL,
-                 aqsi_error = $2
-               WHERE id = $1`,
-              [row.id, 'Касса не ответила за 15 минут. Попробуйте оплатить снова.']
-            );
-            console.warn(`[v4-sync] force-cleared stuck op ${row.aqsi_payment_operation_id} (age ${Math.round(ageMs / 60000)}min, status=${status}) for order ${row.id}`);
-          } else if (ageMs > V4_TTL_MS + V4_STALE_BUFFER_MS) {
-            await cancelOperation(row.aqsi_payment_operation_id).catch(() => {});
-            // Проверяем реальный статус после cancel-запроса — AQSI может не принять отмену мгновенно
-            const opAfter = await getOperation(row.aqsi_payment_operation_id).catch(() => null);
-            const statusAfter = opAfter?.status ?? null;
-            if (statusAfter && V4_TERMINAL.has(statusAfter) && statusAfter !== 'Completed') {
-              // Операция реально отменена — безопасно сбросить lock
-              await query(
-                `UPDATE orders SET
-                   aqsi_payment_operation_id = NULL,
-                   aqsi_payment_operation_at = NULL,
-                   aqsi_payment_status = NULL,
-                   aqsi_error = NULL
-                 WHERE id = $1`,
-                [row.id]
-              );
-              console.info(`[v4-sync] auto-cancelled stale op ${row.aqsi_payment_operation_id} (age ${Math.round(ageMs / 60000)}min, final=${statusAfter}) for order ${row.id}`);
-            } else {
-              // AQSI принял cancel-запрос, но статус не изменился — терминал не ответил.
-              // Оставляем operation_id, помечаем stuck чтобы оператор видел проблему.
-              await query(
-                `UPDATE orders SET aqsi_payment_status = 'stuck', aqsi_error = $2 WHERE id = $1`,
-                [row.id, `Операция ${row.aqsi_payment_operation_id} зависла (статус: ${statusAfter ?? 'неизвестен'}). Перезагрузите терминал или обратитесь в поддержку AQSI.`]
-              ).catch(() => {});
-              console.warn(`[v4-sync] op ${row.aqsi_payment_operation_id} still ${statusAfter} after cancel for order ${row.id} — marked stuck`);
-            }
-          }
-        }
-        // Completed — оплата прошла, но в DB не записана. Это редкий edge-case;
-        // кассир увидит open-заказ и воспользуется кнопкой «Восстановить».
+        await recoverV4Order(row);
       } catch (err) {
         console.error(`[v4-sync] failed for order ${row.id}:`, err.message);
       }
