@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { ServiceForm, describeServiceParams } from "@/components/services/service-form";
 import { TrainingTypesManager } from "@/components/warehouse/training-types-manager";
 import { formatMoney } from "@/components/warehouse/shared";
-import { fetchProductSubscriptionParams, fetchProducts, Product, searchProducts } from "@/lib/api/products";
+import { fetchProducts, fetchProductsSubscriptionParams, Product, searchProducts } from "@/lib/api/products";
 import { describeServiceAccess } from "@/lib/service-access-labels";
 
 type ServicesTab = "services" | "training-types";
@@ -65,17 +65,17 @@ export default function ServicesPage() {
           ? (await searchProducts(trimmedQuery)).filter(isService)
           : await fetchProducts({ type: "service" });
 
-        const paramsList = await Promise.all(
-          products.map(async (product) => {
-            const response = await fetchProductSubscriptionParams(product.id);
+        const paramsByProductId = await fetchProductsSubscriptionParams(products.map((product) => product.id));
 
-            return {
-              product,
-              paramsLabel: describeServiceParams(response.params),
-              trainingTypesLabel: describeServiceAccess(response.params, response.training_types),
-            };
-          })
-        );
+        const paramsList = products.map((product) => {
+          const response = paramsByProductId[product.id] ?? { params: null, training_types: [] };
+
+          return {
+            product,
+            paramsLabel: describeServiceParams(response.params),
+            trainingTypesLabel: describeServiceAccess(response.params, response.training_types),
+          };
+        });
 
         if (!cancelled) {
           setServices(paramsList);

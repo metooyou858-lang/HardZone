@@ -75,6 +75,15 @@ type SubscriptionParamsEnvelope = {
   error?: string;
 };
 
+type BulkSubscriptionParamsEnvelope = {
+  success: boolean;
+  data: Record<string, {
+    params: ProductSubscriptionParams | null;
+    training_types: TrainingType[];
+  }>;
+  error?: string;
+};
+
 export type FetchProductsOptions = {
   includeArchived?: boolean;
   limit?: number;
@@ -166,6 +175,22 @@ export async function fetchProductSubscriptionParams(id: string): Promise<{
   training_types: TrainingType[];
 }> {
   const response = await apiFetch<SubscriptionParamsEnvelope>(`/products/${id}/subscription-params`);
+  return response.data;
+}
+
+export async function fetchProductsSubscriptionParams(ids: string[]): Promise<Record<string, {
+  params: ProductSubscriptionParams | null;
+  training_types: TrainingType[];
+}>> {
+  const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+
+  if (uniqueIds.length === 0) {
+    return {};
+  }
+
+  const response = await apiFetch<BulkSubscriptionParamsEnvelope>(
+    `/products/subscription-params?ids=${encodeURIComponent(uniqueIds.join(","))}`
+  );
   return response.data;
 }
 

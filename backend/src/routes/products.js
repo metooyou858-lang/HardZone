@@ -61,6 +61,17 @@ function normalizeTrainingTypeIds(value) {
   )];
 }
 
+function normalizeProductIds(value) {
+  if (typeof value !== 'string') return [];
+
+  return [...new Set(
+    value
+      .split(',')
+      .map((item) => parseInt(item.trim(), 10))
+      .filter((item) => Number.isInteger(item) && item > 0)
+  )];
+}
+
 // GET /api/products
 router.get('/', requireProductsRead, async (req, res, next) => {
   try {
@@ -173,6 +184,51 @@ router.get('/search', requireProductsRead, async (req, res, next) => {
     return res.json(result.rows);
   } catch (error) {
     return next(error);
+  }
+});
+
+// GET /api/products/subscription-params?ids=1,2 — получить параметры абонементов пачкой
+router.get('/subscription-params', requireServiceSettingsManage, async (req, res, next) => {
+  try {
+    const productIds = normalizeProductIds(req.query.ids);
+
+    if (productIds.length === 0) {
+      return res.json({ success: true, data: {} });
+    }
+
+    const { rows: paramsRows } = await query(
+      'SELECT * FROM product_subscription_params WHERE product_id = ANY($1::BIGINT[])',
+      [productIds]
+    );
+
+    const { rows: trainingTypeRows } = await query(
+      `
+        SELECT ptt.product_id, tt.*
+        FROM product_training_types ptt
+        JOIN training_types tt ON tt.id = ptt.training_type_id
+        WHERE ptt.product_id = ANY($1::BIGINT[])
+        ORDER BY tt.name ASC
+      `,
+      [productIds]
+    );
+
+    const data = Object.fromEntries(
+      productIds.map((id) => [String(id), { params: null, training_types: [] }])
+    );
+
+    paramsRows.forEach((row) => {
+      data[String(row.product_id)].params = row;
+    });
+
+    trainingTypeRows.forEach((row) => {
+      const productId = String(row.product_id);
+      const { product_id: _productId, ...trainingType } = row;
+      data[productId].training_types.push(trainingType);
+    });
+
+    return res.json({ success: true, data });
+  } catch (err) {
+    return next(err);
   }
 });
 
