@@ -162,7 +162,7 @@ export function SlotBookingsPanel({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    {booking.status === "confirmed" && canManageAttendance && (
+                    {["confirmed", "missed"].includes(booking.status) && canManageAttendance && (
                       <>
                         <CircleCheckBtn
                           onClick={() => void onAttend(booking.id)}
@@ -187,7 +187,7 @@ export function SlotBookingsPanel({
                             Не оплачено
                           </button>
                         )}
-                        {canManageClients && (
+                        {booking.status === "confirmed" && canManageClients && (
                           <CircleXBtn
                             onClick={() => void onCancel(booking.id)}
                             disabled={isActing}

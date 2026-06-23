@@ -209,8 +209,8 @@ async function markTrainingBookingArrived(executor, {
   createdBy = null,
 }) {
   const { rows: bookingRows } = await executor.query(
-    'SELECT * FROM bookings WHERE id = $1 AND status = $2 FOR UPDATE',
-    [bookingId, 'confirmed']
+    "SELECT * FROM bookings WHERE id = $1 AND status IN ('confirmed', 'missed') FOR UPDATE",
+    [bookingId]
   );
   const booking = bookingRows[0];
 
