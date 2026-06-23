@@ -663,15 +663,30 @@ router.post('/templates', requireModule('schedule_edit_groups'), async (req, res
 
 router.post('/templates/generate', requireModule('schedule_edit_groups'), async (req, res) => {
   try {
-    const { date_from, date_to } = req.body;
+    const { date_from, date_to, template_ids } = req.body;
 
     if (!date_from || !date_to) {
       return res.status(422).json({ success: false, error: 'Укажите период' });
     }
 
-    const { rows: templates } = await pool.query(
-      'SELECT * FROM schedule_templates WHERE is_active = true'
-    );
+    const hasTemplateFilter = Array.isArray(template_ids);
+    const requestedTemplateIds = hasTemplateFilter
+      ? template_ids
+          .map((id) => Number.parseInt(String(id), 10))
+          .filter((id) => Number.isInteger(id) && id > 0)
+      : [];
+
+    const templateQuery = hasTemplateFilter
+      ? {
+          text: 'SELECT * FROM schedule_templates WHERE is_active = true AND id = ANY($1::bigint[])',
+          values: [requestedTemplateIds],
+        }
+      : {
+          text: 'SELECT * FROM schedule_templates WHERE is_active = true',
+          values: [],
+        };
+
+    const { rows: templates } = await pool.query(templateQuery);
 
     let created = 0;
     const from = new Date(date_from);

@@ -300,6 +300,7 @@ export async function createScheduleTemplate(data: {
 export async function generateScheduleTemplates(data: {
   date_from: string;
   date_to: string;
+  template_ids?: Array<string | number>;
 }): Promise<{ created: number }> {
   const response = await apiFetch<ApiEnvelope<{ created: number }>>("/schedule/templates/generate", {
     method: "POST",

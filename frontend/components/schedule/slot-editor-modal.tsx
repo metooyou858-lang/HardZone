@@ -160,8 +160,10 @@ export function SlotEditorModal({
 
       const monthBounds = getMonthBounds(parseIsoDate(dateValue));
 
+      const createdTemplateIds = [];
+
       for (const dayOfWeek of repeatDays) {
-        await createScheduleTemplate({
+        const template = await createScheduleTemplate({
           slot_type: payload.slot_type,
           training_type_id: payload.training_type_id,
           trainer_id: payload.trainer_id,
@@ -172,11 +174,14 @@ export function SlotEditorModal({
           capacity: payload.capacity,
           block_if_empty_hours: payload.block_if_empty_hours,
         });
+
+        createdTemplateIds.push(template.id);
       }
 
       await generateScheduleTemplates({
         date_from: monthBounds.from,
         date_to: monthBounds.to,
+        template_ids: createdTemplateIds,
       });
 
       onSaved("Регулярные занятия созданы на текущий месяц");
@@ -457,4 +462,3 @@ export function SlotEditorModal({
     </div>
   );
 }
-
