@@ -15,6 +15,74 @@ export const scannerLayoutMap: Record<string, string> = {
   ю: ".", Ю: ">",
 };
 
+const unshiftedCodeMap: Record<string, string> = {
+  Backquote: "`",
+  Minus: "-",
+  Equal: "=",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Backslash: "\\",
+  Semicolon: ";",
+  Quote: "'",
+  Comma: ",",
+  Period: ".",
+  Slash: "/",
+};
+
+const shiftedCodeMap: Record<string, string> = {
+  Backquote: "~",
+  Digit1: "!",
+  Digit2: "@",
+  Digit3: "#",
+  Digit4: "$",
+  Digit5: "%",
+  Digit6: "^",
+  Digit7: "&",
+  Digit8: "*",
+  Digit9: "(",
+  Digit0: ")",
+  Minus: "_",
+  Equal: "+",
+  BracketLeft: "{",
+  BracketRight: "}",
+  Backslash: "|",
+  Semicolon: ":",
+  Quote: "\"",
+  Comma: "<",
+  Period: ">",
+  Slash: "?",
+};
+
+/**
+ * Decode scanner keyboard events by physical US key position.
+ *
+ * DataMatrix is case-sensitive. `event.key` is already affected by the active
+ * OS layout and CapsLock, so Russian layout can corrupt both serial and crypto
+ * parts. Barcode scanners emit key positions plus Shift; `event.code` keeps the
+ * physical key stable across layouts.
+ */
+export function scannerEventToUsChar(event: Pick<KeyboardEvent, "code" | "key" | "shiftKey">): string | null {
+  if (/^Key[A-Z]$/.test(event.code)) {
+    const letter = event.code.slice(3).toLowerCase();
+    return event.shiftKey ? letter.toUpperCase() : letter;
+  }
+
+  if (/^Digit[0-9]$/.test(event.code)) {
+    const digit = event.code.slice(5);
+    return event.shiftKey ? shiftedCodeMap[event.code] ?? digit : digit;
+  }
+
+  if (event.shiftKey && shiftedCodeMap[event.code] !== undefined) {
+    return shiftedCodeMap[event.code];
+  }
+
+  if (!event.shiftKey && unshiftedCodeMap[event.code] !== undefined) {
+    return unshiftedCodeMap[event.code];
+  }
+
+  return event.key.length === 1 ? normalizeScannerLayout(event.key) : null;
+}
+
 export function normalizeScannerLayout(value: string): string {
   // When keyboard is in Russian mode, the '/' key sends '.'.
   // The '.' key sends 'ю' (which the map already converts back to '.').

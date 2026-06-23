@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ClientSubscription,
@@ -414,6 +414,7 @@ export default function ClientDetailsPage() {
   const [subscriptionSaving, setSubscriptionSaving] = useState<string | null>(null);
   const [subscriptionForm, setSubscriptionForm] = useState<ReturnType<typeof subscriptionToForm> | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const silentReloadRef = useRef(false);
 
   const [form, setForm] = useState({
     first_name: "",
@@ -428,6 +429,24 @@ export default function ClientDetailsPage() {
 
   const canUpdateClient = hasModuleAccess(currentModules, "clients_update");
   const canCreateLegacySubscription = hasModuleAccess(currentModules, "clients_legacy_subscriptions");
+
+  const refreshClient = useCallback(() => {
+    silentReloadRef.current = true;
+    setReloadToken((value) => value + 1);
+  }, []);
+
+  const resetClientForm = useCallback((nextClient: ClientDetail) => {
+    setForm({
+      first_name: nextClient.first_name ?? "",
+      last_name: nextClient.last_name ?? "",
+      middle_name: nextClient.middle_name ?? "",
+      phone: nextClient.phone ?? "",
+      email: nextClient.email ?? "",
+      birth_date: normalizeDateValue(nextClient.birth_date),
+      discount: nextClient.discount ? String(Number.parseFloat(nextClient.discount)) : "",
+      comment: nextClient.comment ?? "",
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -496,7 +515,12 @@ export default function ClientDetailsPage() {
     let cancelled = false;
 
     async function loadClient() {
-      setLoading(true);
+      const silentReload = silentReloadRef.current;
+      silentReloadRef.current = false;
+
+      if (!silentReload) {
+        setLoading(true);
+      }
       setError(null);
 
       try {
@@ -506,16 +530,7 @@ export default function ClientDetailsPage() {
         }
 
         setClient(data);
-        setForm({
-          first_name: data.first_name ?? "",
-          last_name: data.last_name ?? "",
-          middle_name: data.middle_name ?? "",
-          phone: data.phone ?? "",
-          email: data.email ?? "",
-          birth_date: normalizeDateValue(data.birth_date),
-          discount: data.discount ? String(Number.parseFloat(data.discount)) : "",
-          comment: data.comment ?? "",
-        });
+        resetClientForm(data);
       } catch (fetchError) {
         if (!cancelled) {
           setError(fetchError instanceof Error ? fetchError.message : "Не удалось загрузить клиента");
@@ -532,7 +547,7 @@ export default function ClientDetailsPage() {
     return () => {
       cancelled = true;
     };
-  }, [clientId, reloadToken]);
+  }, [clientId, reloadToken, resetClientForm]);
 
   const activeSubscriptions = useMemo(() => {
     if (!client) {
@@ -573,7 +588,7 @@ export default function ClientDetailsPage() {
       });
 
       setEditing(false);
-      setReloadToken((value) => value + 1);
+      refreshClient();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Не удалось сохранить клиента");
     } finally {
@@ -596,7 +611,7 @@ export default function ClientDetailsPage() {
 
     try {
       await uploadClientPhoto(client.id, file);
-      setReloadToken((value) => value + 1);
+      refreshClient();
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Не удалось загрузить фото клиента");
     } finally {
@@ -615,7 +630,7 @@ export default function ClientDetailsPage() {
 
     try {
       await freezeSubscription(subscription.id, reason);
-      setReloadToken((value) => value + 1);
+      refreshClient();
     } catch (freezeError) {
       setError(freezeError instanceof Error ? freezeError.message : "Не удалось заморозить абонемент");
     } finally {
@@ -633,7 +648,7 @@ export default function ClientDetailsPage() {
 
     try {
       await unfreezeSubscription(subscription.id);
-      setReloadToken((value) => value + 1);
+      refreshClient();
     } catch (unfreezeError) {
       setError(unfreezeError instanceof Error ? unfreezeError.message : "Не удалось разморозить абонемент");
     } finally {
@@ -696,7 +711,7 @@ export default function ClientDetailsPage() {
       });
 
       cancelEditSubscription();
-      setReloadToken((value) => value + 1);
+      refreshClient();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Не удалось сохранить абонемент");
     } finally {
@@ -717,7 +732,7 @@ export default function ClientDetailsPage() {
 
     try {
       await syncSubscriptionProductParams(subscription.id, reason.trim());
-      setReloadToken((value) => value + 1);
+      refreshClient();
     } catch (syncError) {
       setError(syncError instanceof Error ? syncError.message : "Не удалось применить параметры услуги");
     } finally {
@@ -781,7 +796,7 @@ export default function ClientDetailsPage() {
 
       setShowLegacyForm(false);
       setLegacyForm(emptyLegacySubscriptionForm);
-      setReloadToken((value) => value + 1);
+      refreshClient();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Не удалось добавить старый абонемент");
     } finally {
@@ -1081,7 +1096,7 @@ export default function ClientDetailsPage() {
                     type="button"
                     onClick={() => {
                       setEditing(false);
-                      setReloadToken((value) => value + 1);
+                      if (client) resetClientForm(client);
                     }}
                     className="rounded-[16px] border border-[var(--line-soft)] px-4 py-2 text-sm text-[var(--text-main)]"
                   >

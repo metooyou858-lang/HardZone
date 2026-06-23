@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ClientListItem,
@@ -94,6 +94,7 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const silentReloadRef = useRef(false);
 
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -161,7 +162,12 @@ export default function ClientsPage() {
 
     let cancelled = false;
     const timer = window.setTimeout(async () => {
-      setLoading(true);
+      const silentReload = silentReloadRef.current;
+      silentReloadRef.current = false;
+
+      if (!silentReload) {
+        setLoading(true);
+      }
       setError(null);
 
       try {
@@ -227,6 +233,7 @@ export default function ClientsPage() {
 
       setForm(emptyForm);
       setShowCreate(false);
+      silentReloadRef.current = true;
       setReloadToken((value) => value + 1);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Не удалось создать клиента");
@@ -248,6 +255,7 @@ export default function ClientsPage() {
     try {
       const result = await importClientsCsv(file);
       setImportResult(result);
+      silentReloadRef.current = true;
       setReloadToken((value) => value + 1);
     } catch (uploadError) {
       setImportError(uploadError instanceof Error ? uploadError.message : "Не удалось загрузить файл");
@@ -289,6 +297,7 @@ export default function ClientsPage() {
       const result = await importLegacySubscriptionsCsv(legacyFile);
       setLegacyResult(result);
       setLegacyPlan(result);
+      silentReloadRef.current = true;
       setReloadToken((value) => value + 1);
     } catch (importError) {
       setLegacyError(importError instanceof Error ? importError.message : "Не удалось импортировать абонементы");

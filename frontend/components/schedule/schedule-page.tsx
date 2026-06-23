@@ -40,7 +40,8 @@ export default function SchedulePage() {
   const [slotsLoading, setSlotsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [banner, setBanner] = useState<BannerState>(null);
-  const [reloadToken, setReloadToken] = useState(0);
+  const [slotsReloadToken, setSlotsReloadToken] = useState(0);
+  const silentSlotsReloadRef = useRef(false);
 
   const [trainingTypes, setTrainingTypes] = useState<TrainingType[]>([]);
   const [trainers, setTrainers] = useState<Trainer[]>([]);
@@ -115,11 +116,16 @@ export default function SchedulePage() {
       .finally(() => { if (!cancelled) setSupportLoading(false); });
 
     return () => { cancelled = true; };
-  }, [reloadToken]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    setSlotsLoading(true);
+    const silentReload = silentSlotsReloadRef.current;
+    silentSlotsReloadRef.current = false;
+
+    if (!silentReload) {
+      setSlotsLoading(true);
+    }
     setError(null);
 
     fetchScheduleSlots({ date_from: range.from, date_to: range.to })
@@ -132,10 +138,11 @@ export default function SchedulePage() {
       .finally(() => { if (!cancelled) setSlotsLoading(false); });
 
     return () => { cancelled = true; };
-  }, [range.from, range.to, reloadToken]);
+  }, [range.from, range.to, slotsReloadToken]);
 
   function refreshPage() {
-    setReloadToken((value) => value + 1);
+    silentSlotsReloadRef.current = true;
+    setSlotsReloadToken((value) => value + 1);
   }
 
   return (

@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { hasModuleAccess, roleLabels, type AuthModulePermission } from "@/lib/access";
 import type { SessionUser } from "@/lib/server/session";
@@ -170,8 +171,43 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [user, setUser] = useState<SessionUser | null>(null);
+  const pathnameRef = useRef(pathname);
+  const navigationFallbackRef = useRef<number | null>(null);
   const isAuthScreen = pathname === "/login" || pathname === "/reset-password";
   const isTelegramMiniApp = pathname.startsWith("/telegram/");
+
+  useEffect(() => {
+    pathnameRef.current = pathname;
+    if (navigationFallbackRef.current) {
+      window.clearTimeout(navigationFallbackRef.current);
+      navigationFallbackRef.current = null;
+    }
+  }, [pathname]);
+
+  function scheduleNavigationFallback(event: React.MouseEvent<HTMLAnchorElement>, href: string) {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey ||
+      pathnameRef.current === href
+    ) {
+      return;
+    }
+
+    const currentPath = pathnameRef.current;
+    if (navigationFallbackRef.current) {
+      window.clearTimeout(navigationFallbackRef.current);
+    }
+
+    navigationFallbackRef.current = window.setTimeout(() => {
+      if (pathnameRef.current === currentPath) {
+        window.location.href = href;
+      }
+    }, 900);
+  }
 
   useEffect(() => {
     const stored = window.localStorage.getItem("hardzone.sidebar-collapsed");
@@ -239,9 +275,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               collapsed ? "justify-center px-0" : "px-5"
             }`}
           >
-            <a
+            <Link
               href="/"
               title="HardZone CRM"
+              onClick={(event) => scheduleNavigationFallback(event, "/")}
               className="inline-flex shrink-0 items-center justify-center rounded-[10px]"
               style={{
                 width: 32, height: 32,
@@ -249,7 +286,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               }}
             >
               <ZapIcon />
-            </a>
+            </Link>
             {!collapsed && (
               <span
                 className="whitespace-nowrap text-[13px] font-extrabold tracking-[0.08em] text-[var(--text-main)]"
@@ -266,10 +303,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               const active = pathname.startsWith(item.href);
 
               return (
-                <a
+                <Link
                   key={item.href}
                   href={item.href}
                   title={item.label}
+                  onClick={(event) => {
+                    if (!active) scheduleNavigationFallback(event, item.href);
+                  }}
                   className={`group relative flex items-center transition-all ${
                     collapsed ? "justify-center px-0 py-3" : "gap-3 px-5 py-3"
                   } ${
@@ -298,7 +338,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   {!collapsed && (
                     <span className="text-[13px] font-medium">{item.label}</span>
                   )}
-                </a>
+                </Link>
               );
             })}
           </nav>
@@ -339,9 +379,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             )}
 
             {canAccessSettings && (
-              <a
+              <Link
                 href="/settings"
                 title="Настройки"
+                onClick={(event) => scheduleNavigationFallback(event, "/settings")}
                 className={`inline-flex h-8 w-8 items-center justify-center rounded-xl border transition ${
                   pathname.startsWith("/settings")
                     ? "border-[rgba(94,244,216,0.36)] bg-[rgba(94,244,216,0.10)] text-[var(--accent)]"
@@ -349,7 +390,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 }`}
               >
                 <SettingsIcon />
-              </a>
+              </Link>
             )}
 
             <button

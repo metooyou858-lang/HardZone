@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-import { normalizeScannerLayout } from "@/components/sales/sales-marking-utils";
+import { scannerEventToUsChar } from "@/components/sales/sales-marking-utils";
 
 type UseOrderScannerOptions = {
   /** Activate the global keydown listener (cash tab open, picker closed). */
@@ -42,14 +42,15 @@ export function useOrderScanner({ enabled, onScan }: UseOrderScannerOptions) {
 
         if (isScannerInput) {
           event.preventDefault();
-          onScan(normalizeScannerLayout(barcode));
+          onScan(barcode);
         }
         return;
       }
 
       if (event.key.length === 1) {
         if (now - lastTsRef.current > 100) bufferRef.current = "";
-        bufferRef.current += event.key;
+        const decoded = scannerEventToUsChar(event);
+        if (decoded !== null) bufferRef.current += decoded;
         lastTsRef.current = now;
       }
     }

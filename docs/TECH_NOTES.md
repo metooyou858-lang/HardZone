@@ -4,7 +4,7 @@
 
 ## Навигация
 
-В `frontend/components/app-shell.tsx` используется обычный `<a href="...">` вместо Next.js `<Link>`, потому что client-side router не завершал переход из `/sales`.
+В `frontend/components/app-shell.tsx` для внутренних переходов используется Next.js `<Link>`, чтобы CRM не перезагружала весь документ при навигации между разделами. Для рабочих переходов есть fallback: если client-side переход не сменил route за короткое время, shell выполняет обычный document navigation. Это защищает от зависаний роутера и `ChunkLoadError` в открытых вкладках после frontend-деплоя. Гипотеза с `useSearchParams()` на `/sales` проверена и не решила проблему; query-параметры всё равно читаются в `frontend/app/sales/page.tsx` и передаются в `SalesPage` пропсами.
 
 ## Честный Знак / DataMatrix
 

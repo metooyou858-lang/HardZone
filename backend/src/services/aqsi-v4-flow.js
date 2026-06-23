@@ -104,7 +104,11 @@ async function checkReceiptOp(orderId, receiptOperationId) {
       : (receiptOp.message || `Ошибка фискализации (${receiptOp.status})`);
     logger.error('orders', { action: 'receipt_op_non_completed', order_id: orderId, status: receiptOp.status, receipt_op_id: receiptOperationId });
     await pool.query(
-      'UPDATE orders SET aqsi_receipt_operation_id = NULL, aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
+      `UPDATE orders SET
+         aqsi_payment_status = 'stuck',
+         aqsi_receipt_status = $2,
+         aqsi_error = $3
+       WHERE id = $1`,
       [orderId, 'error', msg]
     ).catch(() => {});
     return { status: 'receipt_error', message: msg };
@@ -277,9 +281,12 @@ async function startReceiptOp(orderId, slipId, slipContent) {
 }
 
 async function recoverSlipContentForReceipt(order, slipId, action) {
-  if (order.aqsi_payment_operation_id) {
+  if (order.aqsi_payment_operation_id && order.aqsi_payment_operation_id !== slipId) {
     try {
-      const paymentOp = await getOperation(order.aqsi_payment_operation_id);
+      const paymentOp = await Promise.race([
+        getOperation(order.aqsi_payment_operation_id),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('AQSI operation lookup timeout')), 8000)),
+      ]);
       const slipData = extractSlipResultData(paymentOp);
       if (slipData?.content) return slipData.content;
     } catch (err) {
@@ -783,7 +790,11 @@ async function syncAqsiV4(orderId) {
   if (receiptOp.status !== 'Completed') {
     const msg = receiptOp.status === 'Timeout' ? 'Тайм-аут фискализации' : (receiptOp.message || `Ошибка фискализации (${receiptOp.status})`);
     await pool.query(
-      'UPDATE orders SET aqsi_receipt_operation_id = NULL, aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
+      `UPDATE orders SET
+         aqsi_payment_status = 'stuck',
+         aqsi_receipt_status = $2,
+         aqsi_error = $3
+       WHERE id = $1`,
       [orderId, 'error', msg]
     ).catch(() => {});
     return { status: 'receipt_error', message: msg };

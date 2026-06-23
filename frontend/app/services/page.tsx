@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ServiceForm, describeServiceParams } from "@/components/services/service-form";
 import { TrainingTypesManager } from "@/components/warehouse/training-types-manager";
@@ -39,6 +39,7 @@ export default function ServicesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const silentReloadRef = useRef(false);
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
 
@@ -50,7 +51,12 @@ export default function ServicesPage() {
     let cancelled = false;
 
     const timer = window.setTimeout(async () => {
-      setLoading(true);
+      const silentReload = silentReloadRef.current;
+      silentReloadRef.current = false;
+
+      if (!silentReload) {
+        setLoading(true);
+      }
       setError(null);
 
       try {
@@ -94,6 +100,7 @@ export default function ServicesPage() {
   function handleSaved() {
     setShowCreate(false);
     setEditId(null);
+    silentReloadRef.current = true;
     setReloadToken((value) => value + 1);
   }
 

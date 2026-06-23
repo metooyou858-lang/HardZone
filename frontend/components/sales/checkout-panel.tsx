@@ -5,7 +5,7 @@ import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "rea
 import type { ClientListItem } from "@/lib/api/clients";
 import type { OrderDetail } from "@/lib/api/orders";
 import { type BasketLine, type DiscountMode, ReceiptIcon } from "@/components/sales/sales-shared";
-import { scannerLayoutMap } from "@/components/sales/sales-marking-utils";
+import { scannerEventToUsChar } from "@/components/sales/sales-marking-utils";
 import { CheckoutClientCard } from "@/components/sales/checkout-client-card";
 import { CheckoutBasketLine } from "@/components/sales/checkout-basket-line";
 import { CheckoutTotals } from "@/components/sales/checkout-totals";
@@ -169,23 +169,13 @@ export function CheckoutPanel({
         markingRussianModeRef.current = false;
       }
 
-      const mapped = scannerLayoutMap[event.key];
+      const decoded = scannerEventToUsChar(event.nativeEvent);
 
-      if (mapped !== undefined) {
-        markingRussianModeRef.current = true;
+      if (decoded !== null) {
+        if (decoded !== event.key) markingRussianModeRef.current = true;
         event.preventDefault();
-        document.execCommand("insertText", false, mapped);
-        markingScannerBufferRef.current += mapped;
-      } else if (markingRussianModeRef.current && event.key === ".") {
-        event.preventDefault();
-        document.execCommand("insertText", false, "/");
-        markingScannerBufferRef.current += "/";
-      } else if (markingRussianModeRef.current && event.key === ",") {
-        event.preventDefault();
-        document.execCommand("insertText", false, "?");
-        markingScannerBufferRef.current += "?";
-      } else {
-        markingScannerBufferRef.current += event.key;
+        document.execCommand("insertText", false, decoded);
+        markingScannerBufferRef.current += decoded;
       }
 
       markingScannerLastTsRef.current = now;

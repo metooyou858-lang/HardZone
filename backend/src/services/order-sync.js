@@ -670,7 +670,11 @@ async function recoverV4Order(row) {
       ? 'Тайм-аут фискализации'
       : (receiptOp?.message || `Ошибка фискализации (${receiptOp?.status || 'unknown'})`);
     await query(
-      'UPDATE orders SET aqsi_receipt_operation_id = NULL, aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
+      `UPDATE orders SET
+         aqsi_payment_status = 'stuck',
+         aqsi_receipt_status = $2,
+         aqsi_error = $3
+       WHERE id = $1`,
       [order.id, 'error', message]
     );
     return { status: 'receipt_error' };

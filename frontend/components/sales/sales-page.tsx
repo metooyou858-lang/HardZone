@@ -2,8 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { useSearchParams } from "next/navigation";
-
 import { fetchClient } from "@/lib/api/clients";
 import type { ClientListItem } from "@/lib/api/clients";
 import { hasModuleAccess, type AuthModulePermission } from "@/lib/access";
@@ -20,8 +18,11 @@ import { useSalesCatalog } from "@/components/sales/use-sales-catalog";
 import { useSalesHistory } from "@/components/sales/use-sales-history";
 import { useSalesOrder } from "@/components/sales/use-sales-order";
 
-export default function SalesPage() {
-  const searchParams = useSearchParams();
+type SalesPageProps = {
+  initialClientId?: string | null;
+};
+
+export default function SalesPage({ initialClientId = null }: SalesPageProps) {
   const [tab, setTab] = useState<SalesTab>("cash");
   const [banner, setBanner] = useState<BannerState>(null);
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
@@ -71,7 +72,7 @@ export default function SalesPage() {
   }, [orderApi.pendingMarkingLineKey]);
 
   useEffect(() => {
-    const clientId = searchParams.get("client_id");
+    const clientId = initialClientId;
     if (!clientId) return;
 
     fetchClient(clientId)
@@ -80,7 +81,7 @@ export default function SalesPage() {
       })
       .catch(() => undefined);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initialClientId]);
 
   const historyApi = useSalesHistory({
     enabled: tab === "history",
