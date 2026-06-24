@@ -33,6 +33,12 @@ export type OpenGymVisit = {
   client_name: string;
   client_phone: string | null;
   client_barcode: string | null;
+  subscription_type?: "single" | "visits" | "period" | "unlimited" | null;
+  subscription_visits_total?: number | null;
+  subscription_visits_left?: number | null;
+  subscription_expires_at?: string | null;
+  subscription_status?: string | null;
+  subscription_product_name?: string | null;
 };
 
 export type GymOverview = {
@@ -81,6 +87,12 @@ export type ScheduleBooking = {
   slot_id: string;
   client_id: string;
   subscription_id: string | null;
+  subscription_type?: "single" | "visits" | "period" | "unlimited" | null;
+  subscription_visits_total?: number | null;
+  subscription_visits_left?: number | null;
+  subscription_expires_at?: string | null;
+  subscription_status?: string | null;
+  subscription_product_name?: string | null;
   covered_by_booking_id: string | null;
   coverage_status: CoverageStatus;
   coverage_reason: string | null;

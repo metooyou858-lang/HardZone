@@ -8,7 +8,7 @@ import { formatClientName } from "@/components/clients/shared";
 import { formatTimeValue } from "@/components/schedule/gym-access-shared";
 import type { BannerTone } from "@/components/schedule/schedule-shared";
 import { type ClientListItem, type ClientSubscription, fetchClient, fetchClients, findClientByBarcode } from "@/lib/api/clients";
-import { checkInOpenGym, deleteGymVisit, fetchGymOverview, type GymOverview } from "@/lib/api/schedule";
+import { checkInOpenGym, deleteGymVisit, fetchGymOverview, type GymOverview, type OpenGymVisit } from "@/lib/api/schedule";
 
 const subscriptionTypeLabels: Record<string, string> = {
   single: "Разовое",
@@ -27,6 +27,33 @@ function formatSubscriptionLabel(sub: ClientSubscription): string {
     return `${name} — до ${date}`;
   }
   return name;
+}
+
+function formatVisitDate(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  return new Date(value).toLocaleDateString("ru-RU");
+}
+
+function getOpenGymSubscriptionLabel(visit: OpenGymVisit) {
+  if (visit.coverage_status === "comped") {
+    return "Без списания";
+  }
+
+  if (visit.coverage_status === "not_required") {
+    return "Без списания";
+  }
+
+  if (!visit.subscription_id) {
+    return null;
+  }
+
+  const title = visit.subscription_product_name || "Абонемент";
+  const expiresAt = formatVisitDate(visit.subscription_expires_at);
+
+  return `${title}${expiresAt ? ` · до ${expiresAt}` : ""}`;
 }
 
 export function GymSidebarBlock({
@@ -326,15 +353,25 @@ export function GymSidebarBlock({
         <div className="space-y-1 pt-1">
           <p className="text-xs text-[var(--text-muted)]">Сегодня в зале — {overview.total_today}</p>
           <div className="space-y-1 max-h-[180px] overflow-y-auto">
-            {overview.visits.map((visit) => (
+            {overview.visits.map((visit) => {
+              const coverageStatus = visit.coverage_status || (visit.subscription_id ? "covered" : "unpaid");
+              const subscriptionLabel = getOpenGymSubscriptionLabel(visit);
+              const isUnpaid = coverageStatus === "unpaid";
+
+              return (
               <div
                 key={visit.id}
                 className="rounded-[1rem] px-3 py-2"
-              style={{ background: visit.subscription_id ? "var(--bg-card-soft)" : "var(--energy-soft)" }}
+                style={{ background: isUnpaid ? "var(--energy-soft)" : "var(--bg-card-soft)" }}
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className="text-sm text-[var(--text-main)] truncate">{visit.client_name}</span>
+                    <span className="min-w-0 truncate text-sm text-[var(--text-main)]">{visit.client_name}</span>
+                    {subscriptionLabel && (
+                      <span className="min-w-0 truncate border-l border-[var(--line-soft)] pl-2 text-xs text-[var(--text-muted)]">
+                        {subscriptionLabel}
+                      </span>
+                    )}
                     {!visit.subscription_id && (
                       <button
                         type="button"
@@ -373,7 +410,8 @@ export function GymSidebarBlock({
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

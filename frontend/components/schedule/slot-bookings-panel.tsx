@@ -1,6 +1,7 @@
 "use client";
 
-import { getBookingStatusMeta } from "@/components/schedule/schedule-shared";
+import Link from "next/link";
+
 import type { ScheduleBooking } from "@/lib/api/schedule";
 
 const coverageLabels: Record<string, string> = {
@@ -10,6 +11,50 @@ const coverageLabels: Record<string, string> = {
   comped: "Без списания",
   not_required: "Не требуется",
 };
+
+function formatDate(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  return new Date(value).toLocaleDateString("ru-RU");
+}
+
+function getSubscriptionSourceLabel(booking: ScheduleBooking, coverageStatus: string) {
+  if (booking.covered_by_booking_id) {
+    return "Оплачено сплитом";
+  }
+
+  if (coverageStatus === "comped") {
+    return "Без списания";
+  }
+
+  if (coverageStatus === "not_required") {
+    return "Списание не требуется";
+  }
+
+  if (!booking.subscription_id) {
+    return coverageStatus === "unpaid" ? "Абонемент не определен" : null;
+  }
+
+  const title = booking.subscription_product_name || "Абонемент";
+  const visits =
+    booking.subscription_visits_total === null || booking.subscription_visits_total === undefined
+      ? null
+      : `${booking.subscription_visits_left ?? 0}/${booking.subscription_visits_total}`;
+  const expiresAt = formatDate(booking.subscription_expires_at);
+  const details = [visits ? `${visits} занятий` : null, expiresAt ? `до ${expiresAt}` : null].filter(Boolean).join(" · ");
+  const prefix =
+    coverageStatus === "covered"
+      ? "Списано"
+      : coverageStatus === "pending"
+        ? "Запланировано"
+        : coverageStatus === "unpaid"
+          ? "Не списано"
+          : coverageLabels[coverageStatus] || coverageStatus;
+
+  return `${prefix}: ${title}${details ? ` · ${details}` : ""}`;
+}
 
 function CircleCheckBtn({
   onClick,
@@ -123,10 +168,10 @@ export function SlotBookingsPanel({
           </div>
         ) : (
           bookings.filter((b) => b.status !== "cancelled").map((booking) => {
-            const meta = getBookingStatusMeta(booking.status);
             const isActing = bookingActionId === booking.id;
             const isCoveredPartner = !!booking.covered_by_booking_id;
             const coverageStatus = booking.coverage_status || (booking.subscription_id || isCoveredPartner ? "covered" : "unpaid");
+            const subscriptionSourceLabel = getSubscriptionSourceLabel(booking, coverageStatus);
             const attendedOk = booking.status === "attended" && ["covered", "not_required", "comped"].includes(coverageStatus);
             const attendedNoSub = booking.status === "attended" && coverageStatus === "unpaid";
 
@@ -139,26 +184,35 @@ export function SlotBookingsPanel({
             return (
               <div key={booking.id} className={rowClass}>
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <p className="truncate text-sm font-semibold text-[var(--text-main)]">
-                      {booking.client_name || `Клиент #${booking.client_id}`}
-                    </p>
-                    {isCoveredPartner && (
-                      <span className="shrink-0 inline-flex items-center rounded-full border border-[rgba(0,191,165,0.3)] bg-[rgba(0,191,165,0.1)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--accent)]">
-                        Сплит
+                  <div className="flex min-w-0 flex-col gap-2">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+                      <Link
+                        href={`/clients/${booking.client_id}`}
+                        className="truncate text-sm font-semibold text-[var(--text-main)] transition-colors hover:text-[var(--accent)]"
+                        title="Открыть карточку клиента"
+                      >
+                        {booking.client_name || `Клиент #${booking.client_id}`}
+                      </Link>
+                      {isCoveredPartner && (
+                        <span className="shrink-0 inline-flex items-center rounded-full border border-[rgba(0,191,165,0.3)] bg-[rgba(0,191,165,0.1)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--accent)]">
+                          Сплит
+                        </span>
+                      )}
+                      <span
+                        className={`shrink-0 inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-medium ${
+                          coverageStatus === "unpaid"
+                            ? "border-[rgba(248,191,0,0.35)] bg-[rgba(248,191,0,0.12)] text-[#f8bf00]"
+                            : coverageStatus === "covered"
+                              ? "border-[rgba(63,185,80,0.3)] bg-[rgba(63,185,80,0.1)] text-[var(--success)]"
+                              : "border-[var(--line-soft)] bg-[var(--bg-card-soft)] text-[var(--text-muted)]"
+                        }`}
+                      >
+                        {coverageLabels[coverageStatus] || coverageStatus}
                       </span>
+                    </div>
+                    {subscriptionSourceLabel && (
+                      <p className="text-xs text-[var(--text-muted)]">{subscriptionSourceLabel}</p>
                     )}
-                    <span
-                      className={`shrink-0 inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-medium ${
-                        coverageStatus === "unpaid"
-                          ? "border-[rgba(248,191,0,0.35)] bg-[rgba(248,191,0,0.12)] text-[#f8bf00]"
-                          : coverageStatus === "covered"
-                            ? "border-[rgba(63,185,80,0.3)] bg-[rgba(63,185,80,0.1)] text-[var(--success)]"
-                            : "border-[var(--line-soft)] bg-[var(--bg-card-soft)] text-[var(--text-muted)]"
-                      }`}
-                    >
-                      {coverageLabels[coverageStatus] || coverageStatus}
-                    </span>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
@@ -207,14 +261,14 @@ export function SlotBookingsPanel({
                             disabled={isActing}
                             className="shrink-0 inline-flex items-center rounded-2xl border border-[rgba(248,191,0,0.4)] bg-[rgba(248,191,0,0.12)] px-3 py-1.5 text-xs font-semibold text-[#f8bf00] transition-colors hover:bg-[rgba(248,191,0,0.22)] disabled:opacity-50"
                           >
-                            РќРµ РѕРїР»Р°С‡РµРЅРѕ
+                            Не оплачено
                           </button>
                         )}
                         <CircleXBtn
-                        onClick={() => void onUnattend(booking.id)}
-                        disabled={isActing}
-                        loading={isActing}
-                        title="Удалить строку и вернуть визит"
+                          onClick={() => void onUnattend(booking.id)}
+                          disabled={isActing}
+                          loading={isActing}
+                          title="Удалить строку и вернуть визит"
                         />
                       </>
                     )}

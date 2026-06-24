@@ -8,6 +8,7 @@ const {
   markTrainingBookingArrived,
   unmarkTrainingBookingArrived,
 } = require('./booking-attendance');
+const { addClientSearchConditions } = require('./client-search');
 const { normalizePhone } = require('../utils/phones');
 
 const CLUB_TIME_ZONE = process.env.APP_TIMEZONE || 'Asia/Vladivostok';
@@ -307,22 +308,11 @@ async function searchClients(staff, search, limit = 5) {
 
   const params = [];
   const conditions = [];
+  addClientSearchConditions({ search, params, conditions, includeEmail: false });
 
-  tokens.forEach((token) => {
-    params.push(`%${token}%`);
-    const index = params.length;
-    conditions.push(`
-      (
-        c.first_name ILIKE $${index}
-        OR c.last_name ILIKE $${index}
-        OR COALESCE(c.middle_name, '') ILIKE $${index}
-        OR CONCAT_WS(' ', c.last_name, c.first_name, c.middle_name) ILIKE $${index}
-        OR CONCAT_WS(' ', c.first_name, c.middle_name, c.last_name) ILIKE $${index}
-        OR COALESCE(c.phone, '') ILIKE $${index}
-        OR COALESCE(c.barcode, '') ILIKE $${index}
-      )
-    `);
-  });
+  if (conditions.length === 0) {
+    return [];
+  }
 
   params.push(limit);
 

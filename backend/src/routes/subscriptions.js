@@ -39,6 +39,10 @@ function parseNullableDate(value) {
     return null;
   }
 
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+
   const normalized = String(value);
   return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : undefined;
 }
@@ -115,7 +119,12 @@ async function recordSubscriptionAdjustment(executor, {
 }
 
 function addDays(dateOnly, days) {
-  const date = new Date(`${dateOnly}T00:00:00.000Z`);
+  const normalized = parseNullableDate(dateOnly);
+  if (!normalized) {
+    return null;
+  }
+
+  const date = new Date(`${normalized}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
 }
@@ -631,7 +640,7 @@ router.post('/:id/sync-product-params', requireClientsUpdate, async (req, res) =
         nextStartedAt,
         nextExpiresAt,
         nextStatus,
-        before.is_family === true,
+        product.is_family === true,
       ]
     );
 

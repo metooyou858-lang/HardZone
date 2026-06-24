@@ -6,6 +6,7 @@ const path = require('path');
 
 const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
+const { addClientSearchConditions } = require('../services/client-search');
 const { expireActiveSubscriptions } = require('../services/subscription-validity');
 const { sendInternalError } = require('../utils/http-response');
 
@@ -80,29 +81,7 @@ router.get('/', requireClientsRead, async (req, res) => {
       conditions.push(`c.status = $${params.length}`);
     }
 
-    const searchTokens = String(search || '')
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean);
-
-    if (searchTokens.length > 0) {
-      searchTokens.forEach((token) => {
-        params.push(`%${token}%`);
-        const index = params.length;
-        conditions.push(`
-          (
-            c.first_name ILIKE $${index}
-            OR c.last_name ILIKE $${index}
-            OR COALESCE(c.middle_name, '') ILIKE $${index}
-            OR CONCAT_WS(' ', c.last_name, c.first_name, c.middle_name) ILIKE $${index}
-            OR CONCAT_WS(' ', c.first_name, c.middle_name, c.last_name) ILIKE $${index}
-            OR COALESCE(c.phone, '') ILIKE $${index}
-            OR COALESCE(c.email, '') ILIKE $${index}
-            OR COALESCE(c.barcode, '') ILIKE $${index}
-          )
-        `);
-      });
-    }
+    addClientSearchConditions({ search, params, conditions, includeEmail: true });
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     params.push(Number(limit), Number(offset));

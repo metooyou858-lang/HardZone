@@ -7,6 +7,7 @@ const {
   markTrainingBookingArrived,
   unmarkTrainingBookingArrived,
 } = require('../services/booking-attendance');
+const { addClientSearchConditions } = require('../services/client-search');
 const { expireActiveSubscriptions } = require('../services/subscription-validity');
 const { getPublicErrorMessage, sendInternalError } = require('../utils/http-response');
 
@@ -342,25 +343,13 @@ router.get('/client-search', requireModule('clients'), async (req, res) => {
       return res.status(422).json({ success: false, error: 'Введите минимум 2 символа' });
     }
 
-    const tokens = search.split(/\s+/).filter(Boolean);
     const params = [];
     const conditions = [];
+    addClientSearchConditions({ search, params, conditions, includeEmail: false });
 
-    tokens.forEach((token) => {
-      params.push(`%${token}%`);
-      const index = params.length;
-      conditions.push(`
-        (
-          c.first_name ILIKE $${index}
-          OR c.last_name ILIKE $${index}
-          OR COALESCE(c.middle_name, '') ILIKE $${index}
-          OR CONCAT_WS(' ', c.last_name, c.first_name, c.middle_name) ILIKE $${index}
-          OR CONCAT_WS(' ', c.first_name, c.middle_name, c.last_name) ILIKE $${index}
-          OR COALESCE(c.phone, '') ILIKE $${index}
-          OR COALESCE(c.barcode, '') ILIKE $${index}
-        )
-      `);
-    });
+    if (conditions.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
 
     params.push(limit);
 

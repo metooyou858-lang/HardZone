@@ -88,9 +88,17 @@ async function buildGymOverview(executor = pool) {
         cv.*,
         c.first_name || ' ' || c.last_name AS client_name,
         c.phone AS client_phone,
-        c.barcode AS client_barcode
+        c.barcode AS client_barcode,
+        cs.type AS subscription_type,
+        cs.visits_total AS subscription_visits_total,
+        cs.visits_left AS subscription_visits_left,
+        cs.expires_at AS subscription_expires_at,
+        cs.status AS subscription_status,
+        p.name AS subscription_product_name
       FROM client_visits cv
       JOIN clients c ON c.id = cv.client_id
+      LEFT JOIN client_subscriptions cs ON cs.id = cv.subscription_id
+      LEFT JOIN products p ON p.id = cs.product_id
       WHERE cv.visit_type = 'open_gym'
         AND ((cv.visited_at AT TIME ZONE '${CLUB_TIME_ZONE}')::date) = $1::date
       ORDER BY cv.visited_at DESC
@@ -422,9 +430,17 @@ router.get('/slots/:id', async (req, res) => {
           b.*,
           c.first_name || ' ' || c.last_name AS client_name,
           c.phone AS client_phone,
-          c.barcode AS client_barcode
+          c.barcode AS client_barcode,
+          cs.type AS subscription_type,
+          cs.visits_total AS subscription_visits_total,
+          cs.visits_left AS subscription_visits_left,
+          cs.expires_at AS subscription_expires_at,
+          cs.status AS subscription_status,
+          p.name AS subscription_product_name
         FROM bookings b
         JOIN clients c ON c.id = b.client_id
+        LEFT JOIN client_subscriptions cs ON cs.id = b.subscription_id
+        LEFT JOIN products p ON p.id = cs.product_id
         WHERE b.slot_id = $1
         ORDER BY b.created_at
       `,
