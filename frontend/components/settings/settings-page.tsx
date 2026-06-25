@@ -138,6 +138,8 @@ export function SettingsPage() {
   const [athleteFieldsLoading, setAthleteFieldsLoading] = useState(false);
   const [savingAthleteSection, setSavingAthleteSection] = useState(false);
   const [savingAthleteField, setSavingAthleteField] = useState(false);
+  const [showAthleteSectionEditor, setShowAthleteSectionEditor] = useState(false);
+  const [showAthleteFieldEditor, setShowAthleteFieldEditor] = useState(false);
   const [athleteSectionForm, setAthleteSectionForm] = useState<AthleteSectionForm>(emptyAthleteSectionForm);
   const [athleteFieldForm, setAthleteFieldForm] = useState<AthleteFieldForm>(emptyAthleteFieldForm);
 
@@ -313,6 +315,7 @@ export function SettingsPage() {
         return next.sort((a, b) => a.sort_order - b.sort_order || Number(a.id) - Number(b.id));
       });
       setAthleteFieldForm(emptyAthleteFieldForm);
+      setShowAthleteFieldEditor(false);
       setBanner({ tone: "success", text: "Поле профиля атлета сохранено" });
     } catch (err) {
       setBanner({ tone: "error", text: err instanceof Error ? err.message : "Не удалось сохранить поле профиля" });
@@ -345,6 +348,7 @@ export function SettingsPage() {
         prev.map((field) => (field.section_id === saved.id ? { ...field, section: saved.name } : field))
       );
       setAthleteSectionForm(emptyAthleteSectionForm);
+      setShowAthleteSectionEditor(false);
       setAthleteFieldForm((prev) => (prev.section_id ? prev : { ...prev, section_id: saved.id }));
       setBanner({ tone: "success", text: "Раздел профиля атлета сохранен" });
     } catch (err) {
@@ -402,6 +406,213 @@ export function SettingsPage() {
     } catch (err) {
       setBanner({ tone: "error", text: err instanceof Error ? err.message : "Не удалось удалить раздел" });
     }
+  }
+
+  function renderAthleteSectionEditor() {
+    return (
+      <div className="mt-4 space-y-3">
+        <div>
+          <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Название</label>
+          <input
+            type="text"
+            value={athleteSectionForm.name}
+            onChange={(event) => setAthleteSectionForm((prev) => ({ ...prev, name: event.target.value }))}
+            className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
+            placeholder="Силовые показатели"
+            disabled={!canManageAthleteFields}
+          />
+        </div>
+        <div>
+          <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Порядок</label>
+          <input
+            type="number"
+            value={athleteSectionForm.sort_order}
+            onChange={(event) => setAthleteSectionForm((prev) => ({ ...prev, sort_order: event.target.value }))}
+            className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
+            disabled={!canManageAthleteFields}
+          />
+        </div>
+        <label className="flex items-center gap-2 text-sm text-[var(--text-main)]">
+          <input
+            type="checkbox"
+            checked={athleteSectionForm.is_active}
+            onChange={(event) => setAthleteSectionForm((prev) => ({ ...prev, is_active: event.target.checked }))}
+            disabled={!canManageAthleteFields}
+          />
+          Активный
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void handleSaveAthleteSection()}
+            disabled={!canManageAthleteFields || savingAthleteSection}
+            className="rounded-[16px] bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110 disabled:opacity-50"
+          >
+            {savingAthleteSection ? "Сохраняем..." : "Сохранить"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAthleteSectionForm(emptyAthleteSectionForm);
+              setShowAthleteSectionEditor(false);
+            }}
+            className="rounded-[16px] border border-[var(--line-soft)] px-4 py-2 text-sm text-[var(--text-main)]"
+          >
+            Отмена
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function renderAthleteFieldEditor() {
+    return (
+      <div className="mt-4 space-y-4 rounded-[20px] border border-[var(--line-soft)] bg-[rgba(255,255,255,0.02)] p-4">
+        <div>
+          <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Раздел</label>
+          <select
+            value={athleteFieldForm.section_id}
+            onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, section_id: event.target.value }))}
+            className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
+            disabled={!canManageAthleteFields}
+          >
+            <option value="">Выберите раздел</option>
+            {athleteSections.map((section) => (
+              <option key={section.id} value={section.id}>{section.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Название поля</label>
+          <input
+            type="text"
+            value={athleteFieldForm.label}
+            onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, label: event.target.value }))}
+            className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
+            placeholder="Становая тяга"
+            disabled={!canManageAthleteFields}
+          />
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Тип</label>
+            <select
+              value={athleteFieldForm.field_type}
+              onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, field_type: event.target.value as AthleteProfileFieldType }))}
+              className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
+              disabled={!canManageAthleteFields}
+            >
+              {athleteFieldTypes.map((type) => (
+                <option key={type.value} value={type.value}>{type.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Порядок</label>
+            <input
+              type="number"
+              value={athleteFieldForm.sort_order}
+              onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, sort_order: event.target.value }))}
+              className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
+              disabled={!canManageAthleteFields}
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Единица</label>
+          <input
+            type="text"
+            value={athleteFieldForm.unit}
+            onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, unit: event.target.value }))}
+            className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
+            placeholder="кг, см, мин"
+            disabled={!canManageAthleteFields}
+          />
+        </div>
+
+        {(athleteFieldForm.field_type === "select" || athleteFieldForm.field_type === "multiselect") && (
+          <div>
+            <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Варианты</label>
+            <textarea
+              rows={4}
+              value={athleteFieldForm.options}
+              onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, options: event.target.value }))}
+              className="mt-2 w-full resize-none rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
+              placeholder={"Новичок\nСредний\nПродвинутый"}
+              disabled={!canManageAthleteFields}
+            />
+          </div>
+        )}
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          {(["visible_to", "editable_by"] as const).map((target) => (
+            <div key={target} className="rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4">
+              <p className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                {target === "visible_to" ? "Кто видит" : "Кто редактирует"}
+              </p>
+              <div className="mt-3 space-y-2">
+                {athleteProfileRoles.map((role) => (
+                  <label key={role.value} className="flex items-center gap-2 text-sm text-[var(--text-main)]">
+                    <input
+                      type="checkbox"
+                      checked={athleteFieldForm[target].includes(role.value)}
+                      onChange={() => toggleAthleteRole(target, role.value)}
+                      disabled={!canManageAthleteFields}
+                    />
+                    {role.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap gap-4 text-sm text-[var(--text-main)]">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={athleteFieldForm.is_required}
+              onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, is_required: event.target.checked }))}
+              disabled={!canManageAthleteFields}
+            />
+            Обязательное
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={athleteFieldForm.is_active}
+              onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, is_active: event.target.checked }))}
+              disabled={!canManageAthleteFields}
+            />
+            Активное
+          </label>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void handleSaveAthleteField()}
+            disabled={!canManageAthleteFields || savingAthleteField || athleteSections.length === 0}
+            className="rounded-[16px] bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110 disabled:opacity-50"
+          >
+            {savingAthleteField ? "Сохраняем..." : "Сохранить"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAthleteFieldForm(emptyAthleteFieldForm);
+              setShowAthleteFieldEditor(false);
+            }}
+            className="rounded-[16px] border border-[var(--line-soft)] px-4 py-2 text-sm text-[var(--text-main)]"
+          >
+            Отмена
+          </button>
+        </div>
+      </div>
+    );
   }
 
   async function handleDeleteTrainer(id: string) {
@@ -660,367 +871,223 @@ export function SettingsPage() {
       )}
 
       {tab === "athlete" && (
-        <section className="grid gap-5 xl:grid-cols-[minmax(280px,0.45fr)_minmax(0,0.8fr)_minmax(360px,0.55fr)]">
+        <section className="grid gap-5 xl:grid-cols-[minmax(300px,0.48fr)_minmax(0,1fr)]">
           <div className="space-y-4">
-            <div className="rounded-[30px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
-              <p className="text-lg font-semibold text-[var(--text-main)]">Разделы</p>
-              <p className="mt-1 text-sm text-[var(--text-muted)]">Сначала создайте разделы, затем выбирайте их в полях.</p>
-            </div>
-
-            <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-base font-semibold text-[var(--text-main)]">
-                    {athleteSectionForm.id ? "Редактировать раздел" : "Новый раздел"}
-                  </p>
-                  <p className="mt-1 text-sm text-[var(--text-muted)]">Название и порядок блока</p>
-                </div>
-                {athleteSectionForm.id && (
-                  <button
-                    type="button"
-                    onClick={() => setAthleteSectionForm(emptyAthleteSectionForm)}
-                    className="rounded-[14px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-muted)]"
-                  >
-                    Сбросить
-                  </button>
-                )}
+            <div className="flex flex-col gap-4 rounded-[30px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-lg font-semibold text-[var(--text-main)]">Разделы</p>
+                <p className="mt-1 text-sm text-[var(--text-muted)]">Разделы группируют показатели в карточке клиента.</p>
               </div>
-
-              <div className="mt-4 space-y-3">
-                <div>
-                  <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Название</label>
-                  <input
-                    type="text"
-                    value={athleteSectionForm.name}
-                    onChange={(event) => setAthleteSectionForm((prev) => ({ ...prev, name: event.target.value }))}
-                    className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
-                    placeholder="Силовые показатели"
-                    disabled={!canManageAthleteFields}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Порядок</label>
-                  <input
-                    type="number"
-                    value={athleteSectionForm.sort_order}
-                    onChange={(event) => setAthleteSectionForm((prev) => ({ ...prev, sort_order: event.target.value }))}
-                    className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
-                    disabled={!canManageAthleteFields}
-                  />
-                </div>
-                <label className="flex items-center gap-2 text-sm text-[var(--text-main)]">
-                  <input
-                    type="checkbox"
-                    checked={athleteSectionForm.is_active}
-                    onChange={(event) => setAthleteSectionForm((prev) => ({ ...prev, is_active: event.target.checked }))}
-                    disabled={!canManageAthleteFields}
-                  />
-                  Активный
-                </label>
+              {canManageAthleteFields && (
                 <button
                   type="button"
-                  onClick={() => void handleSaveAthleteSection()}
-                  disabled={!canManageAthleteFields || savingAthleteSection}
-                  className="w-full rounded-[18px] bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110 disabled:opacity-50"
+                  onClick={() => {
+                    setAthleteSectionForm(emptyAthleteSectionForm);
+                    setShowAthleteSectionEditor(true);
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-[18px] bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110"
                 >
-                  {savingAthleteSection ? "Сохраняем..." : "Сохранить раздел"}
+                  <PlusIcon />
+                  Раздел
                 </button>
-              </div>
+              )}
             </div>
 
+            {showAthleteSectionEditor && !athleteSectionForm.id && (
+              <div className="rounded-[22px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-4">
+                <p className="font-medium text-[var(--text-main)]">Новый раздел</p>
+                {renderAthleteSectionEditor()}
+              </div>
+            )}
+
             <div className="space-y-3">
-              {athleteSections.map((section) => (
-                <div
-                  key={section.id}
-                  className={`rounded-[22px] border p-4 ${
-                    section.is_active
-                      ? "border-[var(--line-soft)] bg-[var(--bg-card)]"
-                      : "border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.015)] opacity-70"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium text-[var(--text-main)]">{section.name}</p>
-                      <p className="mt-1 text-xs text-[var(--text-muted)]">Порядок: {section.sort_order}</p>
+              {athleteSections.map((section) => {
+                const editingThisSection = showAthleteSectionEditor && athleteSectionForm.id === section.id;
+
+                return (
+                  <div
+                    key={section.id}
+                    className={`rounded-[22px] border p-4 ${
+                      section.is_active
+                        ? "border-[var(--line-soft)] bg-[var(--bg-card)]"
+                        : "border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.015)] opacity-70"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-[var(--text-main)]">{section.name}</p>
+                        <p className="mt-1 text-xs text-[var(--text-muted)]">Порядок: {section.sort_order}</p>
+                      </div>
+                      {!section.is_active && (
+                        <span className="rounded-full border border-[var(--line-soft)] px-2 py-1 text-[11px] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                          скрыт
+                        </span>
+                      )}
                     </div>
-                    {!section.is_active && (
-                      <span className="rounded-full border border-[var(--line-soft)] px-2 py-1 text-[11px] uppercase tracking-[0.08em] text-[var(--text-muted)]">
-                        скрыт
-                      </span>
-                    )}
+
+                    {editingThisSection ? (
+                      renderAthleteSectionEditor()
+                    ) : canManageAthleteFields ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAthleteSectionForm(sectionToForm(section));
+                            setShowAthleteSectionEditor(true);
+                          }}
+                          className="rounded-[14px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-main)]"
+                        >
+                          Редактировать
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleToggleAthleteSection(section)}
+                          className="rounded-[14px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-muted)]"
+                        >
+                          {section.is_active ? "Скрыть" : "Включить"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteAthleteSection(section)}
+                          className="rounded-[14px] border border-[rgba(248,81,73,0.24)] px-3 py-2 text-sm text-[var(--danger)]"
+                        >
+                          Удалить
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
-                  {canManageAthleteFields && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setAthleteSectionForm(sectionToForm(section))}
-                        className="rounded-[14px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-main)]"
-                      >
-                        Редактировать
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleToggleAthleteSection(section)}
-                        className="rounded-[14px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-muted)]"
-                      >
-                        {section.is_active ? "Скрыть" : "Включить"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteAthleteSection(section)}
-                        className="rounded-[14px] border border-[rgba(248,81,73,0.24)] px-3 py-2 text-sm text-[var(--danger)]"
-                      >
-                        Удалить
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
           <div className="space-y-4">
-            <div className="rounded-[30px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
-              <p className="text-lg font-semibold text-[var(--text-main)]">Поля профиля атлета</p>
-              <p className="mt-1 text-sm text-[var(--text-muted)]">
-                Эти поля отображаются в карточке клиента и фильтруются по реальным правам пользователя.
-              </p>
+            <div className="flex flex-col gap-4 rounded-[30px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-lg font-semibold text-[var(--text-main)]">Поля профиля атлета</p>
+                <p className="mt-1 text-sm text-[var(--text-muted)]">
+                  Показатели отображаются в карточке клиента и фильтруются по правам.
+                </p>
+              </div>
+              {canManageAthleteFields && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAthleteFieldForm({
+                      ...emptyAthleteFieldForm,
+                      section_id: athleteSections[0]?.id ?? "",
+                    });
+                    setShowAthleteFieldEditor(true);
+                  }}
+                  disabled={athleteSections.length === 0}
+                  className="inline-flex items-center justify-center gap-2 rounded-[18px] bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110 disabled:opacity-50"
+                >
+                  <PlusIcon />
+                  Поле
+                </button>
+              )}
             </div>
 
             {athleteFieldsLoading ? (
               <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-6 py-16 text-center text-sm text-[var(--text-muted)]">
                 Загружаем профиль...
               </div>
-            ) : athleteFields.length === 0 ? (
-              <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-6 py-16 text-center text-sm text-[var(--text-muted)]">
-                Поля профиля пока не настроены
-              </div>
             ) : (
               <div className="space-y-3">
-                {athleteFields.map((field) => (
-                  <div
-                    key={field.id}
-                    className={`rounded-[24px] border p-5 ${
-                      field.is_active
-                        ? "border-[var(--line-soft)] bg-[var(--bg-card)]"
-                        : "border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.015)] opacity-70"
-                    }`}
-                  >
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-base font-semibold text-[var(--text-main)]">{field.label}</p>
-                          {!field.is_active && (
-                            <span className="rounded-full border border-[var(--line-soft)] px-2 py-1 text-[11px] uppercase tracking-[0.08em] text-[var(--text-muted)]">
-                              скрыто
-                            </span>
+                {showAthleteFieldEditor && !athleteFieldForm.id && (
+                  <div className="rounded-[24px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
+                    <p className="text-base font-semibold text-[var(--text-main)]">Новое поле</p>
+                    {renderAthleteFieldEditor()}
+                  </div>
+                )}
+
+                {athleteFields.length === 0 && !showAthleteFieldEditor ? (
+                  <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-6 py-16 text-center text-sm text-[var(--text-muted)]">
+                    Поля профиля пока не настроены
+                  </div>
+                ) : (
+                  athleteFields.map((field) => {
+                    const editingThisField = showAthleteFieldEditor && athleteFieldForm.id === field.id;
+
+                    return (
+                      <div
+                        key={field.id}
+                        className={`rounded-[24px] border p-5 ${
+                          field.is_active
+                            ? "border-[var(--line-soft)] bg-[var(--bg-card)]"
+                            : "border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.015)] opacity-70"
+                        }`}
+                      >
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-base font-semibold text-[var(--text-main)]">{field.label}</p>
+                              {!field.is_active && (
+                                <span className="rounded-full border border-[var(--line-soft)] px-2 py-1 text-[11px] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                                  скрыто
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-1 text-sm text-[var(--text-muted)]">
+                              {field.section} · {athleteFieldTypes.find((type) => type.value === field.field_type)?.label || field.field_type}
+                              {field.unit ? ` · ${field.unit}` : ""}
+                            </p>
+                          </div>
+
+                          {!editingThisField && canManageAthleteFields && (
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAthleteFieldForm(fieldToForm(field));
+                                  setShowAthleteFieldEditor(true);
+                                }}
+                                className="rounded-[16px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-main)] transition-colors hover:bg-[rgba(255,255,255,0.04)]"
+                              >
+                                Редактировать
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleToggleAthleteField(field)}
+                                className="rounded-[16px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-muted)] transition-colors hover:bg-[rgba(255,255,255,0.04)]"
+                              >
+                                {field.is_active ? "Скрыть" : "Включить"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteAthleteField(field)}
+                                className="rounded-[16px] border border-[rgba(248,81,73,0.24)] px-3 py-2 text-sm text-[var(--danger)] transition-colors hover:bg-[rgba(248,81,73,0.12)]"
+                              >
+                                Удалить
+                              </button>
+                            </div>
                           )}
                         </div>
-                        <p className="mt-1 text-sm text-[var(--text-muted)]">
-                          {field.section} · {athleteFieldTypes.find((type) => type.value === field.field_type)?.label || field.field_type}
-                          {field.unit ? ` · ${field.unit}` : ""}
-                        </p>
-                      </div>
 
-                      {canManageAthleteFields && (
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setAthleteFieldForm(fieldToForm(field))}
-                            className="rounded-[16px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-main)] transition-colors hover:bg-[rgba(255,255,255,0.04)]"
-                          >
-                            Редактировать
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleToggleAthleteField(field)}
-                            className="rounded-[16px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-muted)] transition-colors hover:bg-[rgba(255,255,255,0.04)]"
-                          >
-                            {field.is_active ? "Скрыть" : "Включить"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleDeleteAthleteField(field)}
-                            className="rounded-[16px] border border-[rgba(248,81,73,0.24)] px-3 py-2 text-sm text-[var(--danger)] transition-colors hover:bg-[rgba(248,81,73,0.12)]"
-                          >
-                            Удалить
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-                      <div className="rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3">
-                        <span className="text-[var(--text-muted)]">Видят: </span>
-                        <span className="text-[var(--text-main)]">
-                          {field.visible_to.map((role) => athleteProfileRoles.find((item) => item.value === role)?.label || role).join(", ")}
-                        </span>
+                        {editingThisField ? (
+                          renderAthleteFieldEditor()
+                        ) : (
+                          <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                            <div className="rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3">
+                              <span className="text-[var(--text-muted)]">Видят: </span>
+                              <span className="text-[var(--text-main)]">
+                                {field.visible_to.map((role) => athleteProfileRoles.find((item) => item.value === role)?.label || role).join(", ")}
+                              </span>
+                            </div>
+                            <div className="rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3">
+                              <span className="text-[var(--text-muted)]">Редактируют: </span>
+                              <span className="text-[var(--text-main)]">
+                                {field.editable_by.map((role) => athleteProfileRoles.find((item) => item.value === role)?.label || role).join(", ")}
+                              </span>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <div className="rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3">
-                        <span className="text-[var(--text-muted)]">Редактируют: </span>
-                        <span className="text-[var(--text-main)]">
-                          {field.editable_by.map((role) => athleteProfileRoles.find((item) => item.value === role)?.label || role).join(", ")}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                    );
+                  })
+                )}
               </div>
             )}
-          </div>
-
-          <div className="rounded-[30px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-lg font-semibold text-[var(--text-main)]">
-                  {athleteFieldForm.id ? "Редактировать поле" : "Новое поле"}
-                </p>
-                <p className="mt-1 text-sm text-[var(--text-muted)]">Раздел, тип значения и права доступа</p>
-              </div>
-              {athleteFieldForm.id && (
-                <button
-                  type="button"
-                  onClick={() => setAthleteFieldForm(emptyAthleteFieldForm)}
-                  className="rounded-[14px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-muted)]"
-                >
-                  Сбросить
-                </button>
-              )}
-            </div>
-
-            <div className="mt-5 space-y-4">
-              <div>
-                <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Раздел</label>
-                <select
-                  value={athleteFieldForm.section_id}
-                  onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, section_id: event.target.value }))}
-                  className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
-                  disabled={!canManageAthleteFields}
-                >
-                  <option value="">Выберите раздел</option>
-                  {athleteSections.map((section) => (
-                    <option key={section.id} value={section.id}>{section.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Название поля</label>
-                <input
-                  type="text"
-                  value={athleteFieldForm.label}
-                  onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, label: event.target.value }))}
-                  className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
-                  placeholder="Становая тяга"
-                  disabled={!canManageAthleteFields}
-                />
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Тип</label>
-                  <select
-                    value={athleteFieldForm.field_type}
-                    onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, field_type: event.target.value as AthleteProfileFieldType }))}
-                    className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
-                    disabled={!canManageAthleteFields}
-                  >
-                    {athleteFieldTypes.map((type) => (
-                      <option key={type.value} value={type.value}>{type.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Порядок</label>
-                  <input
-                    type="number"
-                    value={athleteFieldForm.sort_order}
-                    onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, sort_order: event.target.value }))}
-                    className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
-                    disabled={!canManageAthleteFields}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Единица</label>
-                <input
-                  type="text"
-                  value={athleteFieldForm.unit}
-                  onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, unit: event.target.value }))}
-                  className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
-                  placeholder="кг, см, мин"
-                  disabled={!canManageAthleteFields}
-                />
-              </div>
-
-              {(athleteFieldForm.field_type === "select" || athleteFieldForm.field_type === "multiselect") && (
-                <div>
-                  <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Варианты</label>
-                  <textarea
-                    rows={4}
-                    value={athleteFieldForm.options}
-                    onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, options: event.target.value }))}
-                    className="mt-2 w-full resize-none rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
-                    placeholder={"Новичок\nСредний\nПродвинутый"}
-                    disabled={!canManageAthleteFields}
-                  />
-                </div>
-              )}
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                {(["visible_to", "editable_by"] as const).map((target) => (
-                  <div key={target} className="rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4">
-                    <p className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">
-                      {target === "visible_to" ? "Кто видит" : "Кто редактирует"}
-                    </p>
-                    <div className="mt-3 space-y-2">
-                      {athleteProfileRoles.map((role) => (
-                        <label key={role.value} className="flex items-center gap-2 text-sm text-[var(--text-main)]">
-                          <input
-                            type="checkbox"
-                            checked={athleteFieldForm[target].includes(role.value)}
-                            onChange={() => toggleAthleteRole(target, role.value)}
-                            disabled={!canManageAthleteFields}
-                          />
-                          {role.label}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex flex-wrap gap-4 text-sm text-[var(--text-main)]">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={athleteFieldForm.is_required}
-                    onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, is_required: event.target.checked }))}
-                    disabled={!canManageAthleteFields}
-                  />
-                  Обязательное
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={athleteFieldForm.is_active}
-                    onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, is_active: event.target.checked }))}
-                    disabled={!canManageAthleteFields}
-                  />
-                  Активное
-                </label>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => void handleSaveAthleteField()}
-                disabled={!canManageAthleteFields || savingAthleteField || athleteSections.length === 0}
-                className="w-full rounded-[18px] bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110 disabled:opacity-50"
-              >
-                {savingAthleteField ? "Сохраняем..." : "Сохранить поле"}
-              </button>
-            </div>
           </div>
         </section>
       )}
