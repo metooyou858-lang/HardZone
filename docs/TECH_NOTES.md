@@ -79,6 +79,16 @@
 
 Символ `%` в URL ломает barcode lookup. Перед запросом к API штрихкод нужно нормализовать/кодировать.
 
+## Профиль атлета клиента
+
+Спортивные поля карточки клиента не добавляются отдельными колонками в `clients` и не хардкодятся в JSX.
+
+- Описание полей хранится в `client_athlete_profile_fields`: раздел, название, тип, единица, порядок, видимость и права редактирования.
+- Значения по клиентам хранятся в `client_athlete_profile_values`.
+- Настройка полей находится в CRM: Настройки -> Профиль атлета.
+- Карточка клиента читает `athlete_profile` из `GET /api/clients/:id` и сохраняет значения через `PATCH /api/clients/:id/athlete-profile`.
+- Если поле больше не нужно, его нужно скрывать через `is_active = false`, а не удалять вместе с историческими значениями.
+
 ## Frontend load performance
 
 Global layout must not load third-party runtime scripts that are only needed by a narrow route group.

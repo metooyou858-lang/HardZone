@@ -271,7 +271,7 @@ export default function SchedulePage() {
         </div>
       </section>
 
-      <GymSidebarBlock canGymAccess={canGymAccess} onNotice={(notice) => setBanner(notice)} />
+      <GymSidebarBlock selectedDate={selectedDayKey} canGymAccess={canGymAccess} onNotice={(notice) => setBanner(notice)} />
 
       <section className="space-y-4">
         {error && (

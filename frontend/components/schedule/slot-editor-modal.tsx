@@ -7,7 +7,6 @@ import {
   type EntryMode,
   formatTime,
   getDayOfWeek,
-  getMonthBounds,
   normalizeDateValue,
   parseIsoDate,
   PlusIcon,
@@ -56,6 +55,7 @@ export function SlotEditorModal({
   const [comment, setComment] = useState("");
   const [entryMode, setEntryMode] = useState<EntryMode>("single");
   const [repeatDays, setRepeatDays] = useState<number[]>([]);
+  const [repeatUntilDate, setRepeatUntilDate] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,6 +81,7 @@ export function SlotEditorModal({
     setComment(slot?.comment ?? "");
     setEntryMode("single");
     setRepeatDays([getDayOfWeek(defaultDay)]);
+    setRepeatUntilDate("");
     setError(null);
   }, [state]);
 
@@ -128,6 +129,16 @@ export function SlotEditorModal({
       return;
     }
 
+    if (entryMode === "regular" && !repeatUntilDate) {
+      setError("Укажите дату, до которой проставить регулярные тренировки");
+      return;
+    }
+
+    if (entryMode === "regular" && repeatUntilDate < dateValue) {
+      setError("Дата окончания не может быть раньше даты начала");
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
@@ -158,8 +169,6 @@ export function SlotEditorModal({
         return;
       }
 
-      const monthBounds = getMonthBounds(parseIsoDate(dateValue));
-
       const createdTemplateIds = [];
 
       for (const dayOfWeek of repeatDays) {
@@ -179,12 +188,12 @@ export function SlotEditorModal({
       }
 
       await generateScheduleTemplates({
-        date_from: monthBounds.from,
-        date_to: monthBounds.to,
+        date_from: dateValue,
+        date_to: repeatUntilDate,
         template_ids: createdTemplateIds,
       });
 
-      onSaved("Регулярные занятия созданы на текущий месяц");
+      onSaved("Регулярные занятия созданы до выбранной даты");
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Не удалось сохранить занятие");
     } finally {
@@ -420,8 +429,18 @@ export function SlotEditorModal({
                     );
                   })}
                 </div>
+                <div className="mt-4 max-w-xs">
+                  <label className={labelCls}>Проставить до</label>
+                  <input
+                    type="date"
+                    min={dateValue}
+                    value={repeatUntilDate}
+                    onChange={(event) => setRepeatUntilDate(event.target.value)}
+                    className={`mt-2 ${inputCls}`}
+                  />
+                </div>
                 <p className="mt-3 text-xs text-[var(--text-muted)]">
-                  После сохранения шаблоны будут сгенерированы на месяц выбранной даты.
+                  После сохранения шаблоны будут сгенерированы с даты начала до указанной даты включительно.
                 </p>
               </div>
             )}

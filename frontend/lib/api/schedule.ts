@@ -224,8 +224,17 @@ export async function fetchScheduleTemplates(): Promise<ScheduleTemplate[]> {
   return response.data;
 }
 
-export async function fetchGymOverview(): Promise<GymOverview> {
-  const response = await apiFetch<ApiEnvelope<GymOverview>>("/schedule/gym-hours");
+export async function fetchGymOverview(date?: string): Promise<GymOverview> {
+  const query = new URLSearchParams();
+
+  if (date) {
+    query.set("date", date);
+  }
+
+  const queryString = query.toString();
+  const response = await apiFetch<ApiEnvelope<GymOverview>>(
+    `/schedule/gym-hours${queryString ? `?${queryString}` : ""}`
+  );
   return response.data;
 }
 
@@ -252,6 +261,7 @@ export async function checkInOpenGym(data: {
   attendance_mode?: "auto" | "unpaid" | "comped";
   coverage_note?: string | null;
   created_by?: string;
+  overview_date?: string;
 }): Promise<{
   visit: OpenGymVisit;
   visits: OpenGymVisit[];
@@ -275,18 +285,25 @@ export async function checkInOpenGym(data: {
   return response.data;
 }
 
-export async function deleteGymVisit(visitId: string): Promise<{
+export async function deleteGymVisit(visitId: string, date?: string): Promise<{
   visits: OpenGymVisit[];
   total_today: number;
   today: GymOverview["today"];
 }> {
+  const query = new URLSearchParams();
+
+  if (date) {
+    query.set("date", date);
+  }
+
+  const queryString = query.toString();
   const response = await apiFetch<
     ApiEnvelope<{
       visits: OpenGymVisit[];
       total_today: number;
       today: GymOverview["today"];
     }>
-  >(`/schedule/open-gym/visits/${visitId}`, { method: "DELETE" });
+  >(`/schedule/open-gym/visits/${visitId}${queryString ? `?${queryString}` : ""}`, { method: "DELETE" });
   return response.data;
 }
 

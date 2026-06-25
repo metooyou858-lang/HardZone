@@ -5,6 +5,8 @@ export type SubscriptionType = "single" | "visits" | "period" | "unlimited";
 export type SubscriptionStatus = "active" | "frozen" | "expired" | "exhausted" | "cancelled";
 export type VisitType = "group" | "open_gym";
 export type CoverageStatus = "pending" | "covered" | "unpaid" | "comped" | "not_required";
+export type AthleteProfileFieldType = "text" | "textarea" | "number" | "date" | "boolean" | "select" | "multiselect";
+export type AthleteProfileRole = "admin" | "trainer" | "client";
 
 export type Client = {
   id: string;
@@ -59,6 +61,29 @@ export type ClientVisit = {
   created_by: string | null;
 };
 
+export type AthleteProfileField = {
+  id: string;
+  section: string;
+  label: string;
+  field_key: string;
+  field_type: AthleteProfileFieldType;
+  unit: string | null;
+  options: string[];
+  sort_order: number;
+  visible_to: AthleteProfileRole[];
+  editable_by: AthleteProfileRole[];
+  is_required: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ClientAthleteProfileField = AthleteProfileField & {
+  value: string | number | boolean | string[] | null;
+  value_updated_by: string | null;
+  value_updated_at: string | null;
+};
+
 export type ClientListItem = Client & {
   subscription_id: string | null;
   subscription_type: SubscriptionType | null;
@@ -71,6 +96,7 @@ export type ClientListItem = Client & {
 export type ClientDetail = Client & {
   subscriptions: ClientSubscription[];
   visits: ClientVisit[];
+  athlete_profile: ClientAthleteProfileField[];
 };
 
 export type LegacySubscriptionImportRow = {
@@ -153,6 +179,57 @@ export async function fetchClients(params?: {
 
 export async function fetchClient(id: string): Promise<ClientDetail> {
   const response = await apiFetch<ApiEnvelope<ClientDetail>>(`/clients/${id}`);
+  return response.data;
+}
+
+export async function fetchAthleteProfileFields(options?: {
+  includeInactive?: boolean;
+}): Promise<AthleteProfileField[]> {
+  const query = new URLSearchParams();
+  if (options?.includeInactive) {
+    query.set("include_inactive", "true");
+  }
+  const queryString = query.toString();
+
+  const response = await apiFetch<ApiEnvelope<AthleteProfileField[]>>(
+    `/clients/athlete-profile/fields${queryString ? `?${queryString}` : ""}`
+  );
+  return response.data;
+}
+
+export async function createAthleteProfileField(
+  data: Partial<AthleteProfileField> & {
+    section: string;
+    label: string;
+    field_type: AthleteProfileFieldType;
+  }
+): Promise<AthleteProfileField> {
+  const response = await apiFetch<ApiEnvelope<AthleteProfileField>>("/clients/athlete-profile/fields", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function updateAthleteProfileField(
+  id: string,
+  data: Partial<AthleteProfileField>
+): Promise<AthleteProfileField> {
+  const response = await apiFetch<ApiEnvelope<AthleteProfileField>>(`/clients/athlete-profile/fields/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function updateClientAthleteProfile(
+  id: string,
+  values: Array<{ field_id: string; value: string | number | boolean | string[] | null }>
+): Promise<ClientAthleteProfileField[]> {
+  const response = await apiFetch<ApiEnvelope<ClientAthleteProfileField[]>>(`/clients/${id}/athlete-profile`, {
+    method: "PATCH",
+    body: JSON.stringify({ values }),
+  });
   return response.data;
 }
 

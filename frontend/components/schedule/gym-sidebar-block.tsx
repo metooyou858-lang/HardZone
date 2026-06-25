@@ -57,9 +57,11 @@ function getOpenGymSubscriptionLabel(visit: OpenGymVisit) {
 }
 
 export function GymSidebarBlock({
+  selectedDate,
   canGymAccess,
   onNotice,
 }: {
+  selectedDate: string;
   canGymAccess: boolean;
   onNotice: (notice: { tone: BannerTone; text: string }) => void;
 }) {
@@ -81,10 +83,10 @@ export function GymSidebarBlock({
   const scannerLastTsRef = useRef(0);
 
   useEffect(() => {
-    fetchGymOverview()
+    fetchGymOverview(selectedDate)
       .then(setOverview)
       .catch(() => {});
-  }, []);
+  }, [selectedDate]);
 
   useEffect(() => {
     const trimmed = query.trim();
@@ -147,6 +149,7 @@ export function GymSidebarBlock({
         subscription_id: subscriptionId,
         attendance_mode: subscriptionId ? "auto" : "unpaid",
         created_by: "admin",
+        overview_date: selectedDate,
       });
 
       setOverview((prev) =>
@@ -176,7 +179,7 @@ export function GymSidebarBlock({
   async function handleDeleteVisit(visitId: string) {
     setDeletingVisitId(visitId);
     try {
-      const response = await deleteGymVisit(visitId);
+      const response = await deleteGymVisit(visitId, selectedDate);
       setOverview((prev) =>
         prev ? { ...prev, today: response.today, visits: response.visits, total_today: response.total_today } : null
       );

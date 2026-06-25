@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ClientSubscription,
   ClientDetail,
+  ClientAthleteProfileField,
   LegacySubscriptionService,
   SubscriptionStatus,
   SubscriptionType,
@@ -18,6 +19,7 @@ import {
   syncSubscriptionProductParams,
   unfreezeSubscription,
   updateClient,
+  updateClientAthleteProfile,
   updateSubscription,
   uploadClientPhoto,
 } from "@/lib/api/clients";
@@ -291,35 +293,70 @@ function AthleteStat({ label, value, hint }: { label: string; value: string | nu
   );
 }
 
-function AthleteEmptyBlock({ title, text, action }: { title: string; text: string; action: string }) {
-  return (
-    <div className="rounded-[20px] border border-dashed border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold text-[var(--text-main)]">{title}</p>
-          <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">{text}</p>
-        </div>
-        <button
-          type="button"
-          className="rounded-[14px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-muted)]"
-          disabled
-        >
-          {action}
-        </button>
-      </div>
-    </div>
-  );
+type AthleteProfileValue = string | number | boolean | string[] | null;
+
+function formatAthleteProfileValue(field: ClientAthleteProfileField) {
+  if (field.value === null || field.value === undefined || field.value === "") {
+    return "Не заполнено";
+  }
+
+  if (field.field_type === "boolean") {
+    return field.value ? "Да" : "Нет";
+  }
+
+  if (Array.isArray(field.value)) {
+    return field.value.length ? field.value.join(", ") : "Не заполнено";
+  }
+
+  return `${field.value}${field.unit ? ` ${field.unit}` : ""}`;
 }
 
-function AthleteMetricGroup({ title, items }: { title: string; items: string[] }) {
+function groupAthleteFields(fields: ClientAthleteProfileField[]) {
+  const sections = new Map<string, ClientAthleteProfileField[]>();
+
+  fields.forEach((field) => {
+    const list = sections.get(field.section) ?? [];
+    list.push(field);
+    sections.set(field.section, list);
+  });
+
+  return Array.from(sections.entries());
+}
+
+function AthleteMetricGroup({
+  title,
+  fields,
+  editing,
+  form,
+  onChange,
+}: {
+  title: string;
+  fields: ClientAthleteProfileField[];
+  editing: boolean;
+  form: Record<string, AthleteProfileValue>;
+  onChange: (fieldId: string, value: AthleteProfileValue) => void;
+}) {
   return (
     <div className="rounded-[20px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4">
       <p className="text-sm font-semibold text-[var(--text-main)]">{title}</p>
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        {items.map((item) => (
-          <div key={item} className="rounded-[14px] border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] px-3 py-2">
-            <p className="text-xs text-[var(--text-main)]">{item}</p>
-            <p className="mt-1 text-xs text-[var(--text-muted)]">Не заполнено</p>
+        {fields.map((field) => (
+          <div
+            key={field.id}
+            className={`rounded-[14px] border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] px-3 py-2 ${
+              field.field_type === "textarea" ? "sm:col-span-2" : ""
+            }`}
+          >
+            <p className="text-xs text-[var(--text-main)]">{field.label}</p>
+            {editing && (field.editable_by.includes("admin") || field.editable_by.includes("trainer")) ? (
+              <AthleteProfileInput
+                field={field}
+                value={form[field.id] ?? null}
+                onChange={(value) => onChange(field.id, value)}
+              />
+            ) : (
+              <p className="mt-1 whitespace-pre-line text-xs text-[var(--text-muted)]">{formatAthleteProfileValue(field)}</p>
+            )}
           </div>
         ))}
       </div>
@@ -327,22 +364,201 @@ function AthleteMetricGroup({ title, items }: { title: string; items: string[] }
   );
 }
 
-function AthleteProfilePanel({ client }: { client: ClientDetail }) {
+function AthleteProfileInput({
+  field,
+  value,
+  onChange,
+}: {
+  field: ClientAthleteProfileField;
+  value: AthleteProfileValue;
+  onChange: (value: AthleteProfileValue) => void;
+}) {
+  const baseCls = "mt-2 w-full rounded-[12px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]";
+
+  if (field.field_type === "textarea") {
+    return (
+      <textarea
+        rows={3}
+        value={typeof value === "string" ? value : ""}
+        onChange={(event) => onChange(event.target.value)}
+        className={`${baseCls} resize-none`}
+      />
+    );
+  }
+
+  if (field.field_type === "number") {
+    return (
+      <div className="mt-2 flex items-center gap-2">
+        <input
+          type="number"
+          value={value === null || value === undefined ? "" : String(value)}
+          onChange={(event) => onChange(event.target.value)}
+          className={baseCls}
+        />
+        {field.unit && <span className="text-xs text-[var(--text-muted)]">{field.unit}</span>}
+      </div>
+    );
+  }
+
+  if (field.field_type === "date") {
+    return (
+      <input
+        type="date"
+        value={typeof value === "string" ? value.slice(0, 10) : ""}
+        onChange={(event) => onChange(event.target.value)}
+        className={baseCls}
+      />
+    );
+  }
+
+  if (field.field_type === "boolean") {
+    return (
+      <label className="mt-2 flex items-center gap-2 text-xs text-[var(--text-main)]">
+        <input type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} />
+        Да
+      </label>
+    );
+  }
+
+  if (field.field_type === "select") {
+    return (
+      <select
+        value={typeof value === "string" ? value : ""}
+        onChange={(event) => onChange(event.target.value)}
+        className={baseCls}
+      >
+        <option value="">Не выбрано</option>
+        {field.options.map((option) => (
+          <option key={option} value={option}>{option}</option>
+        ))}
+      </select>
+    );
+  }
+
+  if (field.field_type === "multiselect") {
+    const selected = Array.isArray(value) ? value : [];
+    return (
+      <div className="mt-2 flex flex-wrap gap-2">
+        {field.options.map((option) => (
+          <label key={option} className="rounded-full border border-[var(--line-soft)] px-3 py-1 text-xs text-[var(--text-main)]">
+            <input
+              type="checkbox"
+              className="mr-2"
+              checked={selected.includes(option)}
+              onChange={(event) => {
+                onChange(event.target.checked ? [...selected, option] : selected.filter((item) => item !== option));
+              }}
+            />
+            {option}
+          </label>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <input
+      type="text"
+      value={typeof value === "string" || typeof value === "number" ? String(value) : ""}
+      onChange={(event) => onChange(event.target.value)}
+      className={baseCls}
+    />
+  );
+}
+
+function AthleteProfilePanel({
+  client,
+  canUpdate,
+  onSaved,
+}: {
+  client: ClientDetail;
+  canUpdate: boolean;
+  onSaved: (profile: ClientAthleteProfileField[]) => void;
+}) {
   const currentSubscription =
     client.subscriptions.find((item) => item.status === "active") ??
     client.subscriptions.find((item) => item.status === "frozen") ??
     null;
   const lastVisit = client.visits[0] ?? null;
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [form, setForm] = useState<Record<string, AthleteProfileValue>>({});
+  const athleteSections = useMemo(() => groupAthleteFields(client.athlete_profile ?? []), [client.athlete_profile]);
+  const hasEditableAthleteFields = useMemo(
+    () => (client.athlete_profile ?? []).some((field) => field.editable_by.includes("admin") || field.editable_by.includes("trainer")),
+    [client.athlete_profile]
+  );
+
+  useEffect(() => {
+    setForm(
+      Object.fromEntries((client.athlete_profile ?? []).map((field) => [field.id, field.value ?? null]))
+    );
+  }, [client.athlete_profile]);
+
+  async function handleSave() {
+    setSaving(true);
+    setSaveError(null);
+
+    try {
+      const updated = await updateClientAthleteProfile(
+        client.id,
+        (client.athlete_profile ?? [])
+          .filter((field) => field.editable_by.includes("admin") || field.editable_by.includes("trainer"))
+          .map((field) => ({
+            field_id: field.id,
+            value: form[field.id] ?? null,
+          }))
+      );
+      onSaved(updated);
+      setEditing(false);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Не удалось сохранить профиль атлета");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="mt-6 rounded-[24px] border border-[var(--line-soft)] bg-[rgba(255,255,255,0.025)] p-5">
-      <div>
-        <p className="font-[family:var(--font-heading)] text-lg font-semibold text-[var(--text-main)]">
-          Профиль атлета
-        </p>
-        <p className="mt-1 text-sm text-[var(--text-muted)]">
-          Спортивная часть карточки клиента: цели, ограничения, навыки и рабочие показатели.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="font-[family:var(--font-heading)] text-lg font-semibold text-[var(--text-main)]">
+            Профиль атлета
+          </p>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
+            Спортивная часть карточки клиента: цели, ограничения, навыки и рабочие показатели.
+          </p>
+        </div>
+        {canUpdate && athleteSections.length > 0 && hasEditableAthleteFields && (
+          editing ? (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => void handleSave()}
+                disabled={saving}
+                className="rounded-[14px] bg-[var(--accent)] px-3 py-2 text-sm font-semibold text-[#062b26] disabled:opacity-50"
+              >
+                {saving ? "Сохраняем..." : "Сохранить"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditing(false)}
+                className="rounded-[14px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-main)]"
+              >
+                Отмена
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="rounded-[14px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-main)] transition-colors hover:bg-[rgba(255,255,255,0.04)]"
+            >
+              Заполнить профиль
+            </button>
+          )
+        )}
       </div>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-3">
@@ -360,35 +576,27 @@ function AthleteProfilePanel({ client }: { client: ClientDetail }) {
       </div>
 
       <div className="mt-4 space-y-4">
-        <AthleteMetricGroup
-          title="Силовые показатели и 1ПМ"
-          items={[
-            "Присед со штангой на спине",
-            "Фронтальный присед",
-            "Присед со штангой над головой",
-            "Рывок",
-            "Взятие + толчок",
-            "Взятие на грудь",
-            "Становая тяга",
-            "Жим лёжа",
-            "Строгий жим стоя",
-            "Толчковый швунг",
-          ]}
-        />
-        <AthleteMetricGroup
-          title="Гимнастика и выносливость"
-          items={[
-            "Максимум строгих подтягиваний",
-            "Гребля 1 км",
-            "Бег 5 км",
-            "Бег 10 км",
-          ]}
-        />
-        <AthleteEmptyBlock
-          title="Навыки и ограничения"
-          text="Уровни навыков, цели, травмы и ограничения относятся к профилю атлета, а не к расписанию."
-          action="Добавим поля"
-        />
+        {saveError && (
+          <div className="rounded-[16px] border border-[rgba(248,81,73,0.28)] bg-[rgba(248,81,73,0.12)] px-4 py-3 text-sm text-[var(--danger)]">
+            {saveError}
+          </div>
+        )}
+        {athleteSections.length > 0 ? (
+          athleteSections.map(([section, fields]) => (
+            <AthleteMetricGroup
+              key={section}
+              title={section}
+              fields={fields}
+              editing={editing}
+              form={form}
+              onChange={(fieldId, value) => setForm((prev) => ({ ...prev, [fieldId]: value }))}
+            />
+          ))
+        ) : (
+          <div className="rounded-[20px] border border-dashed border-[var(--line-soft)] bg-[var(--bg-card-soft)] p-4 text-sm text-[var(--text-muted)]">
+            Поля профиля атлета пока не настроены. Добавьте их в настройках CRM.
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1196,7 +1404,11 @@ export default function ClientDetailsPage() {
               </div>
             )}
 
-            <AthleteProfilePanel client={client} />
+            <AthleteProfilePanel
+              client={client}
+              canUpdate={canUpdateClient}
+              onSaved={(profile) => setClient((prev) => (prev ? { ...prev, athlete_profile: profile } : prev))}
+            />
           </div>
 
           <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-6">

@@ -44,6 +44,10 @@ const requireClientsRead = authMiddleware.requireModule('clients');
 const requireClientsCreate = authMiddleware.requireModule('clients_create');
 const requireClientsUpdate = authMiddleware.requireModule('clients_update');
 const requireClientsImport = authMiddleware.requireModule('clients_import');
+const requireOwnerOrAdmin = authMiddleware.requireRole('owner', 'admin');
+
+const ATHLETE_FIELD_TYPES = new Set(['text', 'textarea', 'number', 'date', 'boolean', 'select', 'multiselect']);
+const ATHLETE_PROFILE_ROLES = new Set(['admin', 'trainer', 'client']);
 
 function removeLocalClientPhoto(photoUrl) {
   if (!photoUrl || !photoUrl.startsWith('/uploads/clients/')) {
@@ -66,6 +70,131 @@ async function generateClientBarcode() {
   }
 
   throw new Error('Не удалось сгенерировать уникальный штрихкод');
+}
+
+function normalizeRoleList(value, fallback) {
+  if (!Array.isArray(value)) {
+    return fallback;
+  }
+
+  const roles = value.filter((item) => ATHLETE_PROFILE_ROLES.has(item));
+  return roles.length ? [...new Set(roles)] : fallback;
+}
+
+function normalizeOptions(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+}
+
+function buildAthleteFieldKey(label) {
+  const ascii = String(label || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48);
+
+  return ascii || `athlete_field_${Date.now()}`;
+}
+
+function normalizeAthleteFieldPayload(body, existing = {}) {
+  const section = body.section !== undefined ? String(body.section || '').trim() : existing.section;
+  const label = body.label !== undefined ? String(body.label || '').trim() : existing.label;
+  const fieldType = body.field_type !== undefined ? String(body.field_type || '').trim() : existing.field_type;
+  const fieldKey = body.field_key !== undefined
+    ? String(body.field_key || '').trim()
+    : existing.field_key || buildAthleteFieldKey(label);
+
+  if (!section || !label) {
+    throw Object.assign(new Error('Укажите раздел и название поля'), { statusCode: 422 });
+  }
+
+  if (!ATHLETE_FIELD_TYPES.has(fieldType)) {
+    throw Object.assign(new Error('Неподдерживаемый тип поля'), { statusCode: 422 });
+  }
+
+  if (!/^[a-z0-9_]+$/.test(fieldKey)) {
+    throw Object.assign(new Error('Код поля может содержать только латинские буквы, цифры и _'), { statusCode: 422 });
+  }
+
+  return {
+    section,
+    label,
+    field_key: fieldKey,
+    field_type: fieldType,
+    unit: body.unit !== undefined ? String(body.unit || '').trim() || null : existing.unit ?? null,
+    options: body.options !== undefined ? normalizeOptions(body.options) : existing.options ?? [],
+    sort_order: body.sort_order !== undefined ? Number.parseInt(body.sort_order, 10) || 0 : existing.sort_order ?? 0,
+    visible_to: normalizeRoleList(body.visible_to, existing.visible_to ?? ['admin', 'trainer']),
+    editable_by: normalizeRoleList(body.editable_by, existing.editable_by ?? ['admin', 'trainer']),
+    is_required: body.is_required !== undefined ? Boolean(body.is_required) : Boolean(existing.is_required),
+    is_active: body.is_active !== undefined ? Boolean(body.is_active) : existing.is_active ?? true,
+  };
+}
+
+function normalizeAthleteValue(field, value) {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  if (field.field_type === 'number') {
+    const numberValue = Number(value);
+    if (!Number.isFinite(numberValue)) {
+      throw Object.assign(new Error(`Некорректное число в поле "${field.label}"`), { statusCode: 422 });
+    }
+    return numberValue;
+  }
+
+  if (field.field_type === 'boolean') {
+    return Boolean(value);
+  }
+
+  if (field.field_type === 'multiselect') {
+    if (!Array.isArray(value)) {
+      throw Object.assign(new Error(`Поле "${field.label}" ожидает несколько значений`), { statusCode: 422 });
+    }
+    return value.map((item) => String(item || '').trim()).filter(Boolean);
+  }
+
+  return String(value).trim() || null;
+}
+
+async function getAthleteProfileFields({ includeInactive = false } = {}) {
+  const { rows } = await pool.query(
+    `
+      SELECT *
+      FROM client_athlete_profile_fields
+      ${includeInactive ? '' : 'WHERE is_active = true'}
+      ORDER BY sort_order, id
+    `
+  );
+
+  return rows;
+}
+
+async function getClientAthleteProfile(clientId, { includeInactive = false } = {}) {
+  const { rows } = await pool.query(
+    `
+      SELECT
+        f.*,
+        v.value,
+        v.updated_by AS value_updated_by,
+        v.updated_at AS value_updated_at
+      FROM client_athlete_profile_fields f
+      LEFT JOIN client_athlete_profile_values v
+        ON v.field_id = f.id
+       AND v.client_id = $1
+      ${includeInactive ? '' : 'WHERE f.is_active = true'}
+      ORDER BY f.sort_order, f.id
+    `,
+    [clientId]
+  );
+
+  return rows;
 }
 
 router.get('/', requireClientsRead, async (req, res) => {
@@ -115,6 +244,114 @@ router.get('/', requireClientsRead, async (req, res) => {
     res.json({ success: true, data: rows });
   } catch (err) {
     sendInternalError(res, err, { route: 'clients.list' });
+  }
+});
+
+router.get('/athlete-profile/fields', requireClientsRead, async (req, res) => {
+  try {
+    const includeInactive = req.query.include_inactive === 'true';
+    const fields = await getAthleteProfileFields({ includeInactive });
+
+    res.json({ success: true, data: fields });
+  } catch (err) {
+    sendInternalError(res, err, { route: 'clients.athlete_fields.list' });
+  }
+});
+
+router.post('/athlete-profile/fields', requireOwnerOrAdmin, async (req, res) => {
+  try {
+    const field = normalizeAthleteFieldPayload(req.body);
+    const { rows } = await pool.query(
+      `
+        INSERT INTO client_athlete_profile_fields (
+          section, label, field_key, field_type, unit, options,
+          sort_order, visible_to, editable_by, is_required, is_active
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        RETURNING *
+      `,
+      [
+        field.section,
+        field.label,
+        field.field_key,
+        field.field_type,
+        field.unit,
+        JSON.stringify(field.options),
+        field.sort_order,
+        field.visible_to,
+        field.editable_by,
+        field.is_required,
+        field.is_active,
+      ]
+    );
+
+    res.status(201).json({ success: true, data: rows[0] });
+  } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ success: false, error: err.message });
+    }
+    if (err.code === '23505') {
+      return res.status(409).json({ success: false, error: 'Поле с таким кодом уже существует' });
+    }
+    return sendInternalError(res, err, { route: 'clients.athlete_fields.create' });
+  }
+});
+
+router.patch('/athlete-profile/fields/:fieldId', requireOwnerOrAdmin, async (req, res) => {
+  try {
+    const { rows: existingRows } = await pool.query(
+      'SELECT * FROM client_athlete_profile_fields WHERE id = $1',
+      [req.params.fieldId]
+    );
+
+    if (!existingRows[0]) {
+      return res.status(404).json({ success: false, error: 'Поле профиля не найдено' });
+    }
+
+    const field = normalizeAthleteFieldPayload(req.body, existingRows[0]);
+    const { rows } = await pool.query(
+      `
+        UPDATE client_athlete_profile_fields
+        SET section = $1,
+            label = $2,
+            field_key = $3,
+            field_type = $4,
+            unit = $5,
+            options = $6,
+            sort_order = $7,
+            visible_to = $8,
+            editable_by = $9,
+            is_required = $10,
+            is_active = $11,
+            updated_at = NOW()
+        WHERE id = $12
+        RETURNING *
+      `,
+      [
+        field.section,
+        field.label,
+        field.field_key,
+        field.field_type,
+        field.unit,
+        JSON.stringify(field.options),
+        field.sort_order,
+        field.visible_to,
+        field.editable_by,
+        field.is_required,
+        field.is_active,
+        req.params.fieldId,
+      ]
+    );
+
+    res.json({ success: true, data: rows[0] });
+  } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ success: false, error: err.message });
+    }
+    if (err.code === '23505') {
+      return res.status(409).json({ success: false, error: 'Поле с таким кодом уже существует' });
+    }
+    return sendInternalError(res, err, { route: 'clients.athlete_fields.update' });
   }
 });
 
@@ -249,6 +486,89 @@ router.get('/barcode/:barcode', requireClientsRead, async (req, res) => {
   }
 });
 
+router.get('/:id/athlete-profile', requireClientsRead, async (req, res) => {
+  try {
+    const { rowCount } = await pool.query('SELECT 1 FROM clients WHERE id = $1', [req.params.id]);
+
+    if (rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Клиент не найден' });
+    }
+
+    const profile = await getClientAthleteProfile(req.params.id);
+    res.json({ success: true, data: profile });
+  } catch (err) {
+    sendInternalError(res, err, { route: 'clients.athlete_profile.get' });
+  }
+});
+
+router.patch('/:id/athlete-profile', requireClientsUpdate, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const values = Array.isArray(req.body?.values) ? req.body.values : [];
+    if (!values.length) {
+      return res.status(422).json({ success: false, error: 'Нет данных для обновления' });
+    }
+
+    const { rowCount } = await client.query('SELECT 1 FROM clients WHERE id = $1', [req.params.id]);
+    if (rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Клиент не найден' });
+    }
+
+    const fields = await getAthleteProfileFields();
+    const fieldsById = new Map(fields.map((field) => [String(field.id), field]));
+    const updatedBy = req.user?.username || req.user?.name || `user:${req.user?.id || 'unknown'}`;
+
+    await client.query('BEGIN');
+
+    for (const item of values) {
+      const field = fieldsById.get(String(item.field_id));
+      if (!field) {
+        throw Object.assign(new Error('Поле профиля не найдено или отключено'), { statusCode: 422 });
+      }
+      if (!field.editable_by?.some((role) => role === 'admin' || role === 'trainer')) {
+        throw Object.assign(new Error(`Поле "${field.label}" недоступно для редактирования в CRM`), { statusCode: 403 });
+      }
+
+      const normalizedValue = normalizeAthleteValue(field, item.value);
+      if (normalizedValue === null) {
+        await client.query(
+          'DELETE FROM client_athlete_profile_values WHERE client_id = $1 AND field_id = $2',
+          [req.params.id, field.id]
+        );
+        continue;
+      }
+
+      await client.query(
+        `
+          INSERT INTO client_athlete_profile_values (client_id, field_id, value, updated_by)
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (client_id, field_id)
+          DO UPDATE SET value = EXCLUDED.value,
+                        updated_by = EXCLUDED.updated_by,
+                        updated_at = NOW()
+        `,
+        [req.params.id, field.id, JSON.stringify(normalizedValue), updatedBy]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    const profile = await getClientAthleteProfile(req.params.id);
+    res.json({ success: true, data: profile });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ success: false, error: err.message });
+    }
+
+    return sendInternalError(res, err, { route: 'clients.athlete_profile.update' });
+  } finally {
+    client.release();
+  }
+});
+
 router.get('/:id', requireClientsRead, async (req, res) => {
   try {
     const { rows: clientRows } = await pool.query('SELECT * FROM clients WHERE id = $1', [req.params.id]);
@@ -282,6 +602,7 @@ router.get('/:id', requireClientsRead, async (req, res) => {
       'SELECT * FROM client_visits WHERE client_id = $1 ORDER BY visited_at DESC LIMIT 20',
       [req.params.id]
     );
+    const athleteProfile = await getClientAthleteProfile(req.params.id);
 
     res.json({
       success: true,
@@ -289,6 +610,7 @@ router.get('/:id', requireClientsRead, async (req, res) => {
         ...clientRows[0],
         subscriptions,
         visits,
+        athlete_profile: athleteProfile,
       },
     });
   } catch (err) {

@@ -57,6 +57,16 @@ function normalizeTimeValue(value) {
   return String(value).slice(0, 8).padEnd(8, ':00');
 }
 
+function isIsoDateString(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function getDayOfWeekFromIsoDate(value) {
+  const date = new Date(`${value}T00:00:00Z`);
+  const day = date.getUTCDay();
+  return day === 0 ? 7 : day;
+}
+
 function isTimeWithinWorkingHours(currentTime, openTime, closeTime) {
   const normalizedCurrent = normalizeTimeValue(currentTime);
   const normalizedOpen = normalizeTimeValue(openTime);
@@ -69,8 +79,10 @@ function isTimeWithinWorkingHours(currentTime, openTime, closeTime) {
   return normalizedCurrent >= normalizedOpen && normalizedCurrent < normalizedClose;
 }
 
-async function buildGymOverview(executor = pool) {
+async function buildGymOverview(executor = pool, dateValue = null) {
   const now = getClubNowParts();
+  const selectedDate = isIsoDateString(dateValue) ? dateValue : now.date;
+  const selectedDayOfWeek = getDayOfWeekFromIsoDate(selectedDate);
 
   const { rows: hours } = await executor.query(
     `
@@ -80,7 +92,7 @@ async function buildGymOverview(executor = pool) {
     `
   );
 
-  const todayHours = hours.find((item) => Number(item.day_of_week) === now.dayOfWeek) || null;
+  const todayHours = hours.find((item) => Number(item.day_of_week) === selectedDayOfWeek) || null;
 
   const { rows: visits } = await executor.query(
     `
@@ -103,7 +115,7 @@ async function buildGymOverview(executor = pool) {
         AND ((cv.visited_at AT TIME ZONE '${CLUB_TIME_ZONE}')::date) = $1::date
       ORDER BY cv.visited_at DESC
     `,
-    [now.date]
+    [selectedDate]
   );
 
   return {
@@ -111,19 +123,20 @@ async function buildGymOverview(executor = pool) {
     today: todayHours
       ? {
           ...todayHours,
-          current_date: now.date,
+          current_date: selectedDate,
           current_time: now.time,
           is_open_now:
+            selectedDate === now.date &&
             todayHours.is_open &&
             isTimeWithinWorkingHours(now.time, todayHours.open_time, todayHours.close_time),
         }
       : {
-          day_of_week: now.dayOfWeek,
+          day_of_week: selectedDayOfWeek,
           is_open: false,
           open_time: null,
           close_time: null,
           updated_at: null,
-          current_date: now.date,
+          current_date: selectedDate,
           current_time: now.time,
           is_open_now: false,
         },
@@ -134,7 +147,7 @@ async function buildGymOverview(executor = pool) {
 
 router.get('/gym-hours', async (req, res) => {
   try {
-    const overview = await buildGymOverview();
+    const overview = await buildGymOverview(pool, req.query.date);
     res.json({ success: true, data: overview });
   } catch (err) {
     sendInternalError(res, err, { route: 'schedule.week_template.get' });
@@ -270,7 +283,9 @@ router.post('/open-gym/check-in', requireModule('schedule_gym'), async (req, res
 
       await client.query('COMMIT');
 
-      const overview = await buildGymOverview();
+      const overviewDate = req.body?.overview_date;
+      const overview = await buildGymOverview(client, overviewDate);
+      const currentOverview = overviewDate && overviewDate !== now.date ? await buildGymOverview(client) : overview;
       const visit = {
         ...visitRow,
         client_name: `${customer.first_name} ${customer.last_name}`,
@@ -285,7 +300,7 @@ router.post('/open-gym/check-in', requireModule('schedule_gym'), async (req, res
           visits: overview.visits,
           total_today: overview.total_today,
           today: overview.today,
-          within_hours: overview.today?.is_open_now ?? false,
+          within_hours: currentOverview.today?.is_open_now ?? false,
         },
       });
     } catch (error) {
@@ -331,7 +346,7 @@ router.delete('/open-gym/visits/:id', requireModule('schedule_gym'), async (req,
 
     await client.query('COMMIT');
 
-    const overview = await buildGymOverview();
+    const overview = await buildGymOverview(client, req.query.date);
     res.json({
       success: true,
       data: {
@@ -707,6 +722,10 @@ router.post('/templates/generate', requireModule('schedule_edit_groups'), async 
     let created = 0;
     const from = new Date(date_from);
     const to = new Date(date_to);
+
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to < from) {
+      return res.status(422).json({ success: false, error: 'Некорректный период генерации' });
+    }
 
     for (let current = new Date(from); current <= to; current.setDate(current.getDate() + 1)) {
       const dayOfWeek = current.getDay() === 0 ? 7 : current.getDay();
