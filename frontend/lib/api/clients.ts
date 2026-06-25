@@ -5,7 +5,7 @@ export type SubscriptionType = "single" | "visits" | "period" | "unlimited";
 export type SubscriptionStatus = "active" | "frozen" | "expired" | "exhausted" | "cancelled";
 export type VisitType = "group" | "open_gym";
 export type CoverageStatus = "pending" | "covered" | "unpaid" | "comped" | "not_required";
-export type AthleteProfileFieldType = "text" | "textarea" | "number" | "date" | "boolean" | "select" | "multiselect";
+export type AthleteProfileFieldType = "text" | "textarea" | "number" | "time" | "date" | "boolean" | "select" | "multiselect";
 export type AthleteProfileRole = "admin" | "trainer" | "client";
 
 export type Client = {

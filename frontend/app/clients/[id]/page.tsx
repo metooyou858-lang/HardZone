@@ -403,6 +403,19 @@ function AthleteProfileInput({
     );
   }
 
+  if (field.field_type === "time") {
+    return (
+      <input
+        type="text"
+        inputMode="numeric"
+        value={typeof value === "string" ? value : ""}
+        onChange={(event) => onChange(event.target.value)}
+        className={baseCls}
+        placeholder="12:34 или 1:02:15"
+      />
+    );
+  }
+
   if (field.field_type === "date") {
     return (
       <input

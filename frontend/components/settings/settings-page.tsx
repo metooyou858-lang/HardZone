@@ -77,6 +77,7 @@ const athleteFieldTypes: { value: AthleteProfileFieldType; label: string }[] = [
   { value: "text", label: "Текст" },
   { value: "textarea", label: "Большой текст" },
   { value: "number", label: "Число" },
+  { value: "time", label: "Время" },
   { value: "date", label: "Дата" },
   { value: "boolean", label: "Да/нет" },
   { value: "select", label: "Список" },

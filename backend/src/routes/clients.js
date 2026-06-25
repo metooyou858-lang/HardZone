@@ -47,7 +47,7 @@ const requireClientsUpdate = authMiddleware.requireModule('clients_update');
 const requireClientsImport = authMiddleware.requireModule('clients_import');
 const requireOwnerOrAdmin = authMiddleware.requireRole('owner', 'admin');
 
-const ATHLETE_FIELD_TYPES = new Set(['text', 'textarea', 'number', 'date', 'boolean', 'select', 'multiselect']);
+const ATHLETE_FIELD_TYPES = new Set(['text', 'textarea', 'number', 'time', 'date', 'boolean', 'select', 'multiselect']);
 const ATHLETE_PROFILE_ROLES = new Set(['admin', 'trainer', 'client']);
 
 function removeLocalClientPhoto(photoUrl) {
@@ -210,6 +210,14 @@ function normalizeAthleteValue(field, value) {
       throw Object.assign(new Error(`Некорректное число в поле "${field.label}"`), { statusCode: 422 });
     }
     return numberValue;
+  }
+
+  if (field.field_type === 'time') {
+    const timeValue = String(value).trim();
+    if (!/^\d{1,3}:[0-5]\d(?::[0-5]\d)?$/.test(timeValue)) {
+      throw Object.assign(new Error(`Поле "${field.label}" ожидает время в формате ММ:СС или Ч:ММ:СС`), { statusCode: 422 });
+    }
+    return timeValue;
   }
 
   if (field.field_type === 'boolean') {
