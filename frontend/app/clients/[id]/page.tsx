@@ -9,6 +9,7 @@ import {
   ClientSubscription,
   ClientDetail,
   ClientAthleteProfileField,
+  AthleteProfileRole,
   LegacySubscriptionService,
   SubscriptionStatus,
   SubscriptionType,
@@ -328,12 +329,14 @@ function AthleteMetricGroup({
   fields,
   editing,
   form,
+  accessRoles,
   onChange,
 }: {
   title: string;
   fields: ClientAthleteProfileField[];
   editing: boolean;
   form: Record<string, AthleteProfileValue>;
+  accessRoles: AthleteProfileRole[];
   onChange: (fieldId: string, value: AthleteProfileValue) => void;
 }) {
   return (
@@ -348,7 +351,7 @@ function AthleteMetricGroup({
             }`}
           >
             <p className="text-xs text-[var(--text-main)]">{field.label}</p>
-            {editing && (field.editable_by.includes("admin") || field.editable_by.includes("trainer")) ? (
+            {editing && field.editable_by.some((role) => accessRoles.includes(role)) ? (
               <AthleteProfileInput
                 field={field}
                 value={form[field.id] ?? null}
@@ -468,11 +471,11 @@ function AthleteProfileInput({
 
 function AthleteProfilePanel({
   client,
-  canUpdate,
+  accessRoles,
   onSaved,
 }: {
   client: ClientDetail;
-  canUpdate: boolean;
+  accessRoles: AthleteProfileRole[];
   onSaved: (profile: ClientAthleteProfileField[]) => void;
 }) {
   const currentSubscription =
@@ -486,8 +489,8 @@ function AthleteProfilePanel({
   const [form, setForm] = useState<Record<string, AthleteProfileValue>>({});
   const athleteSections = useMemo(() => groupAthleteFields(client.athlete_profile ?? []), [client.athlete_profile]);
   const hasEditableAthleteFields = useMemo(
-    () => (client.athlete_profile ?? []).some((field) => field.editable_by.includes("admin") || field.editable_by.includes("trainer")),
-    [client.athlete_profile]
+    () => (client.athlete_profile ?? []).some((field) => field.editable_by.some((role) => accessRoles.includes(role))),
+    [client.athlete_profile, accessRoles]
   );
 
   useEffect(() => {
@@ -504,7 +507,7 @@ function AthleteProfilePanel({
       const updated = await updateClientAthleteProfile(
         client.id,
         (client.athlete_profile ?? [])
-          .filter((field) => field.editable_by.includes("admin") || field.editable_by.includes("trainer"))
+          .filter((field) => field.editable_by.some((role) => accessRoles.includes(role)))
           .map((field) => ({
             field_id: field.id,
             value: form[field.id] ?? null,
@@ -530,7 +533,7 @@ function AthleteProfilePanel({
             Спортивная часть карточки клиента: цели, ограничения, навыки и рабочие показатели.
           </p>
         </div>
-        {canUpdate && athleteSections.length > 0 && hasEditableAthleteFields && (
+        {athleteSections.length > 0 && hasEditableAthleteFields && (
           editing ? (
             <div className="flex gap-2">
               <button
@@ -589,6 +592,7 @@ function AthleteProfilePanel({
               fields={fields}
               editing={editing}
               form={form}
+              accessRoles={accessRoles}
               onChange={(fieldId, value) => setForm((prev) => ({ ...prev, [fieldId]: value }))}
             />
           ))
@@ -637,6 +641,22 @@ export default function ClientDetailsPage() {
 
   const canUpdateClient = hasModuleAccess(currentModules, "clients_update");
   const canCreateLegacySubscription = hasModuleAccess(currentModules, "clients_legacy_subscriptions");
+  const athleteProfileAccessRoles = useMemo<AthleteProfileRole[]>(() => {
+    const roles: AthleteProfileRole[] = [];
+
+    if (hasModuleAccess(currentModules, "clients_update")) {
+      roles.push("admin");
+    }
+    if (
+      hasModuleAccess(currentModules, "schedule") ||
+      hasModuleAccess(currentModules, "schedule_clients") ||
+      hasModuleAccess(currentModules, "schedule_attendance")
+    ) {
+      roles.push("trainer");
+    }
+
+    return roles;
+  }, [currentModules]);
 
   const refreshClient = useCallback(() => {
     silentReloadRef.current = true;
@@ -1406,7 +1426,7 @@ export default function ClientDetailsPage() {
 
             <AthleteProfilePanel
               client={client}
-              canUpdate={canUpdateClient}
+              accessRoles={athleteProfileAccessRoles}
               onSaved={(profile) => setClient((prev) => (prev ? { ...prev, athlete_profile: profile } : prev))}
             />
           </div>

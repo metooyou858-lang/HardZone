@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 const authMiddleware = require('../middleware/auth');
+const { hasModuleAccess } = require('../authz');
 const { pool } = require('../db');
 const { addClientSearchConditions } = require('../services/client-search');
 const { expireActiveSubscriptions } = require('../services/subscription-validity');
@@ -102,6 +103,9 @@ function buildAthleteFieldKey(label) {
 }
 
 function normalizeAthleteFieldPayload(body, existing = {}) {
+  const sectionId = body.section_id !== undefined
+    ? Number.parseInt(body.section_id, 10)
+    : Number.parseInt(existing.section_id, 10);
   const section = body.section !== undefined ? String(body.section || '').trim() : existing.section;
   const label = body.label !== undefined ? String(body.label || '').trim() : existing.label;
   const fieldType = body.field_type !== undefined ? String(body.field_type || '').trim() : existing.field_type;
@@ -109,7 +113,7 @@ function normalizeAthleteFieldPayload(body, existing = {}) {
     ? String(body.field_key || '').trim()
     : existing.field_key || buildAthleteFieldKey(label);
 
-  if (!section || !label) {
+  if (!sectionId || !label) {
     throw Object.assign(new Error('Укажите раздел и название поля'), { statusCode: 422 });
   }
 
@@ -122,7 +126,8 @@ function normalizeAthleteFieldPayload(body, existing = {}) {
   }
 
   return {
-    section,
+    section_id: sectionId,
+    section: section || null,
     label,
     field_key: fieldKey,
     field_type: fieldType,
@@ -133,6 +138,64 @@ function normalizeAthleteFieldPayload(body, existing = {}) {
     editable_by: normalizeRoleList(body.editable_by, existing.editable_by ?? ['admin', 'trainer']),
     is_required: body.is_required !== undefined ? Boolean(body.is_required) : Boolean(existing.is_required),
     is_active: body.is_active !== undefined ? Boolean(body.is_active) : existing.is_active ?? true,
+  };
+}
+
+function normalizeAthleteSectionPayload(body, existing = {}) {
+  const name = body.name !== undefined ? String(body.name || '').trim() : existing.name;
+
+  if (!name) {
+    throw Object.assign(new Error('Укажите название раздела'), { statusCode: 422 });
+  }
+
+  return {
+    name,
+    sort_order: body.sort_order !== undefined ? Number.parseInt(body.sort_order, 10) || 0 : existing.sort_order ?? 0,
+    is_active: body.is_active !== undefined ? Boolean(body.is_active) : existing.is_active ?? true,
+  };
+}
+
+async function getAthleteProfileAccessRoles(user) {
+  const roles = new Set();
+
+  if (
+    user?.role === 'owner' ||
+    hasModuleAccess(user, 'users_manage') ||
+    hasModuleAccess(user, 'clients_update')
+  ) {
+    roles.add('admin');
+  }
+
+  if (
+    hasModuleAccess(user, 'schedule') ||
+    hasModuleAccess(user, 'schedule_clients') ||
+    hasModuleAccess(user, 'schedule_attendance')
+  ) {
+    roles.add('trainer');
+  }
+
+  if (user?.id) {
+    const { rowCount } = await pool.query(
+      'SELECT 1 FROM trainers WHERE user_id = $1 AND is_active = true LIMIT 1',
+      [user.id]
+    );
+
+    if (rowCount > 0) {
+      roles.add('trainer');
+    }
+  }
+
+  return [...roles];
+}
+
+function roleArrayCondition(columnName, roles, startIndex) {
+  if (!roles.length) {
+    return { clause: 'false', values: [] };
+  }
+
+  return {
+    clause: `${columnName} && $${startIndex}::TEXT[]`,
+    values: [roles],
   };
 }
 
@@ -163,11 +226,11 @@ function normalizeAthleteValue(field, value) {
   return String(value).trim() || null;
 }
 
-async function getAthleteProfileFields({ includeInactive = false } = {}) {
+async function getAthleteProfileSections({ includeInactive = false } = {}) {
   const { rows } = await pool.query(
     `
       SELECT *
-      FROM client_athlete_profile_fields
+      FROM client_athlete_profile_sections
       ${includeInactive ? '' : 'WHERE is_active = true'}
       ORDER BY sort_order, id
     `
@@ -176,22 +239,68 @@ async function getAthleteProfileFields({ includeInactive = false } = {}) {
   return rows;
 }
 
-async function getClientAthleteProfile(clientId, { includeInactive = false } = {}) {
+async function getAthleteProfileFields({ includeInactive = false, accessRoles = null, accessMode = 'visible' } = {}) {
+  const params = [];
+  const conditions = [];
+
+  if (!includeInactive) {
+    conditions.push('f.is_active = true');
+    conditions.push('s.is_active = true');
+  }
+
+  if (accessRoles) {
+    const accessColumn = accessMode === 'editable' ? 'f.editable_by' : 'f.visible_to';
+    const accessCondition = roleArrayCondition(accessColumn, accessRoles, params.length + 1);
+    conditions.push(accessCondition.clause);
+    params.push(...accessCondition.values);
+  }
+
+  const { rows } = await pool.query(
+    `
+      SELECT f.*, s.name AS section
+      FROM client_athlete_profile_fields f
+      JOIN client_athlete_profile_sections s ON s.id = f.section_id
+      ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
+      ORDER BY s.sort_order, f.sort_order, f.id
+    `,
+    params
+  );
+
+  return rows;
+}
+
+async function getClientAthleteProfile(clientId, { includeInactive = false, accessRoles = null } = {}) {
+  const params = [clientId];
+  const conditions = [];
+
+  if (!includeInactive) {
+    conditions.push('f.is_active = true');
+    conditions.push('s.is_active = true');
+  }
+
+  if (accessRoles) {
+    const accessCondition = roleArrayCondition('f.visible_to', accessRoles, params.length + 1);
+    conditions.push(accessCondition.clause);
+    params.push(...accessCondition.values);
+  }
+
   const { rows } = await pool.query(
     `
       SELECT
         f.*,
+        s.name AS section,
         v.value,
         v.updated_by AS value_updated_by,
         v.updated_at AS value_updated_at
       FROM client_athlete_profile_fields f
+      JOIN client_athlete_profile_sections s ON s.id = f.section_id
       LEFT JOIN client_athlete_profile_values v
         ON v.field_id = f.id
        AND v.client_id = $1
-      ${includeInactive ? '' : 'WHERE f.is_active = true'}
-      ORDER BY f.sort_order, f.id
+      ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
+      ORDER BY s.sort_order, f.sort_order, f.id
     `,
-    [clientId]
+    params
   );
 
   return rows;
@@ -250,11 +359,120 @@ router.get('/', requireClientsRead, async (req, res) => {
 router.get('/athlete-profile/fields', requireClientsRead, async (req, res) => {
   try {
     const includeInactive = req.query.include_inactive === 'true';
-    const fields = await getAthleteProfileFields({ includeInactive });
+    const accessRoles = includeInactive ? null : await getAthleteProfileAccessRoles(req.user);
+    const fields = await getAthleteProfileFields({ includeInactive, accessRoles });
 
     res.json({ success: true, data: fields });
   } catch (err) {
     sendInternalError(res, err, { route: 'clients.athlete_fields.list' });
+  }
+});
+
+router.get('/athlete-profile/sections', requireClientsRead, async (req, res) => {
+  try {
+    const includeInactive = req.query.include_inactive === 'true';
+    const sections = await getAthleteProfileSections({ includeInactive });
+
+    res.json({ success: true, data: sections });
+  } catch (err) {
+    sendInternalError(res, err, { route: 'clients.athlete_sections.list' });
+  }
+});
+
+router.post('/athlete-profile/sections', requireOwnerOrAdmin, async (req, res) => {
+  try {
+    const section = normalizeAthleteSectionPayload(req.body);
+    const { rows } = await pool.query(
+      `
+        INSERT INTO client_athlete_profile_sections (name, sort_order, is_active)
+        VALUES ($1, $2, $3)
+        RETURNING *
+      `,
+      [section.name, section.sort_order, section.is_active]
+    );
+
+    res.status(201).json({ success: true, data: rows[0] });
+  } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ success: false, error: err.message });
+    }
+    if (err.code === '23505') {
+      return res.status(409).json({ success: false, error: 'Раздел с таким названием уже существует' });
+    }
+    return sendInternalError(res, err, { route: 'clients.athlete_sections.create' });
+  }
+});
+
+router.patch('/athlete-profile/sections/:sectionId', requireOwnerOrAdmin, async (req, res) => {
+  try {
+    const { rows: existingRows } = await pool.query(
+      'SELECT * FROM client_athlete_profile_sections WHERE id = $1',
+      [req.params.sectionId]
+    );
+
+    if (!existingRows[0]) {
+      return res.status(404).json({ success: false, error: 'Раздел профиля не найден' });
+    }
+
+    const section = normalizeAthleteSectionPayload(req.body, existingRows[0]);
+    const { rows } = await pool.query(
+      `
+        UPDATE client_athlete_profile_sections
+        SET name = $1,
+            sort_order = $2,
+            is_active = $3,
+            updated_at = NOW()
+        WHERE id = $4
+        RETURNING *
+      `,
+      [section.name, section.sort_order, section.is_active, req.params.sectionId]
+    );
+
+    await pool.query(
+      `
+        UPDATE client_athlete_profile_fields
+        SET section = $1,
+            updated_at = NOW()
+        WHERE section_id = $2
+      `,
+      [section.name, req.params.sectionId]
+    );
+
+    res.json({ success: true, data: rows[0] });
+  } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ success: false, error: err.message });
+    }
+    if (err.code === '23505') {
+      return res.status(409).json({ success: false, error: 'Раздел с таким названием уже существует' });
+    }
+    return sendInternalError(res, err, { route: 'clients.athlete_sections.update' });
+  }
+});
+
+router.delete('/athlete-profile/sections/:sectionId', requireOwnerOrAdmin, async (req, res) => {
+  try {
+    const { rowCount: fieldCount } = await pool.query(
+      'SELECT 1 FROM client_athlete_profile_fields WHERE section_id = $1 LIMIT 1',
+      [req.params.sectionId]
+    );
+
+    if (fieldCount > 0) {
+      return res.status(409).json({ success: false, error: 'Сначала удалите или перенесите поля из этого раздела' });
+    }
+
+    const { rowCount } = await pool.query(
+      'DELETE FROM client_athlete_profile_sections WHERE id = $1',
+      [req.params.sectionId]
+    );
+
+    if (rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Раздел профиля не найден' });
+    }
+
+    res.json({ success: true, data: { id: req.params.sectionId } });
+  } catch (err) {
+    sendInternalError(res, err, { route: 'clients.athlete_sections.delete' });
   }
 });
 
@@ -264,14 +482,16 @@ router.post('/athlete-profile/fields', requireOwnerOrAdmin, async (req, res) => 
     const { rows } = await pool.query(
       `
         INSERT INTO client_athlete_profile_fields (
-          section, label, field_key, field_type, unit, options,
+          section_id, section, label, field_key, field_type, unit, options,
           sort_order, visible_to, editable_by, is_required, is_active
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-        RETURNING *
+        SELECT $1, s.name, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+        FROM client_athlete_profile_sections s
+        WHERE s.id = $1
+        RETURNING client_athlete_profile_fields.*
       `,
       [
-        field.section,
+        field.section_id,
         field.label,
         field.field_key,
         field.field_type,
@@ -284,6 +504,10 @@ router.post('/athlete-profile/fields', requireOwnerOrAdmin, async (req, res) => 
         field.is_active,
       ]
     );
+
+    if (!rows[0]) {
+      return res.status(422).json({ success: false, error: 'Выберите существующий раздел' });
+    }
 
     res.status(201).json({ success: true, data: rows[0] });
   } catch (err) {
@@ -312,7 +536,8 @@ router.patch('/athlete-profile/fields/:fieldId', requireOwnerOrAdmin, async (req
     const { rows } = await pool.query(
       `
         UPDATE client_athlete_profile_fields
-        SET section = $1,
+        SET section_id = $1,
+            section = s.name,
             label = $2,
             field_key = $3,
             field_type = $4,
@@ -324,11 +549,13 @@ router.patch('/athlete-profile/fields/:fieldId', requireOwnerOrAdmin, async (req
             is_required = $10,
             is_active = $11,
             updated_at = NOW()
-        WHERE id = $12
-        RETURNING *
+        FROM client_athlete_profile_sections s
+        WHERE client_athlete_profile_fields.id = $12
+          AND s.id = $1
+        RETURNING client_athlete_profile_fields.*
       `,
       [
-        field.section,
+        field.section_id,
         field.label,
         field.field_key,
         field.field_type,
@@ -343,6 +570,10 @@ router.patch('/athlete-profile/fields/:fieldId', requireOwnerOrAdmin, async (req
       ]
     );
 
+    if (!rows[0]) {
+      return res.status(422).json({ success: false, error: 'Выберите существующий раздел' });
+    }
+
     res.json({ success: true, data: rows[0] });
   } catch (err) {
     if (err.statusCode) {
@@ -352,6 +583,23 @@ router.patch('/athlete-profile/fields/:fieldId', requireOwnerOrAdmin, async (req
       return res.status(409).json({ success: false, error: 'Поле с таким кодом уже существует' });
     }
     return sendInternalError(res, err, { route: 'clients.athlete_fields.update' });
+  }
+});
+
+router.delete('/athlete-profile/fields/:fieldId', requireOwnerOrAdmin, async (req, res) => {
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM client_athlete_profile_fields WHERE id = $1',
+      [req.params.fieldId]
+    );
+
+    if (rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Поле профиля не найдено' });
+    }
+
+    res.json({ success: true, data: { id: req.params.fieldId } });
+  } catch (err) {
+    sendInternalError(res, err, { route: 'clients.athlete_fields.delete' });
   }
 });
 
@@ -494,14 +742,15 @@ router.get('/:id/athlete-profile', requireClientsRead, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Клиент не найден' });
     }
 
-    const profile = await getClientAthleteProfile(req.params.id);
+    const accessRoles = await getAthleteProfileAccessRoles(req.user);
+    const profile = await getClientAthleteProfile(req.params.id, { accessRoles });
     res.json({ success: true, data: profile });
   } catch (err) {
     sendInternalError(res, err, { route: 'clients.athlete_profile.get' });
   }
 });
 
-router.patch('/:id/athlete-profile', requireClientsUpdate, async (req, res) => {
+router.patch('/:id/athlete-profile', async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -515,7 +764,8 @@ router.patch('/:id/athlete-profile', requireClientsUpdate, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Клиент не найден' });
     }
 
-    const fields = await getAthleteProfileFields();
+    const accessRoles = await getAthleteProfileAccessRoles(req.user);
+    const fields = await getAthleteProfileFields({ accessRoles, accessMode: 'editable' });
     const fieldsById = new Map(fields.map((field) => [String(field.id), field]));
     const updatedBy = req.user?.username || req.user?.name || `user:${req.user?.id || 'unknown'}`;
 
@@ -524,10 +774,7 @@ router.patch('/:id/athlete-profile', requireClientsUpdate, async (req, res) => {
     for (const item of values) {
       const field = fieldsById.get(String(item.field_id));
       if (!field) {
-        throw Object.assign(new Error('Поле профиля не найдено или отключено'), { statusCode: 422 });
-      }
-      if (!field.editable_by?.some((role) => role === 'admin' || role === 'trainer')) {
-        throw Object.assign(new Error(`Поле "${field.label}" недоступно для редактирования в CRM`), { statusCode: 403 });
+        throw Object.assign(new Error('Поле профиля не найдено или недоступно для редактирования'), { statusCode: 403 });
       }
 
       const normalizedValue = normalizeAthleteValue(field, item.value);
@@ -554,7 +801,7 @@ router.patch('/:id/athlete-profile', requireClientsUpdate, async (req, res) => {
 
     await client.query('COMMIT');
 
-    const profile = await getClientAthleteProfile(req.params.id);
+    const profile = await getClientAthleteProfile(req.params.id, { accessRoles });
     res.json({ success: true, data: profile });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -602,7 +849,8 @@ router.get('/:id', requireClientsRead, async (req, res) => {
       'SELECT * FROM client_visits WHERE client_id = $1 ORDER BY visited_at DESC LIMIT 20',
       [req.params.id]
     );
-    const athleteProfile = await getClientAthleteProfile(req.params.id);
+    const accessRoles = await getAthleteProfileAccessRoles(req.user);
+    const athleteProfile = await getClientAthleteProfile(req.params.id, { accessRoles });
 
     res.json({
       success: true,

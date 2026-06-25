@@ -63,6 +63,7 @@ export type ClientVisit = {
 
 export type AthleteProfileField = {
   id: string;
+  section_id: string;
   section: string;
   label: string;
   field_key: string;
@@ -73,6 +74,15 @@ export type AthleteProfileField = {
   visible_to: AthleteProfileRole[];
   editable_by: AthleteProfileRole[];
   is_required: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AthleteProfileSection = {
+  id: string;
+  name: string;
+  sort_order: number;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -197,9 +207,53 @@ export async function fetchAthleteProfileFields(options?: {
   return response.data;
 }
 
+export async function fetchAthleteProfileSections(options?: {
+  includeInactive?: boolean;
+}): Promise<AthleteProfileSection[]> {
+  const query = new URLSearchParams();
+  if (options?.includeInactive) {
+    query.set("include_inactive", "true");
+  }
+  const queryString = query.toString();
+
+  const response = await apiFetch<ApiEnvelope<AthleteProfileSection[]>>(
+    `/clients/athlete-profile/sections${queryString ? `?${queryString}` : ""}`
+  );
+  return response.data;
+}
+
+export async function createAthleteProfileSection(data: {
+  name: string;
+  sort_order?: number;
+  is_active?: boolean;
+}): Promise<AthleteProfileSection> {
+  const response = await apiFetch<ApiEnvelope<AthleteProfileSection>>("/clients/athlete-profile/sections", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function updateAthleteProfileSection(
+  id: string,
+  data: Partial<AthleteProfileSection>
+): Promise<AthleteProfileSection> {
+  const response = await apiFetch<ApiEnvelope<AthleteProfileSection>>(`/clients/athlete-profile/sections/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function deleteAthleteProfileSection(id: string): Promise<void> {
+  await apiFetch(`/clients/athlete-profile/sections/${id}`, {
+    method: "DELETE",
+  });
+}
+
 export async function createAthleteProfileField(
   data: Partial<AthleteProfileField> & {
-    section: string;
+    section_id: string;
     label: string;
     field_type: AthleteProfileFieldType;
   }
@@ -209,6 +263,12 @@ export async function createAthleteProfileField(
     body: JSON.stringify(data),
   });
   return response.data;
+}
+
+export async function deleteAthleteProfileField(id: string): Promise<void> {
+  await apiFetch(`/clients/athlete-profile/fields/${id}`, {
+    method: "DELETE",
+  });
 }
 
 export async function updateAthleteProfileField(

@@ -11,11 +11,17 @@ import { UsersPanel } from "@/components/admin/users-panel";
 import { SystemStatusPanel } from "@/components/settings/system-status-panel";
 import {
   createAthleteProfileField,
+  createAthleteProfileSection,
+  deleteAthleteProfileField,
+  deleteAthleteProfileSection,
   fetchAthleteProfileFields,
+  fetchAthleteProfileSections,
   updateAthleteProfileField,
+  updateAthleteProfileSection,
   type AthleteProfileField,
   type AthleteProfileFieldType,
   type AthleteProfileRole,
+  type AthleteProfileSection,
 } from "@/lib/api/clients";
 import { fetchGymOverview, saveGymHours, type GymHour } from "@/lib/api/schedule";
 import { deleteTrainer, fetchTrainerStaffUsers, fetchTrainers, type Trainer, type TrainerStaffUser } from "@/lib/api/trainers";
@@ -25,7 +31,7 @@ type SettingsTab = "trainers" | "gym" | "athlete" | "users" | "system";
 
 type AthleteFieldForm = {
   id: string | null;
-  section: string;
+  section_id: string;
   label: string;
   field_key: string;
   field_type: AthleteProfileFieldType;
@@ -38,9 +44,16 @@ type AthleteFieldForm = {
   is_active: boolean;
 };
 
+type AthleteSectionForm = {
+  id: string | null;
+  name: string;
+  sort_order: string;
+  is_active: boolean;
+};
+
 const emptyAthleteFieldForm: AthleteFieldForm = {
   id: null,
-  section: "",
+  section_id: "",
   label: "",
   field_key: "",
   field_type: "text",
@@ -50,6 +63,13 @@ const emptyAthleteFieldForm: AthleteFieldForm = {
   visible_to: ["admin", "trainer"],
   editable_by: ["admin", "trainer"],
   is_required: false,
+  is_active: true,
+};
+
+const emptyAthleteSectionForm: AthleteSectionForm = {
+  id: null,
+  name: "",
+  sort_order: "0",
   is_active: true,
 };
 
@@ -113,9 +133,12 @@ export function SettingsPage() {
   const [savingHours, setSavingHours] = useState(false);
 
   // Athlete profile fields state
+  const [athleteSections, setAthleteSections] = useState<AthleteProfileSection[]>([]);
   const [athleteFields, setAthleteFields] = useState<AthleteProfileField[]>([]);
   const [athleteFieldsLoading, setAthleteFieldsLoading] = useState(false);
+  const [savingAthleteSection, setSavingAthleteSection] = useState(false);
   const [savingAthleteField, setSavingAthleteField] = useState(false);
+  const [athleteSectionForm, setAthleteSectionForm] = useState<AthleteSectionForm>(emptyAthleteSectionForm);
   const [athleteFieldForm, setAthleteFieldForm] = useState<AthleteFieldForm>(emptyAthleteFieldForm);
 
   useEffect(() => {
@@ -165,13 +188,18 @@ export function SettingsPage() {
     let cancelled = false;
     setAthleteFieldsLoading(true);
 
-    fetchAthleteProfileFields({ includeInactive: true })
-      .then((fields) => {
-        if (!cancelled) setAthleteFields(fields);
+    Promise.all([
+      fetchAthleteProfileSections({ includeInactive: true }),
+      fetchAthleteProfileFields({ includeInactive: true }),
+    ])
+      .then(([sections, fields]) => {
+        if (cancelled) return;
+        setAthleteSections(sections);
+        setAthleteFields(fields);
       })
       .catch((err) => {
         if (!cancelled) {
-          setBanner({ tone: "error", text: err instanceof Error ? err.message : "Не удалось загрузить поля профиля" });
+          setBanner({ tone: "error", text: err instanceof Error ? err.message : "Не удалось загрузить профиль атлета" });
         }
       })
       .finally(() => {
@@ -222,7 +250,7 @@ export function SettingsPage() {
   function fieldToForm(field: AthleteProfileField): AthleteFieldForm {
     return {
       id: field.id,
-      section: field.section,
+      section_id: field.section_id,
       label: field.label,
       field_key: field.field_key,
       field_type: field.field_type,
@@ -233,6 +261,15 @@ export function SettingsPage() {
       editable_by: field.editable_by,
       is_required: field.is_required,
       is_active: field.is_active,
+    };
+  }
+
+  function sectionToForm(section: AthleteProfileSection): AthleteSectionForm {
+    return {
+      id: section.id,
+      name: section.name,
+      sort_order: String(section.sort_order ?? 0),
+      is_active: section.is_active,
     };
   }
 
@@ -250,7 +287,7 @@ export function SettingsPage() {
 
     try {
       const payload = {
-        section: athleteFieldForm.section.trim(),
+        section_id: athleteFieldForm.section_id,
         label: athleteFieldForm.label.trim(),
         field_key: athleteFieldForm.field_key.trim() || undefined,
         field_type: athleteFieldForm.field_type,
@@ -284,6 +321,39 @@ export function SettingsPage() {
     }
   }
 
+  async function handleSaveAthleteSection() {
+    setSavingAthleteSection(true);
+
+    try {
+      const payload = {
+        name: athleteSectionForm.name.trim(),
+        sort_order: Number.parseInt(athleteSectionForm.sort_order, 10) || 0,
+        is_active: athleteSectionForm.is_active,
+      };
+      const saved = athleteSectionForm.id
+        ? await updateAthleteProfileSection(athleteSectionForm.id, payload)
+        : await createAthleteProfileSection(payload);
+
+      setAthleteSections((prev) => {
+        const exists = prev.some((section) => section.id === saved.id);
+        const next = exists
+          ? prev.map((section) => (section.id === saved.id ? saved : section))
+          : [...prev, saved];
+        return next.sort((a, b) => a.sort_order - b.sort_order || Number(a.id) - Number(b.id));
+      });
+      setAthleteFields((prev) =>
+        prev.map((field) => (field.section_id === saved.id ? { ...field, section: saved.name } : field))
+      );
+      setAthleteSectionForm(emptyAthleteSectionForm);
+      setAthleteFieldForm((prev) => (prev.section_id ? prev : { ...prev, section_id: saved.id }));
+      setBanner({ tone: "success", text: "Раздел профиля атлета сохранен" });
+    } catch (err) {
+      setBanner({ tone: "error", text: err instanceof Error ? err.message : "Не удалось сохранить раздел" });
+    } finally {
+      setSavingAthleteSection(false);
+    }
+  }
+
   async function handleToggleAthleteField(field: AthleteProfileField) {
     try {
       const saved = await updateAthleteProfileField(field.id, { is_active: !field.is_active });
@@ -291,6 +361,46 @@ export function SettingsPage() {
       setBanner({ tone: "success", text: saved.is_active ? "Поле включено" : "Поле скрыто из карточки клиента" });
     } catch (err) {
       setBanner({ tone: "error", text: err instanceof Error ? err.message : "Не удалось изменить поле" });
+    }
+  }
+
+  async function handleDeleteAthleteField(field: AthleteProfileField) {
+    if (!window.confirm(`Удалить поле "${field.label}"? Значения этого показателя у клиентов тоже будут удалены.`)) return;
+
+    try {
+      await deleteAthleteProfileField(field.id);
+      setAthleteFields((prev) => prev.filter((item) => item.id !== field.id));
+      if (athleteFieldForm.id === field.id) {
+        setAthleteFieldForm(emptyAthleteFieldForm);
+      }
+      setBanner({ tone: "success", text: "Поле профиля удалено" });
+    } catch (err) {
+      setBanner({ tone: "error", text: err instanceof Error ? err.message : "Не удалось удалить поле" });
+    }
+  }
+
+  async function handleToggleAthleteSection(section: AthleteProfileSection) {
+    try {
+      const saved = await updateAthleteProfileSection(section.id, { is_active: !section.is_active });
+      setAthleteSections((prev) => prev.map((item) => (item.id === saved.id ? saved : item)));
+      setBanner({ tone: "success", text: saved.is_active ? "Раздел включен" : "Раздел скрыт из карточки клиента" });
+    } catch (err) {
+      setBanner({ tone: "error", text: err instanceof Error ? err.message : "Не удалось изменить раздел" });
+    }
+  }
+
+  async function handleDeleteAthleteSection(section: AthleteProfileSection) {
+    if (!window.confirm(`Удалить раздел "${section.name}"? Это возможно только если в нем нет полей.`)) return;
+
+    try {
+      await deleteAthleteProfileSection(section.id);
+      setAthleteSections((prev) => prev.filter((item) => item.id !== section.id));
+      if (athleteSectionForm.id === section.id) {
+        setAthleteSectionForm(emptyAthleteSectionForm);
+      }
+      setBanner({ tone: "success", text: "Раздел профиля удален" });
+    } catch (err) {
+      setBanner({ tone: "error", text: err instanceof Error ? err.message : "Не удалось удалить раздел" });
     }
   }
 
@@ -550,18 +660,136 @@ export function SettingsPage() {
       )}
 
       {tab === "athlete" && (
-        <section className="grid gap-5 xl:grid-cols-[minmax(0,0.85fr)_minmax(360px,0.55fr)]">
+        <section className="grid gap-5 xl:grid-cols-[minmax(280px,0.45fr)_minmax(0,0.8fr)_minmax(360px,0.55fr)]">
+          <div className="space-y-4">
+            <div className="rounded-[30px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
+              <p className="text-lg font-semibold text-[var(--text-main)]">Разделы</p>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">Сначала создайте разделы, затем выбирайте их в полях.</p>
+            </div>
+
+            <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-base font-semibold text-[var(--text-main)]">
+                    {athleteSectionForm.id ? "Редактировать раздел" : "Новый раздел"}
+                  </p>
+                  <p className="mt-1 text-sm text-[var(--text-muted)]">Название и порядок блока</p>
+                </div>
+                {athleteSectionForm.id && (
+                  <button
+                    type="button"
+                    onClick={() => setAthleteSectionForm(emptyAthleteSectionForm)}
+                    className="rounded-[14px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-muted)]"
+                  >
+                    Сбросить
+                  </button>
+                )}
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <div>
+                  <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Название</label>
+                  <input
+                    type="text"
+                    value={athleteSectionForm.name}
+                    onChange={(event) => setAthleteSectionForm((prev) => ({ ...prev, name: event.target.value }))}
+                    className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
+                    placeholder="Силовые показатели"
+                    disabled={!canManageAthleteFields}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Порядок</label>
+                  <input
+                    type="number"
+                    value={athleteSectionForm.sort_order}
+                    onChange={(event) => setAthleteSectionForm((prev) => ({ ...prev, sort_order: event.target.value }))}
+                    className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
+                    disabled={!canManageAthleteFields}
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-sm text-[var(--text-main)]">
+                  <input
+                    type="checkbox"
+                    checked={athleteSectionForm.is_active}
+                    onChange={(event) => setAthleteSectionForm((prev) => ({ ...prev, is_active: event.target.checked }))}
+                    disabled={!canManageAthleteFields}
+                  />
+                  Активный
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveAthleteSection()}
+                  disabled={!canManageAthleteFields || savingAthleteSection}
+                  className="w-full rounded-[18px] bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110 disabled:opacity-50"
+                >
+                  {savingAthleteSection ? "Сохраняем..." : "Сохранить раздел"}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {athleteSections.map((section) => (
+                <div
+                  key={section.id}
+                  className={`rounded-[22px] border p-4 ${
+                    section.is_active
+                      ? "border-[var(--line-soft)] bg-[var(--bg-card)]"
+                      : "border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.015)] opacity-70"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-[var(--text-main)]">{section.name}</p>
+                      <p className="mt-1 text-xs text-[var(--text-muted)]">Порядок: {section.sort_order}</p>
+                    </div>
+                    {!section.is_active && (
+                      <span className="rounded-full border border-[var(--line-soft)] px-2 py-1 text-[11px] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                        скрыт
+                      </span>
+                    )}
+                  </div>
+                  {canManageAthleteFields && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAthleteSectionForm(sectionToForm(section))}
+                        className="rounded-[14px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-main)]"
+                      >
+                        Редактировать
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleToggleAthleteSection(section)}
+                        className="rounded-[14px] border border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-muted)]"
+                      >
+                        {section.is_active ? "Скрыть" : "Включить"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteAthleteSection(section)}
+                        className="rounded-[14px] border border-[rgba(248,81,73,0.24)] px-3 py-2 text-sm text-[var(--danger)]"
+                      >
+                        Удалить
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-4">
             <div className="rounded-[30px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
               <p className="text-lg font-semibold text-[var(--text-main)]">Поля профиля атлета</p>
               <p className="mt-1 text-sm text-[var(--text-muted)]">
-                Эти поля отображаются в карточке клиента и заполняются по правам: администратором, тренером или клиентом.
+                Эти поля отображаются в карточке клиента и фильтруются по реальным правам пользователя.
               </p>
             </div>
 
             {athleteFieldsLoading ? (
               <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-6 py-16 text-center text-sm text-[var(--text-muted)]">
-                Загружаем поля профиля...
+                Загружаем профиль...
               </div>
             ) : athleteFields.length === 0 ? (
               <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-6 py-16 text-center text-sm text-[var(--text-muted)]">
@@ -610,6 +838,13 @@ export function SettingsPage() {
                           >
                             {field.is_active ? "Скрыть" : "Включить"}
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteAthleteField(field)}
+                            className="rounded-[16px] border border-[rgba(248,81,73,0.24)] px-3 py-2 text-sm text-[var(--danger)] transition-colors hover:bg-[rgba(248,81,73,0.12)]"
+                          >
+                            Удалить
+                          </button>
                         </div>
                       )}
                     </div>
@@ -640,7 +875,7 @@ export function SettingsPage() {
                 <p className="text-lg font-semibold text-[var(--text-main)]">
                   {athleteFieldForm.id ? "Редактировать поле" : "Новое поле"}
                 </p>
-                <p className="mt-1 text-sm text-[var(--text-muted)]">Секция, тип значения и права доступа</p>
+                <p className="mt-1 text-sm text-[var(--text-muted)]">Раздел, тип значения и права доступа</p>
               </div>
               {athleteFieldForm.id && (
                 <button
@@ -656,14 +891,17 @@ export function SettingsPage() {
             <div className="mt-5 space-y-4">
               <div>
                 <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Раздел</label>
-                <input
-                  type="text"
-                  value={athleteFieldForm.section}
-                  onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, section: event.target.value }))}
+                <select
+                  value={athleteFieldForm.section_id}
+                  onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, section_id: event.target.value }))}
                   className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
-                  placeholder="Силовые показатели"
                   disabled={!canManageAthleteFields}
-                />
+                >
+                  <option value="">Выберите раздел</option>
+                  {athleteSections.map((section) => (
+                    <option key={section.id} value={section.id}>{section.name}</option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -777,7 +1015,7 @@ export function SettingsPage() {
               <button
                 type="button"
                 onClick={() => void handleSaveAthleteField()}
-                disabled={!canManageAthleteFields || savingAthleteField}
+                disabled={!canManageAthleteFields || savingAthleteField || athleteSections.length === 0}
                 className="w-full rounded-[18px] bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110 disabled:opacity-50"
               >
                 {savingAthleteField ? "Сохраняем..." : "Сохранить поле"}
