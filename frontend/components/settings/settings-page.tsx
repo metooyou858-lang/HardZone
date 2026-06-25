@@ -592,7 +592,6 @@ export function SettingsPage() {
                           {field.section} · {athleteFieldTypes.find((type) => type.value === field.field_type)?.label || field.field_type}
                           {field.unit ? ` · ${field.unit}` : ""}
                         </p>
-                        <p className="mt-2 font-mono text-xs text-[var(--text-muted)]">{field.field_key}</p>
                       </div>
 
                       {canManageAthleteFields && (
@@ -705,29 +704,16 @@ export function SettingsPage() {
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Единица</label>
-                  <input
-                    type="text"
-                    value={athleteFieldForm.unit}
-                    onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, unit: event.target.value }))}
-                    className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
-                    placeholder="кг, см, мин"
-                    disabled={!canManageAthleteFields}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Код поля</label>
-                  <input
-                    type="text"
-                    value={athleteFieldForm.field_key}
-                    onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, field_key: event.target.value }))}
-                    className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 font-mono text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
-                    placeholder="deadlift_1rm"
-                    disabled={!canManageAthleteFields || Boolean(athleteFieldForm.id)}
-                  />
-                </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">Единица</label>
+                <input
+                  type="text"
+                  value={athleteFieldForm.unit}
+                  onChange={(event) => setAthleteFieldForm((prev) => ({ ...prev, unit: event.target.value }))}
+                  className="mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
+                  placeholder="кг, см, мин"
+                  disabled={!canManageAthleteFields}
+                />
               </div>
 
               {(athleteFieldForm.field_type === "select" || athleteFieldForm.field_type === "multiselect") && (
