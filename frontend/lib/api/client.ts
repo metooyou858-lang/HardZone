@@ -56,7 +56,11 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
     }
 
     const errorData = data as { error?: string; hint?: string } | null;
-    throw new ApiError(errorData?.error ?? errorData?.hint ?? "Неизвестная ошибка сервера", response.status, data);
+    const fallbackMessage =
+      response.status === 413
+        ? "Файл слишком большой. Уменьшите фото и попробуйте снова."
+        : "Неизвестная ошибка сервера";
+    throw new ApiError(errorData?.error ?? errorData?.hint ?? fallbackMessage, response.status, data);
   }
 
   return data as T;

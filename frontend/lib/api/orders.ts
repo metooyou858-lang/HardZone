@@ -184,7 +184,16 @@ export async function initiatePayment(orderId: string): Promise<InitiatePaymentR
   return { status: "started", operation_id: d.operation_id! };
 }
 
-export type SlipSyncStatus = "pending" | "confirmed" | "cancelled" | "failed" | "declined" | "confirmed_no_fiscal" | "receipt_error" | "no_payment_operation";
+export type SlipSyncStatus =
+  | "pending"
+  | "confirmed"
+  | "already_closed"
+  | "cancelled"
+  | "failed"
+  | "declined"
+  | "confirmed_no_fiscal"
+  | "receipt_error"
+  | "no_payment_operation";
 
 export async function syncSlip(orderId: string): Promise<{
   status: SlipSyncStatus;

@@ -2,7 +2,7 @@ require('dotenv').config();
 
 const { pool } = require('./db');
 const logger = require('./services/logger');
-const { handleTelegramUpdate, telegramRequest } = require('./services/telegram-bot');
+const { configureMenuButton, handleTelegramUpdate, telegramRequest } = require('./services/telegram-bot');
 
 const POLL_TIMEOUT_SECONDS = Number.parseInt(process.env.TELEGRAM_POLL_TIMEOUT || '25', 10);
 const REQUEST_TIMEOUT_MS = (POLL_TIMEOUT_SECONDS + 10) * 1000;
@@ -24,6 +24,7 @@ async function poll() {
   }
 
   await telegramRequest('deleteWebhook', { drop_pending_updates: false }, { timeoutMs: 15000 });
+  await configureMenuButton();
   logger.info('telegram', { action: 'poller_started' });
 
   let offset;

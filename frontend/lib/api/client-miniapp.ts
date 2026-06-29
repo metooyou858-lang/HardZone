@@ -58,6 +58,8 @@ export type ClientMiniAppAvailableSlot = {
   free_places: number;
   is_booked: boolean;
   client_booking_id: string | null;
+  client_booking_status: "confirmed" | "attended" | null;
+  can_cancel_booking: boolean;
 };
 
 export type ClientMiniAppVisit = {
@@ -103,6 +105,23 @@ export type ClientMiniAppTrainer = {
   }>;
 };
 
+export type ClientMiniAppAthleteProfileField = {
+  id: string;
+  section_id: string;
+  section: string;
+  label: string;
+  field_key: string;
+  field_type: "text" | "textarea" | "number" | "time" | "date" | "boolean" | "select" | "multiselect";
+  unit: string | null;
+  options: string[];
+  visible_to: string[];
+  editable_by: string[];
+  value: string | number | boolean | string[] | null;
+  value_updated_by: string | null;
+  value_updated_at: string | null;
+  can_edit: boolean;
+};
+
 export type ClientMiniAppPayload = {
   client: ClientMiniAppClient;
   subscriptions: ClientMiniAppSubscription[];
@@ -110,6 +129,7 @@ export type ClientMiniAppPayload = {
   visits: ClientMiniAppVisit[];
   available_slots: ClientMiniAppAvailableSlot[];
   trainers: ClientMiniAppTrainer[];
+  athlete_profile: ClientMiniAppAthleteProfileField[];
   debt: {
     unpaid_missed_count: number;
   };
@@ -204,6 +224,25 @@ export async function reviewClientMiniAppTrainer(
   const data = (await response.json().catch(() => null)) as ApiEnvelope<ClientMiniAppPayload> | null;
   if (!response.ok || !data?.data) {
     throw new Error(data?.error || "Не удалось сохранить отзыв");
+  }
+
+  return data.data;
+}
+
+export async function saveClientMiniAppAthleteProfile(
+  initData: string,
+  values: Array<{ field_id: string; value: string | number | boolean | string[] | null }>
+): Promise<ClientMiniAppPayload> {
+  const response = await fetch("/auth-api/telegram-client-miniapp-athlete-profile", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ init_data: initData, values }),
+  });
+
+  const data = (await response.json().catch(() => null)) as ApiEnvelope<ClientMiniAppPayload> | null;
+  if (!response.ok || !data?.data) {
+    throw new Error(data?.error || "Не удалось сохранить профиль атлета");
   }
 
   return data.data;

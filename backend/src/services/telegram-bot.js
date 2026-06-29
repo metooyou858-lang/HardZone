@@ -53,6 +53,16 @@ function getMiniAppUrl() {
   return `${String(baseUrl).replace(/\/+$/, '')}/telegram/trainer`;
 }
 
+function configureMenuButton() {
+  return telegramRequest('setChatMenuButton', {
+    menu_button: {
+      type: 'web_app',
+      text: 'Открыть HardZone',
+      web_app: { url: getMiniAppUrl() },
+    },
+  });
+}
+
 async function telegramRequest(method, payload, options = {}) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
@@ -653,6 +663,7 @@ async function handleTelegramUpdate(update) {
 }
 
 module.exports = {
+  configureMenuButton,
   handleTelegramUpdate,
   findStaffByTelegramId,
   getTodaySlots,

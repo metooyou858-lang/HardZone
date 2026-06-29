@@ -6,6 +6,7 @@ import { CloseIcon } from "@/components/schedule/schedule-shared";
 import { inputCls, labelCls } from "@/components/warehouse/shared";
 import { createTrainer, type Trainer, type TrainerStaffUser, updateTrainer, uploadTrainerPhoto } from "@/lib/api/trainers";
 import type { TrainingType } from "@/lib/api/training-types";
+import { assertSupportedPhoto } from "@/lib/api/upload-images";
 export function TrainerFormModal({
   trainer,
   trainingTypes,
@@ -94,6 +95,22 @@ export function TrainerFormModal({
     }
   }
 
+  function handlePhotoChange(file: File | null) {
+    if (!file) {
+      setPhotoFile(null);
+      return;
+    }
+
+    try {
+      assertSupportedPhoto(file);
+      setPhotoFile(file);
+      setError(null);
+    } catch (photoError) {
+      setPhotoFile(null);
+      setError(photoError instanceof Error ? photoError.message : "Не удалось выбрать фото тренера");
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(5,8,12,0.78)] px-4 py-8">
       <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-[30px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-6 shadow-[0_30px_90px_rgba(0,0,0,0.45)]">
@@ -146,9 +163,15 @@ export function TrainerFormModal({
             <input
               type="file"
               accept="image/png,image/jpeg,image/webp"
-              onChange={(event) => setPhotoFile(event.target.files?.[0] || null)}
+              onChange={(event) => {
+                handlePhotoChange(event.target.files?.[0] || null);
+                event.target.value = "";
+              }}
               className={`mt-2 ${inputCls}`}
             />
+            {photoFile ? (
+              <p className="mt-2 truncate text-xs text-[var(--accent)]">Выбрано: {photoFile.name}</p>
+            ) : null}
             {trainer?.photo_url ? (
               <p className="mt-2 truncate text-xs text-[var(--text-muted)]">Текущее фото: {trainer.photo_url}</p>
             ) : null}

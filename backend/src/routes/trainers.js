@@ -10,6 +10,7 @@ const { sendInternalError } = require('../utils/http-response');
 const router = express.Router();
 const requireTrainersRead = authMiddleware.requireRole('owner', 'admin');
 const requireTrainersManage = authMiddleware.requireModule('services');
+const SUPPORTED_TRAINER_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const trainerPhotoDir = path.join(__dirname, '..', '..', 'uploads', 'trainers');
 const trainerPhotoStorage = multer.diskStorage({
   destination: (_req, _file, callback) => {
@@ -30,7 +31,7 @@ const uploadTrainerPhoto = multer({
   storage: trainerPhotoStorage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, callback) => {
-    if (['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+    if (SUPPORTED_TRAINER_PHOTO_TYPES.includes(file.mimetype)) {
       callback(null, true);
       return;
     }
@@ -38,6 +39,24 @@ const uploadTrainerPhoto = multer({
     callback(new Error('Unsupported trainer photo type'));
   },
 });
+
+function handleTrainerPhotoUpload(req, res, next) {
+  uploadTrainerPhoto.single('photo')(req, res, (err) => {
+    if (!err) {
+      return next();
+    }
+
+    if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(422).json({ success: false, error: 'Фото слишком большое. Максимальный размер - 5 МБ.' });
+    }
+
+    if (err.message === 'Unsupported trainer photo type') {
+      return res.status(422).json({ success: false, error: 'Поддерживаются JPG, PNG или WebP. Фото HEIC/HEIF с iPhone нужно сначала сохранить как JPEG.' });
+    }
+
+    return next(err);
+  });
+}
 
 function isUniqueUserLinkViolation(error) {
   return String(error?.message || '').includes('idx_trainers_user_id_unique');
@@ -338,7 +357,7 @@ router.patch('/:id', requireTrainersManage, async (req, res) => {
   }
 });
 
-router.post('/:id/photo', requireTrainersManage, uploadTrainerPhoto.single('photo'), async (req, res) => {
+router.post('/:id/photo', requireTrainersManage, handleTrainerPhotoUpload, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(422).json({ success: false, error: 'Загрузите фото тренера' });

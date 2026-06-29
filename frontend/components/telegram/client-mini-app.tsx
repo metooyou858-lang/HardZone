@@ -8,6 +8,8 @@ import {
   linkClientMiniAppPhone,
   loginClientMiniApp,
   reviewClientMiniAppTrainer,
+  saveClientMiniAppAthleteProfile,
+  type ClientMiniAppAthleteProfileField,
   type ClientMiniAppAvailableSlot,
   type ClientMiniAppPayload,
   type ClientMiniAppSubscription,
@@ -365,7 +367,7 @@ function BottomNav({ active, onChange }: { active: ClientTab; onChange: (tab: Cl
   const tabs: ClientTab[] = ["home", "schedule", "trainers", "profile"];
 
   return (
-    <nav className="z-30 shrink-0 px-3 pb-[max(7px,env(safe-area-inset-bottom))] pt-1">
+    <nav className="z-30 shrink-0 px-3 pb-[max(8px,env(safe-area-inset-bottom))] pt-1.5">
       <div className="mx-auto grid max-w-md grid-cols-4 gap-1 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(12,15,21,0.94)] p-1 shadow-[0_14px_30px_rgba(0,0,0,0.34)] backdrop-blur">
         {tabs.map((tab) => {
           const activeTab = active === tab;
@@ -374,14 +376,14 @@ function BottomNav({ active, onChange }: { active: ClientTab; onChange: (tab: Cl
               key={tab}
               type="button"
               onClick={() => onChange(tab)}
-              className={`flex min-h-[36px] min-w-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md px-1 text-[10px] transition [&_svg]:h-3.5 [&_svg]:w-3.5 ${
+              className={`flex min-h-[44px] min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-md px-1 text-[10px] transition [&_svg]:h-5 [&_svg]:w-5 ${
                 activeTab
                   ? "bg-[rgba(94,244,216,0.12)] text-[var(--text-main)]"
                   : "text-[var(--text-muted)] active:bg-[rgba(255,255,255,0.04)]"
               }`}
             >
               {tabIcon(tab, activeTab)}
-              <span className="block w-[150%] max-w-none origin-center scale-[0.6] truncate text-center leading-none">{tabLabels[tab]}</span>
+              <span className="block w-[150%] max-w-none origin-center scale-[0.68] truncate text-center leading-none">{tabLabels[tab]}</span>
             </button>
           );
         })}
@@ -390,28 +392,44 @@ function BottomNav({ active, onChange }: { active: ClientTab; onChange: (tab: Cl
   );
 }
 
-function ClientCard({ data }: { data: ClientMiniAppPayload | null }) {
+function ClientCard({ data, variant = "compact" }: { data: ClientMiniAppPayload | null; variant?: "compact" | "profile" }) {
   const name = clientName(data);
+  const client = data?.client;
   const barcode = data?.client.barcode || "";
+  const isProfile = variant === "profile";
+  const statusLabel = client?.status === "active" ? "Активный клиент" : client?.status ? `Статус: ${client.status}` : "Профиль клиента";
 
   return (
     <section className="relative overflow-hidden rounded-lg border border-[rgba(255,255,255,0.08)] bg-[linear-gradient(135deg,#11151d_0%,#121923_100%)] p-3 shadow-[0_14px_34px_rgba(0,0,0,0.24)]">
       <div className="absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,#5ef4d8,#f6d46b,#ff7a59)]" />
       <div className="pointer-events-none absolute -right-16 -top-16 h-32 w-32 rounded-full bg-[rgba(94,244,216,0.10)] blur-2xl" />
-      <div className="relative flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[rgba(255,255,255,0.92)] text-base font-medium text-[var(--text-inverse)] shadow-[0_8px_20px_rgba(0,0,0,0.24)]">
+      <div className={`relative flex gap-3 ${isProfile ? "items-start" : "items-center"}`}>
+        <div className={`${isProfile ? "h-14 w-14 text-xl" : "h-10 w-10 text-base"} flex shrink-0 items-center justify-center rounded-full bg-[rgba(255,255,255,0.92)] font-medium text-[var(--text-inverse)] shadow-[0_8px_20px_rgba(0,0,0,0.24)]`}>
           {name.trim().slice(0, 1).toUpperCase()}
         </div>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-medium leading-tight text-[var(--text-main)]">{name}</h2>
-          <p className="mt-1 truncate font-[family:var(--font-mono)] text-[11px] text-[var(--text-muted)]">
-            ЛК {cabinetNumber(data)}
-          </p>
+          {isProfile ? <p className="mb-1 text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">{statusLabel}</p> : null}
+          <h2 className={`${isProfile ? "text-lg" : "text-sm"} truncate font-medium leading-tight text-[var(--text-main)]`}>{name}</h2>
+          <p className="mt-1 truncate font-[family:var(--font-mono)] text-[11px] text-[var(--text-muted)]">ЛК {cabinetNumber(data)}</p>
         </div>
       </div>
-      <div className="relative mt-3">
-        <BarcodeSvg value={barcode} />
-      </div>
+      {isProfile ? (
+        <div className="relative mt-3 grid gap-2 text-xs">
+          <div className="flex justify-between gap-4 rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] px-3 py-2">
+            <span className="text-[var(--text-muted)]">Телефон</span>
+            <span className="min-w-0 truncate text-right text-[var(--text-main)]">{client?.phone || "Не указан"}</span>
+          </div>
+          <div className="flex justify-between gap-4 rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] px-3 py-2">
+            <span className="text-[var(--text-muted)]">Email</span>
+            <span className="min-w-0 truncate text-right text-[var(--text-main)]">{client?.email || "Не указан"}</span>
+          </div>
+        </div>
+      ) : null}
+      {!isProfile ? (
+        <div className="relative mt-3">
+          <BarcodeSvg value={barcode} />
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -492,7 +510,13 @@ function AvailableSlotItem({
   onCancel: () => void;
   onOpen: () => void;
 }) {
-  const disabled = busy || (!slot.is_booked && slot.free_places <= 0);
+  const canCancel = Boolean(slot.is_booked && slot.can_cancel_booking);
+  const disabled = busy || (!slot.is_booked && slot.free_places <= 0) || (slot.is_booked && !canCancel);
+  const actionLabel = busy
+    ? slot.is_booked ? "Отменяем..." : "Записываем..."
+    : slot.is_booked
+      ? canCancel ? "Отменить запись" : "Посещение отмечено"
+      : slot.free_places <= 0 ? "Мест нет" : "Записаться";
   const tags = [
     slot.training_type_location,
     slot.training_type_audience,
@@ -549,7 +573,11 @@ function AvailableSlotItem({
         type="button"
         onClick={(event) => {
           event.stopPropagation();
-          slot.is_booked ? onCancel() : onBook();
+          if (slot.is_booked) {
+            if (canCancel) onCancel();
+            return;
+          }
+          onBook();
         }}
         disabled={disabled}
         className={`mt-3 h-9 w-full rounded-md text-xs font-medium disabled:bg-[rgba(255,255,255,0.08)] disabled:text-[var(--text-muted)] ${
@@ -558,7 +586,7 @@ function AvailableSlotItem({
             : "bg-[var(--accent)] text-[var(--text-inverse)]"
         }`}
       >
-        {busy ? (slot.is_booked ? "Отменяем..." : "Записываем...") : slot.is_booked ? "Отменить запись" : slot.free_places <= 0 ? "Мест нет" : "Записаться"}
+        {actionLabel}
       </button>
     </article>
   );
@@ -582,7 +610,13 @@ function SlotDetailScreen({
   const title = slot.training_type_name || "Занятие";
   const location = slot.training_type_location || "HardZone";
   const description = slot.training_type_description || "Описание тренировки пока не заполнено в CRM.";
-  const actionDisabled = busy || (!slot.is_booked && slot.free_places <= 0);
+  const canCancel = Boolean(slot.is_booked && slot.can_cancel_booking);
+  const actionDisabled = busy || (!slot.is_booked && slot.free_places <= 0) || (slot.is_booked && !canCancel);
+  const actionLabel = busy
+    ? slot.is_booked ? "Отменяем..." : "Записываем..."
+    : slot.is_booked
+      ? canCancel ? "Отменить запись" : "Посещение уже отмечено"
+      : slot.free_places <= 0 ? "Нет свободных мест" : "Записаться на тренировку";
 
   return (
     <div className="pb-3">
@@ -651,7 +685,7 @@ function SlotDetailScreen({
       <section className="sticky bottom-0 border-t border-[rgba(255,255,255,0.06)] bg-[rgba(8,11,16,0.96)] px-4 py-3 backdrop-blur">
         <button
           type="button"
-          onClick={slot.is_booked ? onCancel : onBook}
+          onClick={slot.is_booked ? (canCancel ? onCancel : undefined) : onBook}
           disabled={actionDisabled}
           className={`h-12 w-full rounded-lg text-base font-medium disabled:bg-[rgba(255,255,255,0.08)] disabled:text-[var(--text-muted)] ${
             slot.is_booked
@@ -659,8 +693,13 @@ function SlotDetailScreen({
               : "bg-[var(--accent)] text-[var(--text-inverse)]"
           }`}
         >
-          {busy ? (slot.is_booked ? "Отменяем..." : "Записываем...") : slot.is_booked ? "Отменить запись" : slot.free_places <= 0 ? "Нет свободных мест" : "Записаться на тренировку"}
+          {actionLabel}
         </button>
+        {slot.is_booked && !canCancel ? (
+          <p className="mt-3 text-center text-sm text-[var(--text-main)]">
+            Отменить запись можно только до отметки прихода.
+          </p>
+        ) : null}
         {!slot.is_booked && slot.free_places <= 0 ? (
           <p className="mt-3 text-center text-sm text-[var(--text-main)]">Нет свободных мест</p>
         ) : null}
@@ -674,6 +713,48 @@ function visitDateTime(visit: ClientMiniAppVisit) {
   const date = visit.date || (Number.isNaN(visitedAt.getTime()) ? visit.visited_at : visitedAt.toISOString().slice(0, 10));
   const time = visit.start_time || (Number.isNaN(visitedAt.getTime()) ? "" : visitedAt.toISOString().slice(11, 16));
   return [formatDate(date), time ? formatTime(time) : ""].filter(Boolean).join(" · ");
+}
+
+function formatAthleteProfileValue(field: ClientMiniAppAthleteProfileField) {
+  if (field.value === null || field.value === undefined || field.value === "") {
+    return "Не заполнено";
+  }
+
+  if (field.field_type === "boolean") {
+    return field.value ? "Да" : "Нет";
+  }
+
+  if (Array.isArray(field.value)) {
+    return field.value.length ? field.value.join(", ") : "Не заполнено";
+  }
+
+  return `${field.value}${field.unit ? ` ${field.unit}` : ""}`;
+}
+
+function athleteInputValue(value: ClientMiniAppAthleteProfileField["value"]) {
+  if (value === null || value === undefined) return "";
+  if (Array.isArray(value)) return value.join(", ");
+  return String(value);
+}
+
+function parseAthleteInputValue(field: ClientMiniAppAthleteProfileField, value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (field.field_type === "number") return trimmed.replace(",", ".");
+  if (field.field_type === "multiselect") {
+    return trimmed.split(",").map((item) => item.trim()).filter(Boolean);
+  }
+  return trimmed;
+}
+
+function isAthleteValueFilled(field: ClientMiniAppAthleteProfileField) {
+  if (field.value === null || field.value === undefined || field.value === "") return false;
+  if (Array.isArray(field.value)) return field.value.length > 0;
+  return true;
+}
+
+function isCompactAthleteMetric(field: ClientMiniAppAthleteProfileField) {
+  return field.field_type === "number" || field.field_type === "text" || field.field_type === "time";
 }
 
 function VisitItem({ visit }: { visit: ClientMiniAppVisit }) {
@@ -1069,13 +1150,58 @@ function VisitsScreen({ visits }: { visits: ClientMiniAppVisit[] }) {
   );
 }
 
-function ProfileScreen({ data, onOpenVisits }: { data: ClientMiniAppPayload | null; onOpenVisits: () => void }) {
-  const client = data?.client;
+function ProfileScreen({
+  data,
+  initData,
+  onOpenVisits,
+  onPayloadUpdate,
+}: {
+  data: ClientMiniAppPayload | null;
+  initData: string;
+  onOpenVisits: () => void;
+  onPayloadUpdate: (payload: ClientMiniAppPayload) => void;
+}) {
   const lastVisit = data?.visits[0] ?? null;
+  const athleteProfile = data?.athlete_profile || [];
+  const editableFields = athleteProfile.filter((field) => field.can_edit);
+  const sections = [...new Set(athleteProfile.map((field) => field.section).filter(Boolean))];
+  const filledFields = athleteProfile.filter(isAthleteValueFilled);
+  const [draftValues, setDraftValues] = useState<Record<string, string>>({});
+  const [saveError, setSaveError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [editingAthleteProfile, setEditingAthleteProfile] = useState(false);
+
+  useEffect(() => {
+    const editableProfileFields = (data?.athlete_profile || []).filter((field) => field.can_edit);
+    setDraftValues(
+      Object.fromEntries(editableProfileFields.map((field) => [String(field.id), athleteInputValue(field.value)]))
+    );
+  }, [data?.athlete_profile]);
+
+  async function saveAthleteProfile() {
+    const values = editableFields.map((field) => ({
+      field_id: field.id,
+      value: parseAthleteInputValue(field, draftValues[String(field.id)] || ""),
+    }));
+
+    if (!values.length) return;
+
+    setSaving(true);
+    setSaveError("");
+
+    try {
+      onPayloadUpdate(await saveClientMiniAppAthleteProfile(initData, values));
+      setEditingAthleteProfile(false);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Не удалось сохранить профиль атлета");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="space-y-3 px-3 pb-3 pt-2">
-      <ClientCard data={data} />
+      <ClientCard data={data} variant="profile" />
       <section className="grid grid-cols-1 gap-2">
         <Stat label="посещений" value={data?.visits.length ?? "..."} onClick={onOpenVisits} />
       </section>
@@ -1089,29 +1215,106 @@ function ProfileScreen({ data, onOpenVisits }: { data: ClientMiniAppPayload | nu
             </p>
           </div>
           <div className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-2.5">
-            <p className="text-[10px] text-[var(--text-muted)]">Показатели</p>
-            <p className="mt-1 truncate text-xs font-medium text-[var(--text-main)]">Заполняются в CRM</p>
+            <p className="text-[10px] text-[var(--text-muted)]">Профиль</p>
+            <p className="mt-1 truncate text-xs font-medium text-[var(--text-main)]">
+              {filledFields.length ? `${filledFields.length} заполнено` : athleteProfile.length ? "Пока пусто" : "Не настроен"}
+            </p>
           </div>
         </div>
         <p className="mt-3 text-xs leading-5 text-[var(--text-muted)]">
-          Силовые показатели, навыки и тренировочные результаты появятся здесь после заполнения тренером в CRM.
+          Это дневник атлета: часть данных ведёт команда, а открытые поля можно обновлять самостоятельно.
         </p>
       </section>
       <section className="rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.025)] p-3">
-        <div className="space-y-2.5 text-xs">
-          <div className="flex justify-between gap-4">
-            <span className="text-[var(--text-muted)]">Телефон</span>
-            <span className="text-right text-[var(--text-main)]">{client?.phone || "Не указан"}</span>
-          </div>
-          <div className="flex justify-between gap-4">
-            <span className="text-[var(--text-muted)]">Email</span>
-            <span className="text-right text-[var(--text-main)]">{client?.email || "Не указан"}</span>
-          </div>
-          <div className="flex justify-between gap-4">
-            <span className="text-[var(--text-muted)]">Штрихкод</span>
-            <span className="text-right font-[family:var(--font-mono)] text-[var(--text-main)]">{client?.barcode || "Не указан"}</span>
-          </div>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">Профиль атлета</p>
+          {editableFields.length ? (
+            editingAthleteProfile ? (
+              <div className="flex shrink-0 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingAthleteProfile(false)}
+                  className="rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1 text-[10px] font-medium text-[var(--text-main)]"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void saveAthleteProfile()}
+                  disabled={saving}
+                  className="rounded-full bg-[var(--accent)] px-2.5 py-1 text-[10px] font-medium text-[var(--text-inverse)] disabled:opacity-60"
+                >
+                  {saving ? "..." : "Сохранить"}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setSaveError("");
+                  setEditingAthleteProfile(true);
+                }}
+                className="rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1 text-[10px] font-medium text-[var(--text-main)]"
+              >
+                Изменить
+              </button>
+            )
+          ) : null}
         </div>
+        {athleteProfile.length ? (
+          <div className="mt-3 space-y-3">
+            {sections.map((section) => {
+              const fields = athleteProfile.filter((field) => field.section === section);
+              return (
+                <div key={section} className="space-y-2">
+                  <h3 className="text-xs font-medium text-[var(--text-main)]">{section}</h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    {fields.map((field) => {
+                      const compact = isCompactAthleteMetric(field);
+                      const displayValue = formatAthleteProfileValue(field);
+                      return (
+                        <div
+                          key={field.id}
+                          className={`min-h-[68px] rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-2.5 ${
+                            compact ? "" : "col-span-2"
+                          }`}
+                        >
+                          <p className="min-w-0 text-xs font-medium leading-4 text-[var(--text-main)]">{field.label}</p>
+                          {!editingAthleteProfile || !field.can_edit ? (
+                            <p className="mt-1 whitespace-pre-line text-xs leading-5 text-[var(--text-muted)]">
+                              {displayValue}
+                            </p>
+                          ) : field.field_type === "textarea" ? (
+                            <textarea
+                              value={draftValues[String(field.id)] || ""}
+                              onChange={(event) => setDraftValues((state) => ({ ...state, [String(field.id)]: event.target.value }))}
+                              rows={3}
+                              placeholder="Заполните поле"
+                              className="mt-1 w-full resize-none rounded-md border border-transparent bg-transparent p-0 text-xs leading-5 text-[var(--text-muted)] outline-none placeholder:text-[var(--text-muted)] focus:border-[rgba(94,244,216,0.24)] focus:bg-[rgba(255,255,255,0.03)] focus:px-2 focus:py-1"
+                            />
+                          ) : (
+                            <input
+                              value={draftValues[String(field.id)] || ""}
+                              onChange={(event) => setDraftValues((state) => ({ ...state, [String(field.id)]: event.target.value }))}
+                              inputMode={field.field_type === "number" ? "decimal" : "text"}
+                              placeholder={field.unit ? `Значение, ${field.unit}` : "Заполните поле"}
+                              className="mt-1 h-5 w-full rounded-md border border-transparent bg-transparent p-0 text-xs leading-5 text-[var(--text-muted)] outline-none placeholder:text-[var(--text-muted)] focus:h-8 focus:border-[rgba(94,244,216,0.24)] focus:bg-[rgba(255,255,255,0.03)] focus:px-2"
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+            {saveError ? <p className="text-xs text-[#ffb599]">{saveError}</p> : null}
+          </div>
+        ) : (
+          <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+            Поля профиля атлета пока не настроены или не открыты клиенту.
+          </p>
+        )}
       </section>
     </div>
   );
@@ -1304,6 +1507,11 @@ export function ClientMiniApp() {
       return;
     }
 
+    if (!slot.can_cancel_booking) {
+      setActionError("Посещение уже отмечено. Отменить запись после отметки прихода нельзя.");
+      return;
+    }
+
     setBusyId(`cancel-${slot.id}`);
     setActionError("");
 
@@ -1370,7 +1578,14 @@ export function ClientMiniApp() {
             initialSelectedId={selectedTrainerId}
           />
         ) : null}
-        {activeTab === "profile" ? <ProfileScreen data={data} onOpenVisits={() => setActiveTab("visits")} /> : null}
+        {activeTab === "profile" ? (
+          <ProfileScreen
+            data={data}
+            initData={initData}
+            onOpenVisits={() => setActiveTab("visits")}
+            onPayloadUpdate={(payload) => setData(payload)}
+          />
+        ) : null}
         {activeTab === "visits" ? <VisitsScreen visits={data?.visits || []} /> : null}
       </div>
 

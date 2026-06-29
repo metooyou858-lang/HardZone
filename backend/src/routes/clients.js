@@ -13,6 +13,7 @@ const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
 const upload = multer({ dest: '/tmp/' });
+const SUPPORTED_CLIENT_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const clientPhotoDir = path.join(__dirname, '..', '..', 'uploads', 'clients');
 const clientPhotoStorage = multer.diskStorage({
   destination: (_req, _file, callback) => {
@@ -33,7 +34,7 @@ const uploadClientPhoto = multer({
   storage: clientPhotoStorage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, callback) => {
-    if (['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+    if (SUPPORTED_CLIENT_PHOTO_TYPES.includes(file.mimetype)) {
       callback(null, true);
       return;
     }
@@ -41,6 +42,24 @@ const uploadClientPhoto = multer({
     callback(new Error('Unsupported client photo type'));
   },
 });
+
+function handleClientPhotoUpload(req, res, next) {
+  uploadClientPhoto.single('photo')(req, res, (err) => {
+    if (!err) {
+      return next();
+    }
+
+    if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(422).json({ success: false, error: 'Фото слишком большое. Максимальный размер - 5 МБ.' });
+    }
+
+    if (err.message === 'Unsupported client photo type') {
+      return res.status(422).json({ success: false, error: 'Поддерживаются JPG, PNG или WebP. Фото HEIC/HEIF с iPhone нужно сначала сохранить как JPEG.' });
+    }
+
+    return next(err);
+  });
+}
 const requireClientsRead = authMiddleware.requireModule('clients');
 const requireClientsCreate = authMiddleware.requireModule('clients_create');
 const requireClientsUpdate = authMiddleware.requireModule('clients_update');
@@ -982,7 +1001,7 @@ router.patch('/:id', requireClientsUpdate, async (req, res) => {
   }
 });
 
-router.post('/:id/photo', requireClientsUpdate, uploadClientPhoto.single('photo'), async (req, res) => {
+router.post('/:id/photo', requireClientsUpdate, handleClientPhotoUpload, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(422).json({ success: false, error: 'Загрузите фото клиента' });

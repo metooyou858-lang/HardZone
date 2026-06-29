@@ -157,6 +157,127 @@ function toClientIdentity(client) {
   };
 }
 
+function normalizeClientAthleteValue(field, value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  if (field.field_type === 'number') {
+    const normalized = String(value).replace(',', '.').trim();
+    const number = Number(normalized);
+    if (!Number.isFinite(number)) {
+      throw Object.assign(new Error(`Поле "${field.label}" ожидает число`), { statusCode: 422 });
+    }
+    return number;
+  }
+
+  if (field.field_type === 'boolean') {
+    return Boolean(value);
+  }
+
+  if (field.field_type === 'multiselect') {
+    if (!Array.isArray(value)) {
+      throw Object.assign(new Error(`Поле "${field.label}" ожидает несколько значений`), { statusCode: 422 });
+    }
+    return value.map((item) => String(item || '').trim()).filter(Boolean);
+  }
+
+  return String(value).trim() || null;
+}
+
+async function getClientMiniAppAthleteProfile(clientId) {
+  const { rows } = await query(
+    `
+      SELECT
+        f.*,
+        s.name AS section,
+        v.value,
+        v.updated_by AS value_updated_by,
+        v.updated_at AS value_updated_at
+      FROM client_athlete_profile_fields f
+      JOIN client_athlete_profile_sections s ON s.id = f.section_id
+      LEFT JOIN client_athlete_profile_values v
+        ON v.field_id = f.id
+       AND v.client_id = $1
+      WHERE f.is_active = true
+        AND s.is_active = true
+        AND 'client' = ANY(f.visible_to)
+      ORDER BY s.sort_order, f.sort_order, f.id
+    `,
+    [clientId]
+  );
+
+  return rows.map((field) => ({
+    ...field,
+    options: Array.isArray(field.options) ? field.options : [],
+    visible_to: Array.isArray(field.visible_to) ? field.visible_to : [],
+    editable_by: Array.isArray(field.editable_by) ? field.editable_by : [],
+    value: field.value ?? null,
+    can_edit: Array.isArray(field.editable_by) && field.editable_by.includes('client'),
+  }));
+}
+
+async function updateClientMiniAppAthleteProfile(clientId, values, updatedBy) {
+  if (!Array.isArray(values) || values.length === 0) {
+    return { status: 'empty' };
+  }
+
+  const dbClient = await pool.connect();
+
+  try {
+    const { rows: fields } = await dbClient.query(
+      `
+        SELECT f.*
+        FROM client_athlete_profile_fields f
+        JOIN client_athlete_profile_sections s ON s.id = f.section_id
+        WHERE f.is_active = true
+          AND s.is_active = true
+          AND 'client' = ANY(f.visible_to)
+          AND 'client' = ANY(f.editable_by)
+      `
+    );
+    const fieldsById = new Map(fields.map((field) => [String(field.id), field]));
+
+    await dbClient.query('BEGIN');
+
+    for (const item of values) {
+      const field = fieldsById.get(String(item?.field_id));
+      if (!field) {
+        throw Object.assign(new Error('Поле профиля не найдено или недоступно для редактирования'), { statusCode: 403 });
+      }
+
+      const normalizedValue = normalizeClientAthleteValue(field, item.value);
+      if (normalizedValue === null) {
+        await dbClient.query(
+          'DELETE FROM client_athlete_profile_values WHERE client_id = $1 AND field_id = $2',
+          [clientId, field.id]
+        );
+        continue;
+      }
+
+      await dbClient.query(
+        `
+          INSERT INTO client_athlete_profile_values (client_id, field_id, value, updated_by)
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (client_id, field_id)
+          DO UPDATE SET value = EXCLUDED.value,
+                        updated_by = EXCLUDED.updated_by,
+                        updated_at = NOW()
+        `,
+        [clientId, field.id, JSON.stringify(normalizedValue), updatedBy]
+      );
+    }
+
+    await dbClient.query('COMMIT');
+    return { status: 'saved' };
+  } catch (error) {
+    await dbClient.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    dbClient.release();
+  }
+}
+
 async function logClientMiniAppAuthAttempt({
   action,
   status,
@@ -316,6 +437,11 @@ async function buildClientMiniAppPayload(clientId) {
           WHEN b.client_id = $1 AND b.status IN ('confirmed', 'attended') THEN b.id
           ELSE NULL
         END) AS client_booking_id
+        ,
+        MAX(CASE
+          WHEN b.client_id = $1 AND b.status IN ('confirmed', 'attended') THEN b.status
+          ELSE NULL
+        END) AS client_booking_status
       FROM schedule_slots ss
       LEFT JOIN training_types tt ON tt.id = ss.training_type_id
       LEFT JOIN trainers tr ON tr.id = ss.trainer_id
@@ -432,18 +558,21 @@ async function buildClientMiniAppPayload(clientId) {
     [client.id]
   );
 
+  const athleteProfile = await getClientMiniAppAthleteProfile(client.id);
+
   return {
     client: toClientIdentity(client),
     subscriptions,
     bookings,
     visits,
-    available_slots: availableSlots.map((slot) => ({
-      ...slot,
-      training_type_tags: Array.isArray(slot.training_type_tags) ? slot.training_type_tags : [],
-      trainer_rating: slot.trainer_rating === null ? null : Number(slot.trainer_rating),
-      free_places: Math.max(0, Number(slot.capacity || 0) - Number(slot.booked_count || 0)),
-      is_booked: Boolean(slot.is_booked),
-    })),
+      available_slots: availableSlots.map((slot) => ({
+        ...slot,
+        training_type_tags: Array.isArray(slot.training_type_tags) ? slot.training_type_tags : [],
+        trainer_rating: slot.trainer_rating === null ? null : Number(slot.trainer_rating),
+        free_places: Math.max(0, Number(slot.capacity || 0) - Number(slot.booked_count || 0)),
+        is_booked: Boolean(slot.is_booked),
+        can_cancel_booking: Boolean(slot.is_booked) && slot.client_booking_status === 'confirmed',
+      })),
     trainers: trainers.map((trainer) => ({
       ...trainer,
       rating: trainer.rating === null ? null : Number(trainer.rating),
@@ -454,6 +583,7 @@ async function buildClientMiniAppPayload(clientId) {
     debt: {
       unpaid_missed_count: Number(debtRows[0]?.unpaid_missed_count || 0),
     },
+    athlete_profile: athleteProfile,
   };
 }
 
@@ -693,7 +823,6 @@ async function cancelClientBooking(telegramId, bookingId) {
         JOIN schedule_slots ss ON ss.id = b.slot_id
         WHERE b.id = $1
           AND b.client_id = $2
-          AND b.status = 'confirmed'
         LIMIT 1
       `,
       [bookingId, clientId]
@@ -703,6 +832,16 @@ async function cancelClientBooking(telegramId, bookingId) {
     if (!booking) {
       await dbClient.query('ROLLBACK');
       return { status: 'booking_not_found' };
+    }
+
+    if (booking.status === 'attended') {
+      await dbClient.query('ROLLBACK');
+      return { status: 'already_attended' };
+    }
+
+    if (booking.status !== 'confirmed') {
+      await dbClient.query('ROLLBACK');
+      return { status: 'already_cancelled' };
     }
 
     if (combineSlotDateTime(booking.date, booking.start_time) <= new Date()) {
@@ -981,6 +1120,8 @@ router.post('/client-miniapp-cancel-booking', async (req, res) => {
     const errorByStatus = {
       not_linked: [403, 'Telegram не привязан к клиенту HardZone'],
       booking_not_found: [404, 'Запись не найдена'],
+      already_attended: [409, 'Посещение уже отмечено. Отменить запись после отметки прихода нельзя.'],
+      already_cancelled: [409, 'Эта запись уже отменена или закрыта'],
       slot_started: [409, 'Нельзя отменить запись после начала занятия'],
     };
 
@@ -1031,6 +1172,43 @@ router.post('/client-miniapp-trainer-review', async (req, res) => {
     return res.json({ success: true, data: result.data });
   } catch (error) {
     return sendInternalError(res, error, { route: 'telegram.client_miniapp_trainer_review' });
+  }
+});
+
+router.post('/client-miniapp-athlete-profile', async (req, res) => {
+  try {
+    const clientBotToken = getClientBotToken();
+    if (!clientBotToken) {
+      return res.status(503).json({ success: false, error: 'Telegram client bot token is not configured' });
+    }
+
+    const telegramUser = parseTelegramInitData(req.body?.init_data, clientBotToken);
+    if (!telegramUser?.id) {
+      return res.status(401).json({ success: false, error: 'Telegram авторизация недействительна' });
+    }
+
+    const clientId = await findClientIdByTelegramId(telegramUser.id);
+    if (!clientId) {
+      return res.status(403).json({ success: false, error: 'Telegram не привязан к клиенту HardZone' });
+    }
+
+    const result = await updateClientMiniAppAthleteProfile(
+      clientId,
+      req.body?.values,
+      `telegram-client:${telegramUser.id}`
+    );
+
+    if (result.status === 'empty') {
+      return res.status(422).json({ success: false, error: 'Нет данных для обновления' });
+    }
+
+    return res.json({ success: true, data: await buildClientMiniAppPayload(clientId) });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, error: error.message });
+    }
+
+    return sendInternalError(res, error, { route: 'telegram.client_miniapp_athlete_profile' });
   }
 });
 

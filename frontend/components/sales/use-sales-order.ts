@@ -353,7 +353,7 @@ export function useSalesOrder({
       stopSlipPolling();
       setSlipPending(false);
 
-      if (result.status === "confirmed") {
+      if (result.status === "confirmed" || result.status === "already_closed") {
         onHistoryChanged?.();
         handleStartNewOrder();
         const msg = result.has_marking_errors
@@ -490,7 +490,7 @@ export function useSalesOrder({
     setBanner({ tone: "info", text: "Проверяем статус фискализации..." });
     try {
       const result = await syncAqsiV4(order.id);
-      if (result.status === "confirmed") {
+      if (result.status === "confirmed" || result.status === "already_closed") {
         onHistoryChanged?.();
         handleStartNewOrder();
         setBanner({ tone: "success", text: result.has_marking_errors ? "Восстановлено ✓ (предупреждение: ошибка маркировки)" : "Восстановлено и фискализировано ✓" });

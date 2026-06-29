@@ -7,6 +7,16 @@ function getClientMiniAppUrl() {
   return `${String(baseUrl).replace(/\/+$/, '')}/telegram/client`;
 }
 
+function configureClientMenuButton() {
+  return telegramClientRequest('setChatMenuButton', {
+    menu_button: {
+      type: 'web_app',
+      text: 'Открыть HardZone',
+      web_app: { url: getClientMiniAppUrl() },
+    },
+  });
+}
+
 async function telegramClientRequest(method, payload, options = {}) {
   const token = process.env.TELEGRAM_CLIENT_BOT_TOKEN;
   if (!token) {
@@ -89,6 +99,7 @@ async function handleTelegramClientUpdate(update) {
 }
 
 module.exports = {
+  configureClientMenuButton,
   handleTelegramClientUpdate,
   telegramClientRequest,
 };

@@ -1,4 +1,5 @@
 import { apiFetch } from "./client";
+import { assertSupportedPhoto } from "./upload-images";
 
 export type ClientStatus = "active" | "away" | "frozen" | "inactive";
 export type SubscriptionType = "single" | "visits" | "period" | "unlimited";
@@ -342,6 +343,8 @@ export async function updateClient(
 }
 
 export async function uploadClientPhoto(id: string, file: File): Promise<Client> {
+  assertSupportedPhoto(file);
+
   const formData = new FormData();
   formData.append("photo", file);
 

@@ -1,5 +1,6 @@
 import { apiFetch } from "./client";
 import { TrainingType } from "./training-types";
+import { assertSupportedPhoto } from "./upload-images";
 
 type ApiEnvelope<T> = {
   success: boolean;
@@ -103,6 +104,8 @@ export async function deleteTrainer(id: string): Promise<void> {
 }
 
 export async function uploadTrainerPhoto(id: string, file: File): Promise<Trainer> {
+  assertSupportedPhoto(file);
+
   const formData = new FormData();
   formData.append("photo", file);
 
