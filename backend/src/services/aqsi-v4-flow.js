@@ -13,6 +13,7 @@ const {
   listAqsiReceipts,
   listAqsiSlips,
   getAqsiSlip,
+  ensureAqsiShiftOpen,
 } = require('./aqsi');
 const { confirmOpenOrderPayment } = require('./order-sync');
 const logger = require('./logger');
@@ -392,6 +393,13 @@ async function initiatePayment(orderId) {
   pgClient.release();
 
   if (txError) throw txError;
+
+  try {
+    await ensureAqsiShiftOpen();
+  } catch (err) {
+    await pool.query('UPDATE orders SET aqsi_payment_status = NULL WHERE id = $1', [orderId]).catch(() => {});
+    throw err;
+  }
 
   const amountKopeks = Math.round(parseFloat(order.total_amount || 0) * 100);
   const deviceId = Number(process.env.AQSI_DEVICE_ID || 705334);

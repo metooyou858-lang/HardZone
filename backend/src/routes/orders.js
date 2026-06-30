@@ -7,6 +7,7 @@ const {
   pollOperation,
   extractReceiptFiscalData,
   sendRefundToAqsi,
+  ensureAqsiShiftOpen,
 } = require('../services/aqsi');
 const { confirmOpenOrderPayment, syncOrderWithAqsi } = require('../services/order-sync');
 const logger = require('../services/logger');
@@ -1294,6 +1295,7 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
   const orderId = req.params.id;
   let receiptOpId;
   try {
+    await ensureAqsiShiftOpen();
     const aqsiResult = await sendOrderToAqsiV4({ ...preparedOrder, items: preparedItems }, 'cash');
     receiptOpId = aqsiResult?.operationId ?? aqsiResult?.id ?? aqsiResult?.guid;
   } catch (err) {
@@ -1304,6 +1306,12 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
         'UPDATE orders SET aqsi_sent_at = NULL, aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
         [orderId, 'error', err.message]
       ).catch(() => {});
+    } else if (err.isAqsiShiftClosed) {
+      await pool.query(
+        'UPDATE orders SET aqsi_sent_at = NULL, aqsi_receipt_status = NULL, aqsi_error = $2 WHERE id = $1',
+        [orderId, err.message]
+      ).catch(() => {});
+      return res.status(err.statusCode || 409).json({ success: false, error: err.message });
     } else {
       await pool.query(
         'UPDATE orders SET aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',

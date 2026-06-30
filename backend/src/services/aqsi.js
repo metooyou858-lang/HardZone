@@ -3,6 +3,9 @@ const { randomUUID } = require('crypto');
 const logger = require('./logger');
 
 const AQSI_RECEIPT_TYPE_SELL = 1;
+const DEFAULT_SHIFT_STATUS_CACHE_MS = 30 * 60 * 1000;
+
+let aqsiShiftStatusCache = null;
 
 function getHeaders() {
   return {
@@ -120,6 +123,91 @@ async function aqsiRequest(method, path, options = {}) {
     }
     throw error;
   }
+}
+
+function getShiftStatusCacheMs() {
+  const raw = Number(process.env.AQSI_SHIFT_STATUS_CACHE_MS);
+  if (Number.isFinite(raw) && raw >= 0 && raw <= 8 * 60 * 60 * 1000) {
+    return Math.round(raw);
+  }
+
+  return DEFAULT_SHIFT_STATUS_CACHE_MS;
+}
+
+function buildShiftStatus(rows) {
+  const shifts = Array.isArray(rows) ? rows : [];
+  const openShift = shifts.find((shift) => shift?.startDate && !shift?.dateClose);
+
+  return {
+    known: true,
+    open: Boolean(openShift),
+    checked_at: new Date().toISOString(),
+    shift: openShift
+      ? {
+          id: openShift.id ?? null,
+          number: openShift.number ?? null,
+          startDate: openShift.startDate ?? null,
+          updatedAt: openShift.updatedAt ?? null,
+        }
+      : null,
+  };
+}
+
+async function getAqsiShiftStatus({ force = false } = {}) {
+  const cacheMs = getShiftStatusCacheMs();
+  const now = Date.now();
+
+  if (
+    !force &&
+    aqsiShiftStatusCache &&
+    cacheMs > 0 &&
+    now - aqsiShiftStatusCache.cachedAtMs <= cacheMs
+  ) {
+    return { ...aqsiShiftStatusCache.status, cached: true };
+  }
+
+  const endDate = new Date();
+  const beginDate = new Date(endDate.getTime() - 36 * 60 * 60 * 1000);
+  const deviceId = Number(process.env.AQSI_DEVICE_ID || 705334);
+
+  try {
+    const response = await aqsiRequest('get', '/v2/Shifts', {
+      params: {
+        pageSize: 5,
+        page: 0,
+        'filtered.beginDate': beginDate.toISOString(),
+        'filtered.endDate': endDate.toISOString(),
+        'filtered.devices': [deviceId],
+      },
+    });
+    const status = buildShiftStatus(response?.rows);
+    aqsiShiftStatusCache = { cachedAtMs: now, status };
+    return { ...status, cached: false };
+  } catch (error) {
+    const status = {
+      known: false,
+      open: null,
+      checked_at: new Date().toISOString(),
+      shift: null,
+      error: error.message,
+    };
+    logger.warn('aqsi', { action: 'shift_status_check_failed', message: error.message });
+    return { ...status, cached: false };
+  }
+}
+
+async function ensureAqsiShiftOpen(options = {}) {
+  const status = await getAqsiShiftStatus(options);
+
+  if (status.known && !status.open) {
+    const err = new Error('Смена на кассе не открыта. Откройте смену на aQsi и повторите оплату.');
+    err.statusCode = 409;
+    err.isAqsiShiftClosed = true;
+    err.shiftStatus = status;
+    throw err;
+  }
+
+  return status;
 }
 
 async function sendOrderToAqsi(order) {
@@ -427,6 +515,8 @@ module.exports = {
   sendOrderToAqsi,
   sendOrderToAqsiV4,
   sendRefundToAqsi,
+  getAqsiShiftStatus,
+  ensureAqsiShiftOpen,
   sendV4ReceiptRequest,
   startSlipPurchase,
   getOperation,
