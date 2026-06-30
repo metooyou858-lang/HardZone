@@ -9,9 +9,11 @@ import {
   loginClientMiniApp,
   reviewClientMiniAppTrainer,
   saveClientMiniAppAthleteProfile,
+  saveClientMiniAppProfile,
   type ClientMiniAppAthleteProfileField,
   type ClientMiniAppAvailableSlot,
   type ClientMiniAppPayload,
+  type ClientMiniAppProfileInput,
   type ClientMiniAppSubscription,
   type ClientMiniAppTrainer,
   type ClientMiniAppVisit,
@@ -181,6 +183,10 @@ function formatLongDate(value: string | null | undefined) {
 }
 
 function dateKey(value: string | null | undefined) {
+  return String(value || "").slice(0, 10);
+}
+
+function dateInputValue(value: string | null | undefined) {
   return String(value || "").slice(0, 10);
 }
 
@@ -422,6 +428,10 @@ function ClientCard({ data, variant = "compact" }: { data: ClientMiniAppPayload 
           <div className="flex justify-between gap-4 rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] px-3 py-2">
             <span className="text-[var(--text-muted)]">Email</span>
             <span className="min-w-0 truncate text-right text-[var(--text-main)]">{client?.email || "Не указан"}</span>
+          </div>
+          <div className="flex justify-between gap-4 rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] px-3 py-2">
+            <span className="text-[var(--text-muted)]">Дата рождения</span>
+            <span className="min-w-0 truncate text-right text-[var(--text-main)]">{client?.birth_date ? formatDate(client.birth_date) : "Не указана"}</span>
           </div>
         </div>
       ) : null}
@@ -1167,8 +1177,19 @@ function ProfileScreen({
   const sections = [...new Set(athleteProfile.map((field) => field.section).filter(Boolean))];
   const filledFields = athleteProfile.filter(isAthleteValueFilled);
   const [draftValues, setDraftValues] = useState<Record<string, string>>({});
+  const [profileDraft, setProfileDraft] = useState<ClientMiniAppProfileInput>({
+    first_name: "",
+    last_name: "",
+    middle_name: "",
+    phone: "",
+    email: "",
+    birth_date: "",
+  });
   const [saveError, setSaveError] = useState("");
+  const [profileSaveError, setProfileSaveError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
   const [editingAthleteProfile, setEditingAthleteProfile] = useState(false);
 
   useEffect(() => {
@@ -1177,6 +1198,32 @@ function ProfileScreen({
       Object.fromEntries(editableProfileFields.map((field) => [String(field.id), athleteInputValue(field.value)]))
     );
   }, [data?.athlete_profile]);
+
+  useEffect(() => {
+    const client = data?.client;
+    setProfileDraft({
+      first_name: client?.first_name || "",
+      last_name: client?.last_name || "",
+      middle_name: client?.middle_name || "",
+      phone: client?.phone || "",
+      email: client?.email || "",
+      birth_date: dateInputValue(client?.birth_date),
+    });
+  }, [data?.client]);
+
+  async function saveProfile() {
+    setSavingProfile(true);
+    setProfileSaveError("");
+
+    try {
+      onPayloadUpdate(await saveClientMiniAppProfile(initData, profileDraft));
+      setEditingProfile(false);
+    } catch (error) {
+      setProfileSaveError(error instanceof Error ? error.message : "Не удалось сохранить профиль");
+    } finally {
+      setSavingProfile(false);
+    }
+  }
 
   async function saveAthleteProfile() {
     const values = editableFields.map((field) => ({
@@ -1202,6 +1249,100 @@ function ProfileScreen({
   return (
     <div className="space-y-3 px-3 pb-3 pt-2">
       <ClientCard data={data} variant="profile" />
+      <section className="rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.025)] p-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">Личные данные</p>
+          {editingProfile ? (
+            <div className="flex shrink-0 gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  const client = data?.client;
+                  setProfileDraft({
+                    first_name: client?.first_name || "",
+                    last_name: client?.last_name || "",
+                    middle_name: client?.middle_name || "",
+                    phone: client?.phone || "",
+                    email: client?.email || "",
+                    birth_date: dateInputValue(client?.birth_date),
+                  });
+                  setProfileSaveError("");
+                  setEditingProfile(false);
+                }}
+                className="rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1 text-[10px] font-medium text-[var(--text-main)]"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveProfile()}
+                disabled={savingProfile}
+                className="rounded-full bg-[var(--accent)] px-2.5 py-1 text-[10px] font-medium text-[var(--text-inverse)] disabled:opacity-60"
+              >
+                {savingProfile ? "..." : "Сохранить"}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setProfileSaveError("");
+                setEditingProfile(true);
+              }}
+              className="rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1 text-[10px] font-medium text-[var(--text-main)]"
+            >
+              Изменить
+            </button>
+          )}
+        </div>
+        {editingProfile ? (
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <input
+              value={profileDraft.last_name}
+              onChange={(event) => setProfileDraft((state) => ({ ...state, last_name: event.target.value }))}
+              placeholder="Фамилия"
+              className="h-10 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)] focus:border-[rgba(94,244,216,0.28)]"
+            />
+            <input
+              value={profileDraft.first_name}
+              onChange={(event) => setProfileDraft((state) => ({ ...state, first_name: event.target.value }))}
+              placeholder="Имя"
+              className="h-10 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)] focus:border-[rgba(94,244,216,0.28)]"
+            />
+            <input
+              value={profileDraft.middle_name}
+              onChange={(event) => setProfileDraft((state) => ({ ...state, middle_name: event.target.value }))}
+              placeholder="Отчество"
+              className="h-10 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)] focus:border-[rgba(94,244,216,0.28)]"
+            />
+            <input
+              value={profileDraft.birth_date}
+              onChange={(event) => setProfileDraft((state) => ({ ...state, birth_date: event.target.value }))}
+              type="date"
+              className="h-10 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 text-xs text-[var(--text-main)] outline-none focus:border-[rgba(94,244,216,0.28)]"
+            />
+            <input
+              value={profileDraft.phone}
+              onChange={(event) => setProfileDraft((state) => ({ ...state, phone: event.target.value }))}
+              placeholder="Телефон"
+              inputMode="tel"
+              className="col-span-2 h-10 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)] focus:border-[rgba(94,244,216,0.28)]"
+            />
+            <input
+              value={profileDraft.email}
+              onChange={(event) => setProfileDraft((state) => ({ ...state, email: event.target.value }))}
+              placeholder="Email"
+              inputMode="email"
+              className="col-span-2 h-10 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)] focus:border-[rgba(94,244,216,0.28)]"
+            />
+          </div>
+        ) : (
+          <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+            Здесь можно обновить имя, телефон, email и дату рождения. Штрихкод формируется автоматически.
+          </p>
+        )}
+        {profileSaveError ? <p className="mt-2 text-xs text-[#ffb599]">{profileSaveError}</p> : null}
+      </section>
       <section className="grid grid-cols-1 gap-2">
         <Stat label="посещений" value={data?.visits.length ?? "..."} onClick={onOpenVisits} />
       </section>

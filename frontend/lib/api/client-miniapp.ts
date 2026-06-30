@@ -5,8 +5,18 @@ export type ClientMiniAppClient = {
   middle_name: string | null;
   phone: string | null;
   email: string | null;
+  birth_date: string | null;
   barcode: string | null;
   status: string;
+};
+
+export type ClientMiniAppProfileInput = {
+  first_name: string;
+  last_name: string;
+  middle_name: string;
+  phone: string;
+  email: string;
+  birth_date: string;
 };
 
 export type ClientMiniAppSubscription = {
@@ -243,6 +253,25 @@ export async function saveClientMiniAppAthleteProfile(
   const data = (await response.json().catch(() => null)) as ApiEnvelope<ClientMiniAppPayload> | null;
   if (!response.ok || !data?.data) {
     throw new Error(data?.error || "Не удалось сохранить профиль атлета");
+  }
+
+  return data.data;
+}
+
+export async function saveClientMiniAppProfile(
+  initData: string,
+  profile: ClientMiniAppProfileInput
+): Promise<ClientMiniAppPayload> {
+  const response = await fetch("/auth-api/telegram-client-miniapp-profile", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ init_data: initData, profile }),
+  });
+
+  const data = (await response.json().catch(() => null)) as ApiEnvelope<ClientMiniAppPayload> | null;
+  if (!response.ok || !data?.data) {
+    throw new Error(data?.error || "Не удалось сохранить профиль");
   }
 
   return data.data;

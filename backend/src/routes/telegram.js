@@ -5,6 +5,7 @@ const { handleTelegramUpdate } = require('../services/telegram-bot');
 const { resolveModules } = require('../authz');
 const { pool, query } = require('../db');
 const logger = require('../services/logger');
+const { ensureClientBarcode, generateClientBarcode } = require('../services/client-barcode');
 const { expireActiveSubscriptions } = require('../services/subscription-validity');
 const { createTrainingBooking } = require('../services/booking-attendance');
 const { assertSubscriptionAccess } = require('../services/subscription-access');
@@ -152,9 +153,45 @@ function toClientIdentity(client) {
     middle_name: client.middle_name,
     phone: client.phone,
     email: client.email,
+    birth_date: client.birth_date,
     barcode: client.barcode,
     status: client.status,
   };
+}
+
+function normalizeOptionalText(value, maxLength = 255) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const text = String(value).trim();
+  return text ? text.slice(0, maxLength) : null;
+}
+
+function normalizeOptionalDate(value) {
+  const text = normalizeOptionalText(value, 10);
+  if (!text) {
+    return null;
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    throw Object.assign(new Error('Укажите дату рождения в формате ГГГГ-ММ-ДД'), { statusCode: 422 });
+  }
+
+  return text;
+}
+
+function normalizeOptionalEmail(value) {
+  const email = normalizeOptionalText(value, 255);
+  if (!email) {
+    return null;
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw Object.assign(new Error('Укажите корректный email'), { statusCode: 422 });
+  }
+
+  return email;
 }
 
 function normalizeClientAthleteValue(field, value) {
@@ -278,6 +315,71 @@ async function updateClientMiniAppAthleteProfile(clientId, values, updatedBy) {
   }
 }
 
+async function updateClientMiniAppProfile(clientId, body) {
+  const firstName = normalizeOptionalText(body?.first_name, 120);
+  const lastName = normalizeOptionalText(body?.last_name, 120);
+  const middleName = normalizeOptionalText(body?.middle_name, 120);
+  const phone = normalizeOptionalText(body?.phone, 40);
+  const email = normalizeOptionalEmail(body?.email);
+  const birthDate = normalizeOptionalDate(body?.birth_date);
+  const phoneNormalized = phone ? normalizePhone(phone) : null;
+
+  if (!firstName) {
+    return { status: 'invalid', error: 'Укажите имя' };
+  }
+
+  if (!lastName) {
+    return { status: 'invalid', error: 'Укажите фамилию' };
+  }
+
+  if (phone && !phoneNormalized) {
+    return { status: 'invalid', error: 'Укажите корректный номер телефона' };
+  }
+
+  if (phoneNormalized) {
+    const { rows: duplicateRows } = await query(
+      `
+        SELECT id
+        FROM clients
+        WHERE phone_normalized = $1
+          AND id <> $2
+          AND status <> 'deleted'
+        LIMIT 1
+      `,
+      [phoneNormalized, clientId]
+    );
+
+    if (duplicateRows[0]) {
+      return { status: 'duplicate_phone' };
+    }
+  }
+
+  await ensureClientBarcode(clientId);
+
+  const { rows } = await query(
+    `
+      UPDATE clients
+      SET first_name = $1,
+          last_name = $2,
+          middle_name = $3,
+          phone = $4,
+          phone_normalized = $5,
+          email = $6,
+          birth_date = $7,
+          updated_at = NOW()
+      WHERE id = $8
+      RETURNING id
+    `,
+    [firstName, lastName, middleName, phone, phoneNormalized, email, birthDate, clientId]
+  );
+
+  if (!rows[0]) {
+    return { status: 'not_found' };
+  }
+
+  return { status: 'saved' };
+}
+
 async function logClientMiniAppAuthAttempt({
   action,
   status,
@@ -315,9 +417,11 @@ async function logClientMiniAppAuthAttempt({
 }
 
 async function buildClientMiniAppPayload(clientId) {
+  await ensureClientBarcode(clientId);
+
   const { rows: clientRows } = await query(
     `
-      SELECT id, first_name, last_name, middle_name, phone, email, barcode, status
+      SELECT id, first_name, last_name, middle_name, phone, email, birth_date, barcode, status
       FROM clients
       WHERE id = $1
       LIMIT 1
@@ -733,12 +837,13 @@ async function createAndLinkClientByPhone(telegramUser, phone) {
   }
 
   const { firstName, lastName } = getTelegramClientName(telegramUser);
+  const barcode = await generateClientBarcode();
   const { rows } = await query(
     `
       INSERT INTO clients (
-        first_name, last_name, phone, phone_normalized, telegram_id, status, comment, updated_at
+        first_name, last_name, phone, phone_normalized, telegram_id, barcode, status, comment, updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, 'active', $6, NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, NOW())
       RETURNING id
     `,
     [
@@ -747,6 +852,7 @@ async function createAndLinkClientByPhone(telegramUser, phone) {
       phone,
       phoneNormalized,
       telegramId,
+      barcode,
       'Создан через клиентский Telegram Mini App',
     ]
   );
@@ -1258,6 +1364,45 @@ router.post('/client-miniapp-trainer-review', async (req, res) => {
     return res.json({ success: true, data: result.data });
   } catch (error) {
     return sendInternalError(res, error, { route: 'telegram.client_miniapp_trainer_review' });
+  }
+});
+
+router.post('/client-miniapp-profile', async (req, res) => {
+  try {
+    const clientBotToken = getClientBotToken();
+    if (!clientBotToken) {
+      return res.status(503).json({ success: false, error: 'Telegram client bot token is not configured' });
+    }
+
+    const telegramUser = parseTelegramInitData(req.body?.init_data, clientBotToken);
+    if (!telegramUser?.id) {
+      return res.status(401).json({ success: false, error: 'Telegram авторизация недействительна' });
+    }
+
+    const clientId = await findClientIdByTelegramId(telegramUser.id);
+    if (!clientId) {
+      return res.status(403).json({ success: false, error: 'Telegram не привязан к клиенту HardZone' });
+    }
+
+    const result = await updateClientMiniAppProfile(clientId, req.body?.profile || req.body);
+    const errorByStatus = {
+      invalid: [422, result.error || 'Проверьте данные профиля'],
+      duplicate_phone: [409, 'Этот номер уже указан у другого клиента. Обратитесь к администратору.'],
+      not_found: [404, 'Клиент не найден'],
+    };
+
+    if (result.status !== 'saved') {
+      const [status, message] = errorByStatus[result.status] || [500, 'Не удалось сохранить профиль'];
+      return res.status(status).json({ success: false, error: message });
+    }
+
+    return res.json({ success: true, data: await buildClientMiniAppPayload(clientId) });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, error: error.message });
+    }
+
+    return sendInternalError(res, error, { route: 'telegram.client_miniapp_profile' });
   }
 });
 

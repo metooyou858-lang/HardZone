@@ -8,6 +8,7 @@ const authMiddleware = require('../middleware/auth');
 const { hasModuleAccess } = require('../authz');
 const { pool } = require('../db');
 const { addClientSearchConditions } = require('../services/client-search');
+const { generateClientBarcode } = require('../services/client-barcode');
 const { expireActiveSubscriptions } = require('../services/subscription-validity');
 const { sendInternalError } = require('../utils/http-response');
 
@@ -75,21 +76,6 @@ function removeLocalClientPhoto(photoUrl) {
   }
 
   fs.rm(path.join(clientPhotoDir, path.basename(photoUrl)), { force: true }, () => {});
-}
-
-async function generateClientBarcode() {
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const barcode = `${String(Date.now()).slice(-8)}${Math.floor(Math.random() * 100)
-      .toString()
-      .padStart(2, '0')}`;
-    const { rowCount } = await pool.query('SELECT 1 FROM clients WHERE barcode = $1 LIMIT 1', [barcode]);
-
-    if (rowCount === 0) {
-      return barcode;
-    }
-  }
-
-  throw new Error('Не удалось сгенерировать уникальный штрихкод');
 }
 
 function normalizeRoleList(value, fallback) {
