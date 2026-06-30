@@ -663,6 +663,103 @@ async function linkClientByPhone(telegramId, phone) {
   };
 }
 
+function getTelegramClientName(telegramUser) {
+  const firstName = String(telegramUser?.first_name || '').trim();
+  const lastName = String(telegramUser?.last_name || '').trim();
+  const username = String(telegramUser?.username || '').trim();
+
+  return {
+    firstName: firstName || username || 'Клиент',
+    lastName,
+  };
+}
+
+async function createAndLinkClientByPhone(telegramUser, phone) {
+  const phoneNormalized = normalizePhone(phone);
+
+  if (!phoneNormalized) {
+    return { status: 'invalid_phone' };
+  }
+
+  const telegramId = String(telegramUser.id);
+  const existingByTelegram = await findClientIdByTelegramId(telegramId);
+  if (existingByTelegram) {
+    return {
+      status: 'linked',
+      phone_normalized: phoneNormalized,
+      matched_client_id: existingByTelegram,
+      data: await buildClientMiniAppPayload(existingByTelegram),
+    };
+  }
+
+  const { rows: inactiveTelegramRows } = await query(
+    `
+      SELECT id
+      FROM clients
+      WHERE telegram_id = $1
+      LIMIT 1
+    `,
+    [telegramId]
+  );
+
+  if (inactiveTelegramRows[0]) {
+    const { firstName, lastName } = getTelegramClientName(telegramUser);
+    const clientId = inactiveTelegramRows[0].id;
+    await query(
+      `
+        UPDATE clients
+        SET first_name = CASE WHEN NULLIF(first_name, '') IS NULL THEN $1 ELSE first_name END,
+            last_name = CASE WHEN NULLIF(last_name, '') IS NULL THEN $2 ELSE last_name END,
+            phone = COALESCE(NULLIF(phone, ''), $3),
+            phone_normalized = $4,
+            status = 'active',
+            updated_at = NOW()
+        WHERE id = $5
+      `,
+      [firstName, lastName, phone, phoneNormalized, clientId]
+    );
+
+    return {
+      status: 'linked',
+      phone_normalized: phoneNormalized,
+      matched_client_id: clientId,
+      data: await buildClientMiniAppPayload(clientId),
+    };
+  }
+
+  const linkedResult = await linkClientByPhone(telegramId, phone);
+  if (linkedResult.status !== 'not_found') {
+    return linkedResult;
+  }
+
+  const { firstName, lastName } = getTelegramClientName(telegramUser);
+  const { rows } = await query(
+    `
+      INSERT INTO clients (
+        first_name, last_name, phone, phone_normalized, telegram_id, status, comment, updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, 'active', $6, NOW())
+      RETURNING id
+    `,
+    [
+      firstName,
+      lastName,
+      phone,
+      phoneNormalized,
+      telegramId,
+      'Создан через клиентский Telegram Mini App',
+    ]
+  );
+
+  const clientId = rows[0].id;
+  return {
+    status: 'created',
+    phone_normalized: phoneNormalized,
+    matched_client_id: clientId,
+    data: await buildClientMiniAppPayload(clientId),
+  };
+}
+
 function combineSlotDateTime(dateValue, timeValue) {
   return new Date(`${String(dateValue).slice(0, 10)}T${String(timeValue).slice(0, 8)}`);
 }
@@ -748,12 +845,7 @@ async function bookClientSlot(telegramId, slotId) {
       }
     }
 
-    if (!subscription) {
-      await dbClient.query('ROLLBACK');
-      return { status: 'no_subscription' };
-    }
-
-    const placesCount = subscription.is_family ? 2 : 1;
+    const placesCount = subscription?.is_family ? 2 : 1;
 
     const { rows: countRows } = await dbClient.query(
       `
@@ -790,13 +882,18 @@ async function bookClientSlot(telegramId, slotId) {
     await createTrainingBooking(dbClient, {
       slotId: slot.id,
       clientId,
-      subscriptionId: subscription.id,
+      subscriptionId: subscription?.id || null,
       bookedBy: `telegram-client:${telegramId}`,
-      allowUnpaid: false,
+      allowUnpaid: !subscription,
+      unpaidReason: 'no_subscription',
     });
 
     await dbClient.query('COMMIT');
-    return { status: 'booked', data: await buildClientMiniAppPayload(clientId) };
+    return {
+      status: 'booked',
+      coverage_status: subscription ? 'pending' : 'unpaid',
+      data: await buildClientMiniAppPayload(clientId),
+    };
   } catch (error) {
     await dbClient.query('ROLLBACK');
     throw error;
@@ -1012,7 +1109,7 @@ router.post('/client-miniapp-link-phone', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Telegram авторизация недействительна' });
     }
 
-    const result = await linkClientByPhone(telegramUser.id, req.body?.phone);
+    const result = await createAndLinkClientByPhone(telegramUser, req.body?.phone);
     if (result.status === 'invalid_phone') {
       await logClientMiniAppAuthAttempt({
         action: 'link_phone',
@@ -1021,17 +1118,6 @@ router.post('/client-miniapp-link-phone', async (req, res) => {
         errorCode: 'invalid_phone',
       });
       return res.status(422).json({ success: false, error: 'Укажите корректный номер телефона' });
-    }
-
-    if (result.status === 'not_found') {
-      await logClientMiniAppAuthAttempt({
-        action: 'link_phone',
-        status: 'not_found',
-        telegramUser,
-        phoneNormalized: result.phone_normalized,
-        errorCode: 'client_phone_not_found',
-      });
-      return res.status(404).json({ success: false, error: 'Номер не найден среди клиентов HardZone' });
     }
 
     if (result.status === 'duplicate') {
@@ -1050,7 +1136,7 @@ router.post('/client-miniapp-link-phone', async (req, res) => {
 
     await logClientMiniAppAuthAttempt({
       action: 'link_phone',
-      status: 'linked',
+      status: result.status === 'created' ? 'created' : 'linked',
       telegramUser,
       phoneNormalized: result.phone_normalized,
       matchedClientId: result.matched_client_id,
@@ -1234,5 +1320,10 @@ router.post('/webhook/:secret', async (req, res) => {
     return sendInternalError(res, error, { route: 'telegram.webhook' });
   }
 });
+
+router.findClientByTelegramId = findClientByTelegramId;
+router.buildClientMiniAppPayload = buildClientMiniAppPayload;
+router.bookClientSlot = bookClientSlot;
+router.cancelClientBooking = cancelClientBooking;
 
 module.exports = router;

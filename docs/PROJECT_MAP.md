@@ -6,6 +6,7 @@
 
 HardZone - monorepo CRM для CrossFit-клуба:
 
+- Публичный бренд в интерфейсах, Telegram/MAX и клиентских текстах: HardZone. Скриншоты и примеры других клубов не переносить как название бренда.
 - `frontend/` - Next.js App Router, TypeScript, Tailwind CSS.
 - `backend/` - Node.js, Express, PostgreSQL.
 - `backend/src/db/migrations/` - SQL-миграции, применяются через `npm run migrate`.

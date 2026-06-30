@@ -1351,7 +1351,7 @@ function ClientAuthScreen({
         <h1 className="mt-2 text-xl font-medium leading-tight text-[var(--text-main)]">Вход клиента</h1>
         <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
           {canEnterPhone
-            ? "Введите телефон из вашей карточки клиента."
+            ? "Введите телефон для входа или регистрации."
             : "Откройте это приложение из Telegram, чтобы мы получили защищённые данные запуска."}
         </p>
 

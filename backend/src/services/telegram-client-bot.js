@@ -1,19 +1,31 @@
 const logger = require('./logger');
+const { query } = require('../db');
+const telegramRoute = require('../routes/telegram');
 
 const TELEGRAM_API_BASE = process.env.TELEGRAM_API_BASE || 'https://api.telegram.org/bot';
+
+const MENU_BUTTONS = {
+  schedule: '📅 Расписание',
+  account: '👤 Личный кабинет',
+  subscriptions: '💳 Абонементы',
+  trainers: '🏋️ Тренеры',
+  contacts: '📍 Контакты',
+};
 
 function getClientMiniAppUrl() {
   const baseUrl = process.env.FRONTEND_BASE_URL || process.env.APP_BASE_URL || 'https://hardzone.space';
   return `${String(baseUrl).replace(/\/+$/, '')}/telegram/client`;
 }
 
-function configureClientMenuButton() {
+async function configureClientMenuButton() {
+  await telegramClientRequest('setMyCommands', {
+    commands: [
+      { command: 'start', description: 'Открыть главное меню' },
+    ],
+  });
+
   return telegramClientRequest('setChatMenuButton', {
-    menu_button: {
-      type: 'web_app',
-      text: 'Открыть HardZone',
-      web_app: { url: getClientMiniAppUrl() },
-    },
+    menu_button: { type: 'commands' },
   });
 }
 
@@ -54,32 +66,518 @@ function sendClientMessage(chatId, text, replyMarkup = null) {
   });
 }
 
-function buildClientMiniAppKeyboard() {
+function editClientMessage(chatId, messageId, text, replyMarkup = null) {
+  return telegramClientRequest('editMessageText', {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    parse_mode: 'HTML',
+    disable_web_page_preview: true,
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+  });
+}
+
+function answerCallback(callbackQueryId, text = null, showAlert = false) {
+  return telegramClientRequest('answerCallbackQuery', {
+    callback_query_id: callbackQueryId,
+    ...(text ? { text, show_alert: showAlert } : {}),
+  });
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function compact(value, fallback = 'Не указано') {
+  const text = String(value ?? '').trim();
+  return text || fallback;
+}
+
+function formatMoney(value) {
+  const amount = Number(value || 0);
+  return new Intl.NumberFormat('ru-RU', {
+    maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
+  }).format(amount);
+}
+
+function toDateKey(dateValue) {
+  if (dateValue instanceof Date) {
+    const year = dateValue.getFullYear();
+    const month = String(dateValue.getMonth() + 1).padStart(2, '0');
+    const day = String(dateValue.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return String(dateValue || '').slice(0, 10);
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function getDateKeyByOffset(offset = 0) {
+  return toDateKey(addDays(new Date(), Number(offset || 0)));
+}
+
+function formatDateLabel(dateKey) {
+  const [year, month, day] = String(dateKey).split('-').map(Number);
+  if (!year || !month || !day) return String(dateKey || '');
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+  }).format(new Date(year, month - 1, day));
+}
+
+function formatTime(timeValue) {
+  return String(timeValue || '').slice(0, 5);
+}
+
+function getClientName(payload, telegramUser = null) {
+  const client = payload?.client;
+  const firstName = compact(client?.first_name || telegramUser?.first_name, 'друг');
+  return firstName;
+}
+
+function buildMainReplyKeyboard() {
+  return {
+    keyboard: [
+      [{ text: MENU_BUTTONS.schedule }, { text: MENU_BUTTONS.account }],
+      [{ text: MENU_BUTTONS.subscriptions }, { text: MENU_BUTTONS.trainers }],
+      [{ text: MENU_BUTTONS.contacts }],
+    ],
+    resize_keyboard: true,
+    is_persistent: true,
+  };
+}
+
+function buildClientMiniAppKeyboard(text = 'Открыть личный кабинет') {
   return {
     inline_keyboard: [[
       {
-        text: 'Открыть HardZone',
+        text,
         web_app: { url: getClientMiniAppUrl() },
       },
     ]],
   };
 }
 
+function buildMainMenuText(payload, telegramUser = null) {
+  const name = escapeHtml(getClientName(payload, telegramUser));
+  return [
+    `👋 Привет, ${name}!`,
+    '',
+    'HardZone — кроссфит-зал для функционального тренинга, силы, выносливости и живого спортивного комьюнити.',
+    '',
+    'Здесь можно посмотреть расписание, записаться на тренировку, проверить абонемент и открыть личный кабинет.',
+    '',
+    'Выберите действие ниже:',
+  ].join('\n');
+}
+
+function buildNotLinkedText() {
+  return [
+    '<b>HardZone</b>',
+    '',
+    'Telegram пока не привязан к клиенту HardZone.',
+    'Откройте личный кабинет и подтвердите номер телефона, чтобы пользоваться записью и расписанием в чате.',
+  ].join('\n');
+}
+
+function getSlotsForDay(payload, dayOffset = 0) {
+  const dateKey = getDateKeyByOffset(dayOffset);
+  return (payload?.available_slots || [])
+    .filter((slot) => toDateKey(slot.date) === dateKey)
+    .sort((left, right) => String(left.start_time).localeCompare(String(right.start_time)));
+}
+
+function findSlot(payload, slotId) {
+  return (payload?.available_slots || []).find((slot) => String(slot.id) === String(slotId)) || null;
+}
+
+function buildScheduleKeyboard(slots, dayOffset) {
+  const rows = slots.map((slot) => [{
+    text: `${formatTime(slot.start_time)} ${compact(slot.training_type_name, 'Тренировка')}`,
+    callback_data: `slot:${slot.id}:${dayOffset}`,
+  }]);
+
+  rows.push([
+    { text: dayOffset === 0 ? 'Показать завтра' : 'Показать сегодня', callback_data: `schedule:${dayOffset === 0 ? 1 : 0}` },
+  ]);
+
+  return { inline_keyboard: rows };
+}
+
+function buildScheduleText(slots, dayOffset = 0, title = 'Расписание') {
+  const dateKey = getDateKeyByOffset(dayOffset);
+  const label = dayOffset === 0 ? 'сегодня' : 'завтра';
+  const lines = [`<b>${escapeHtml(title)} на ${label}, ${escapeHtml(formatDateLabel(dateKey))}</b>`, ''];
+
+  if (slots.length === 0) {
+    lines.push('На этот день доступных групповых тренировок для записи нет.');
+    return lines.join('\n');
+  }
+
+  lines.push('Выберите тренировку:');
+  return lines.join('\n');
+}
+
+function buildSlotKeyboard(slot, dayOffset = 0) {
+  const rows = [[{ text: 'Записаться', callback_data: `book:${slot.id}` }]];
+  rows.push([{ text: 'Назад к расписанию', callback_data: `schedule:${dayOffset}` }]);
+  return { inline_keyboard: rows };
+}
+
+function buildSlotText(slot) {
+  const title = compact(slot.training_type_name, 'Тренировка');
+  const dateLabel = formatDateLabel(toDateKey(slot.date));
+  const freePlaces = Number(slot.free_places ?? Math.max(0, Number(slot.capacity || 0) - Number(slot.booked_count || 0)));
+  const lines = [
+    `<b>${escapeHtml(title)}</b>`,
+    `${escapeHtml(dateLabel)}, ${escapeHtml(formatTime(slot.start_time))}`,
+    '',
+    `Тренер: ${escapeHtml(compact(slot.trainer_name))}`,
+    `Свободно: ${freePlaces} из ${Number(slot.capacity || 0)} мест`,
+  ];
+
+  if (slot.is_booked) {
+    lines.push('', '✅ Вы уже записаны на эту тренировку.');
+  }
+
+  const description = compact(slot.training_type_description, '');
+  const audience = compact(slot.training_type_audience, '');
+  const location = compact(slot.training_type_location, '');
+  const note = compact(slot.training_type_booking_note, '');
+
+  if (description || audience || location || note) {
+    lines.push('');
+  }
+
+  if (description) lines.push(escapeHtml(description));
+  if (audience) lines.push(`Для кого: ${escapeHtml(audience)}`);
+  if (location) lines.push(`Локация: ${escapeHtml(location)}`);
+  if (note) lines.push(escapeHtml(note));
+
+  return lines.join('\n');
+}
+
+function buildBookingResultText(slot = null, result = null) {
+  const isUnpaid = result?.coverage_status === 'unpaid';
+  const paymentLine = isUnpaid
+    ? 'Абонемент не найден: запись создана к оплате. Оплатите тренировку на ресепшене перед занятием.'
+    : 'Списание с абонемента произойдет только при отметке посещения в клубе.';
+
+  if (!slot) {
+    return [
+      '✅ Вы записаны на тренировку.',
+      '',
+      paymentLine,
+    ].join('\n');
+  }
+
+  return [
+    `✅ Вы записаны на ${escapeHtml(compact(slot.training_type_name, 'тренировку'))}.`,
+    `${escapeHtml(formatDateLabel(toDateKey(slot.date)))}, ${escapeHtml(formatTime(slot.start_time))}`,
+    '',
+    paymentLine,
+  ].join('\n');
+}
+
+function mapBookingStatus(status) {
+  const messages = {
+    not_linked: 'Telegram не привязан к клиенту HardZone.',
+    slot_not_found: 'Занятие не найдено или отменено.',
+    slot_started: 'Запись закрыта после начала занятия.',
+    booking_closed: 'Запись закрыта.',
+    no_subscription: 'Абонемент не найден. Запись будет создана к оплате.',
+    no_places: 'Нет свободных мест.',
+    already_booked: 'Вы уже записаны на это занятие.',
+  };
+  return messages[status] || 'Не удалось записаться.';
+}
+
+function buildTrainersKeyboard(payload) {
+  const rows = (payload?.trainers || []).map((trainer) => [{
+    text: `${compact(trainer.first_name, '')} ${compact(trainer.last_name, '')}`.trim(),
+    callback_data: `trainer:${trainer.id}`,
+  }]);
+
+  return { inline_keyboard: rows };
+}
+
+function buildTrainersText(payload) {
+  if (!payload?.trainers?.length) {
+    return '<b>Тренеры HardZone</b>\n\nПока список тренеров не заполнен в CRM.';
+  }
+
+  return '<b>Тренеры HardZone</b>\n\nВыберите тренера:';
+}
+
+function buildTrainerText(trainer) {
+  const name = `${compact(trainer.first_name, '')} ${compact(trainer.last_name, '')}`.trim();
+  const lines = [`<b>${escapeHtml(name || 'Тренер')}</b>`];
+
+  if (trainer.position) lines.push(escapeHtml(trainer.position));
+  if (trainer.bio) lines.push('', escapeHtml(trainer.bio));
+
+  const specialties = Array.isArray(trainer.specialties) ? trainer.specialties.filter(Boolean) : [];
+  if (specialties.length) {
+    lines.push('', `Специализация: ${escapeHtml(specialties.join(', '))}`);
+  }
+
+  if (!trainer.bio) {
+    lines.push('', 'Описание тренера пока не заполнено в CRM.');
+  }
+
+  return lines.join('\n');
+}
+
+function buildTrainerKeyboard() {
+  return { inline_keyboard: [[{ text: 'Назад к тренерам', callback_data: 'trainers' }]] };
+}
+
+async function getSubscriptionProducts() {
+  const { rows } = await query(
+    `
+      SELECT
+        p.name,
+        p.sale_price,
+        psp.subscription_type,
+        psp.visits_total,
+        psp.validity_days,
+        psp.is_family
+      FROM products p
+      JOIN product_subscription_params psp ON psp.product_id = p.id
+      LEFT JOIN product_types pt ON pt.id = p.product_type_id
+      WHERE p.is_archived = false
+        AND p.sale_price IS NOT NULL
+        AND p.sale_price > 0
+        AND (pt.id IS NULL OR pt.has_sale_price = true)
+      ORDER BY
+        CASE psp.subscription_type
+          WHEN 'unlimited' THEN 0
+          WHEN 'period' THEN 1
+          WHEN 'visits' THEN 2
+          WHEN 'single' THEN 3
+          ELSE 4
+        END,
+        psp.visits_total DESC NULLS LAST,
+        p.sale_price DESC,
+        p.name
+      LIMIT 30
+    `
+  );
+
+  return rows;
+}
+
+function buildSubscriptionLine(item) {
+  const isSingle = item.subscription_type === 'single';
+  const period = !isSingle && item.validity_days ? ` / ${Number(item.validity_days)} дней` : '';
+  const family = item.is_family ? ' · семейный' : '';
+  return `• ${escapeHtml(item.name)} — ${formatMoney(item.sale_price)} ₽${period}${family}`;
+}
+
+async function buildSubscriptionsText(payload) {
+  const products = await getSubscriptionProducts();
+  const activeSubscription = (payload?.subscriptions || []).find((item) => item.status === 'active');
+  const subscriptions = products.filter((item) => item.subscription_type !== 'single');
+  const singleVisits = products.filter((item) => item.subscription_type === 'single');
+  const lines = ['<b>Абонементы HardZone</b>'];
+
+  if (activeSubscription) {
+    lines.push(
+      '',
+      '<b>Ваш абонемент</b>',
+      escapeHtml(compact(activeSubscription.product_name, activeSubscription.type)),
+      activeSubscription.visits_left === null || activeSubscription.visits_left === undefined
+        ? 'Остаток: безлимит'
+        : `Осталось: ${Number(activeSubscription.visits_left)}`
+    );
+  }
+
+  lines.push('', '<b>Абонементы клуба</b>');
+  if (subscriptions.length) {
+    lines.push(...subscriptions.map(buildSubscriptionLine));
+  } else {
+    lines.push('Цены пока не заполнены в CRM.');
+  }
+
+  if (singleVisits.length) {
+    lines.push('', '<b>Разовое посещение</b>', ...singleVisits.map(buildSubscriptionLine));
+  }
+
+  return lines.join('\n');
+}
+
+function buildContactsText() {
+  return [
+    '<b>Контакты HardZone</b>',
+    '',
+    'Раздел скоро появится здесь.',
+  ].join('\n');
+}
+
+async function loadClientPayload(telegramId) {
+  if (!telegramId) return null;
+  return telegramRoute.findClientByTelegramId(telegramId);
+}
+
+async function sendMainMenu(chatId, telegramUser = null) {
+  const payload = await loadClientPayload(telegramUser?.id);
+  if (!payload) {
+    await sendClientMessage(chatId, buildNotLinkedText(), buildClientMiniAppKeyboard('Привязать аккаунт'));
+    return;
+  }
+
+  await sendClientMessage(chatId, buildMainMenuText(payload, telegramUser), buildMainReplyKeyboard());
+}
+
+async function sendSchedule(chatId, telegramId, dayOffset = 0, title = 'Расписание') {
+  const payload = await loadClientPayload(telegramId);
+  if (!payload) {
+    await sendClientMessage(chatId, buildNotLinkedText(), buildClientMiniAppKeyboard('Привязать аккаунт'));
+    return;
+  }
+
+  const slots = getSlotsForDay(payload, dayOffset);
+  await sendClientMessage(chatId, buildScheduleText(slots, dayOffset, title), buildScheduleKeyboard(slots, dayOffset));
+}
+
 async function handleClientMessage(message) {
   const chatId = message.chat?.id;
+  const telegramUser = message.from;
+  const text = String(message.text || '').trim();
   if (!chatId) {
     return;
   }
 
-  await sendClientMessage(
-    chatId,
-    [
-      '<b>HardZone</b>',
-      '',
-      'Откройте личный кабинет, чтобы посмотреть абонемент, свои записи и записаться на тренировку.',
-    ].join('\n'),
-    buildClientMiniAppKeyboard()
-  );
+  if (!text || text === '/start' || text === '/menu') {
+    await sendMainMenu(chatId, telegramUser);
+    return;
+  }
+
+  if (text === MENU_BUTTONS.schedule) {
+    await sendSchedule(chatId, telegramUser?.id, 0, 'Расписание');
+    return;
+  }
+
+  if (text === MENU_BUTTONS.account) {
+    await sendClientMessage(
+      chatId,
+      'Откройте личный кабинет, чтобы посмотреть свои записи, абонемент, историю посещений и профиль.',
+      buildClientMiniAppKeyboard()
+    );
+    return;
+  }
+
+  const payload = await loadClientPayload(telegramUser?.id);
+  if (!payload) {
+    await sendClientMessage(chatId, buildNotLinkedText(), buildClientMiniAppKeyboard('Привязать аккаунт'));
+    return;
+  }
+
+  if (text === MENU_BUTTONS.subscriptions) {
+    await sendClientMessage(chatId, await buildSubscriptionsText(payload));
+    return;
+  }
+
+  if (text === MENU_BUTTONS.trainers) {
+    await sendClientMessage(chatId, buildTrainersText(payload), buildTrainersKeyboard(payload));
+    return;
+  }
+
+  if (text === MENU_BUTTONS.contacts) {
+    await sendClientMessage(chatId, buildContactsText());
+    return;
+  }
+
+  await sendMainMenu(chatId, telegramUser);
+}
+
+async function handleClientCallback(callbackQuery) {
+  const callbackId = callbackQuery.id;
+  const chatId = callbackQuery.message?.chat?.id;
+  const messageId = callbackQuery.message?.message_id;
+  const telegramId = callbackQuery.from?.id;
+  const data = String(callbackQuery.data || '');
+
+  if (!chatId || !messageId) {
+    await answerCallback(callbackId);
+    return;
+  }
+
+  const payload = await loadClientPayload(telegramId);
+  if (!payload) {
+    await answerCallback(callbackId, 'Telegram не привязан к клиенту HardZone', true);
+    await editClientMessage(chatId, messageId, buildNotLinkedText(), buildClientMiniAppKeyboard('Привязать аккаунт'));
+    return;
+  }
+
+  if (data.startsWith('schedule:')) {
+    const dayOffset = Number.parseInt(data.split(':')[1] || '0', 10) || 0;
+    const slots = getSlotsForDay(payload, dayOffset);
+    await answerCallback(callbackId);
+    await editClientMessage(chatId, messageId, buildScheduleText(slots, dayOffset), buildScheduleKeyboard(slots, dayOffset));
+    return;
+  }
+
+  if (data.startsWith('slot:')) {
+    const [, slotId, dayOffsetRaw] = data.split(':');
+    const slot = findSlot(payload, slotId);
+    const dayOffset = Number.parseInt(dayOffsetRaw || '0', 10) || 0;
+    await answerCallback(callbackId);
+
+    if (!slot) {
+      await editClientMessage(chatId, messageId, 'Занятие не найдено или уже недоступно.', {
+        inline_keyboard: [[{ text: 'Назад к расписанию', callback_data: `schedule:${dayOffset}` }]],
+      });
+      return;
+    }
+
+    await editClientMessage(chatId, messageId, buildSlotText(slot), buildSlotKeyboard(slot, dayOffset));
+    return;
+  }
+
+  if (data.startsWith('book:')) {
+    const slotId = data.split(':')[1];
+    const slot = findSlot(payload, slotId);
+    const result = await telegramRoute.bookClientSlot(telegramId, slotId);
+    if (result.status !== 'booked') {
+      await answerCallback(callbackId, mapBookingStatus(result.status), true);
+      return;
+    }
+
+    await answerCallback(callbackId, 'Вы записаны');
+    await editClientMessage(chatId, messageId, buildBookingResultText(slot, result), buildClientMiniAppKeyboard('Открыть личный кабинет'));
+    return;
+  }
+
+  if (data === 'trainers') {
+    await answerCallback(callbackId);
+    await editClientMessage(chatId, messageId, buildTrainersText(payload), buildTrainersKeyboard(payload));
+    return;
+  }
+
+  if (data.startsWith('trainer:')) {
+    const trainerId = data.split(':')[1];
+    const trainer = (payload.trainers || []).find((item) => String(item.id) === String(trainerId));
+    await answerCallback(callbackId);
+
+    if (!trainer) {
+      await editClientMessage(chatId, messageId, 'Тренер не найден.', buildTrainerKeyboard());
+      return;
+    }
+
+    await editClientMessage(chatId, messageId, buildTrainerText(trainer), buildTrainerKeyboard());
+    return;
+  }
+
+  await answerCallback(callbackId);
 }
 
 async function handleTelegramClientUpdate(update) {
@@ -89,10 +587,17 @@ async function handleTelegramClientUpdate(update) {
   }
 
   if (update.callback_query?.id) {
-    await telegramClientRequest('answerCallbackQuery', { callback_query_id: update.callback_query.id }).catch((error) => {
-      logger.warn('telegram_client', {
-        action: 'answer_callback_failed',
+    await handleClientCallback(update.callback_query).catch(async (error) => {
+      logger.error('telegram_client', {
+        action: 'handle_callback_failed',
         message: error.message,
+        stack: error.stack,
+      });
+      await answerCallback(update.callback_query.id, 'Не удалось выполнить действие', true).catch((answerError) => {
+        logger.warn('telegram_client', {
+          action: 'answer_callback_failed',
+          message: answerError.message,
+        });
       });
     });
   }
