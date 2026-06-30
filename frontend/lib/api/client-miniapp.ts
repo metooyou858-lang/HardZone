@@ -6,6 +6,7 @@ export type ClientMiniAppClient = {
   phone: string | null;
   email: string | null;
   birth_date: string | null;
+  photo_url: string | null;
   barcode: string | null;
   status: string;
 };

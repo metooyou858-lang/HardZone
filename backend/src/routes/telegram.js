@@ -154,9 +154,41 @@ function toClientIdentity(client) {
     phone: client.phone,
     email: client.email,
     birth_date: client.birth_date,
+    photo_url: client.photo_url,
     barcode: client.barcode,
     status: client.status,
   };
+}
+
+function normalizeTelegramPhotoUrl(value) {
+  const photoUrl = normalizeOptionalText(value, 2048);
+  if (!photoUrl) {
+    return null;
+  }
+
+  try {
+    const url = new URL(photoUrl);
+    return url.protocol === 'https:' ? photoUrl : null;
+  } catch {
+    return null;
+  }
+}
+
+async function syncClientTelegramPhoto(clientId, telegramUser) {
+  const photoUrl = normalizeTelegramPhotoUrl(telegramUser?.photo_url);
+  if (!photoUrl) {
+    return;
+  }
+
+  await query(
+    `
+      UPDATE clients
+      SET photo_url = COALESCE(NULLIF(photo_url, ''), $1),
+          updated_at = CASE WHEN NULLIF(photo_url, '') IS NULL THEN NOW() ELSE updated_at END
+      WHERE id = $2
+    `,
+    [photoUrl, clientId]
+  );
 }
 
 function normalizeOptionalText(value, maxLength = 255) {
@@ -420,7 +452,7 @@ async function buildClientMiniAppPayload(clientId) {
 
   const { rows: clientRows } = await query(
     `
-      SELECT id, first_name, last_name, middle_name, phone, email, birth_date, barcode, status
+      SELECT id, first_name, last_name, middle_name, phone, email, birth_date, photo_url, barcode, status
       FROM clients
       WHERE id = $1
       LIMIT 1
@@ -718,7 +750,7 @@ async function findClientByTelegramId(telegramId) {
   return buildClientMiniAppPayload(clientId);
 }
 
-async function linkClientByPhone(telegramId, phone) {
+async function linkClientByPhone(telegramId, phone, telegramUser = null) {
   const phoneNormalized = normalizePhone(phone);
 
   if (!phoneNormalized) {
@@ -745,6 +777,7 @@ async function linkClientByPhone(telegramId, phone) {
   }
 
   const matchedClientId = rows[0].id;
+  const telegramPhotoUrl = normalizeTelegramPhotoUrl(telegramUser?.photo_url);
 
   await query(
     `
@@ -752,10 +785,11 @@ async function linkClientByPhone(telegramId, phone) {
       SET telegram_id = $1,
           phone = COALESCE(NULLIF(phone, ''), $2),
           phone_normalized = $3,
+          photo_url = COALESCE(NULLIF(photo_url, ''), $4),
           updated_at = NOW()
-      WHERE id = $4
+      WHERE id = $5
     `,
-    [String(telegramId), phone, phoneNormalized, matchedClientId]
+    [String(telegramId), phone, phoneNormalized, telegramPhotoUrl, matchedClientId]
   );
 
   return {
@@ -787,6 +821,7 @@ async function createAndLinkClientByPhone(telegramUser, phone) {
   const telegramId = String(telegramUser.id);
   const existingByTelegram = await findClientIdByTelegramId(telegramId);
   if (existingByTelegram) {
+    await syncClientTelegramPhoto(existingByTelegram, telegramUser);
     return {
       status: 'linked',
       phone_normalized: phoneNormalized,
@@ -808,6 +843,7 @@ async function createAndLinkClientByPhone(telegramUser, phone) {
   if (inactiveTelegramRows[0]) {
     const { firstName, lastName } = getTelegramClientName(telegramUser);
     const clientId = inactiveTelegramRows[0].id;
+    const telegramPhotoUrl = normalizeTelegramPhotoUrl(telegramUser?.photo_url);
     await query(
       `
         UPDATE clients
@@ -815,11 +851,12 @@ async function createAndLinkClientByPhone(telegramUser, phone) {
             last_name = CASE WHEN NULLIF(last_name, '') IS NULL THEN $2 ELSE last_name END,
             phone = COALESCE(NULLIF(phone, ''), $3),
             phone_normalized = $4,
+            photo_url = COALESCE(NULLIF(photo_url, ''), $5),
             status = 'active',
             updated_at = NOW()
-        WHERE id = $5
+        WHERE id = $6
       `,
-      [firstName, lastName, phone, phoneNormalized, clientId]
+      [firstName, lastName, phone, phoneNormalized, telegramPhotoUrl, clientId]
     );
 
     return {
@@ -830,19 +867,20 @@ async function createAndLinkClientByPhone(telegramUser, phone) {
     };
   }
 
-  const linkedResult = await linkClientByPhone(telegramId, phone);
+  const linkedResult = await linkClientByPhone(telegramId, phone, telegramUser);
   if (linkedResult.status !== 'not_found') {
     return linkedResult;
   }
 
   const { firstName, lastName } = getTelegramClientName(telegramUser);
+  const telegramPhotoUrl = normalizeTelegramPhotoUrl(telegramUser?.photo_url);
   const barcode = await generateClientBarcode();
   const { rows } = await query(
     `
       INSERT INTO clients (
-        first_name, last_name, phone, phone_normalized, telegram_id, barcode, status, comment, updated_at
+        first_name, last_name, phone, phone_normalized, telegram_id, photo_url, barcode, status, comment, updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8, NOW())
       RETURNING id
     `,
     [
@@ -851,6 +889,7 @@ async function createAndLinkClientByPhone(telegramUser, phone) {
       phone,
       phoneNormalized,
       telegramId,
+      telegramPhotoUrl,
       barcode,
       'Создан через клиентский Telegram Mini App',
     ]
@@ -1178,7 +1217,7 @@ router.post('/client-miniapp-login', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Telegram авторизация недействительна' });
     }
 
-    const data = await findClientByTelegramId(telegramUser.id);
+    let data = await findClientByTelegramId(telegramUser.id);
     if (!data) {
       await logClientMiniAppAuthAttempt({
         action: 'login',
@@ -1188,6 +1227,9 @@ router.post('/client-miniapp-login', async (req, res) => {
       });
       return res.status(403).json({ success: false, error: 'Telegram не привязан к клиенту HardZone' });
     }
+
+    await syncClientTelegramPhoto(data.client.id, telegramUser);
+    data = await buildClientMiniAppPayload(data.client.id);
 
     await logClientMiniAppAuthAttempt({
       action: 'login',

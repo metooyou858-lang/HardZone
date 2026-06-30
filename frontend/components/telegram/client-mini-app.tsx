@@ -426,6 +426,7 @@ function ClientCard({
   const name = clientName(data);
   const client = data?.client;
   const barcode = data?.client.barcode || "";
+  const photoUrl = client?.photo_url || "";
   const isProfile = variant === "profile";
   const statusLabel = client?.status === "active" ? "Активный клиент" : client?.status ? `Статус: ${client.status}` : "Профиль клиента";
   const draft = profileDraft || {
@@ -445,8 +446,12 @@ function ClientCard({
       <div className="absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,#5ef4d8,#f6d46b,#ff7a59)]" />
       <div className="pointer-events-none absolute -right-16 -top-16 h-32 w-32 rounded-full bg-[rgba(94,244,216,0.10)] blur-2xl" />
       <div className={`relative flex gap-3 ${isProfile ? "items-start" : "items-center"}`}>
-        <div className={`${isProfile ? "h-14 w-14 text-xl" : "h-10 w-10 text-base"} flex shrink-0 items-center justify-center rounded-full bg-[rgba(255,255,255,0.92)] font-medium text-[var(--text-inverse)] shadow-[0_8px_20px_rgba(0,0,0,0.24)]`}>
-          {name.trim().slice(0, 1).toUpperCase()}
+        <div className={`${isProfile ? "h-14 w-14 text-xl" : "h-10 w-10 text-base"} flex shrink-0 overflow-hidden rounded-full bg-[rgba(255,255,255,0.92)] font-medium text-[var(--text-inverse)] shadow-[0_8px_20px_rgba(0,0,0,0.24)]`}>
+          {photoUrl ? (
+            <img src={photoUrl} alt={name} className="h-full w-full object-cover" />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center">{name.trim().slice(0, 1).toUpperCase()}</span>
+          )}
         </div>
         <div className="min-w-0 flex-1">
           {isProfile ? <p className="mb-1 text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">{statusLabel}</p> : null}
