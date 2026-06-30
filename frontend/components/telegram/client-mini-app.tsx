@@ -398,12 +398,47 @@ function BottomNav({ active, onChange }: { active: ClientTab; onChange: (tab: Cl
   );
 }
 
-function ClientCard({ data, variant = "compact" }: { data: ClientMiniAppPayload | null; variant?: "compact" | "profile" }) {
+type ClientCardProps = {
+  data: ClientMiniAppPayload | null;
+  variant?: "compact" | "profile";
+  editingProfile?: boolean;
+  profileDraft?: ClientMiniAppProfileInput;
+  profileSaveError?: string;
+  savingProfile?: boolean;
+  onProfileDraftChange?: (draft: ClientMiniAppProfileInput) => void;
+  onEditProfile?: () => void;
+  onCancelProfile?: () => void;
+  onSaveProfile?: () => void;
+};
+
+function ClientCard({
+  data,
+  variant = "compact",
+  editingProfile = false,
+  profileDraft,
+  profileSaveError = "",
+  savingProfile = false,
+  onProfileDraftChange,
+  onEditProfile,
+  onCancelProfile,
+  onSaveProfile,
+}: ClientCardProps) {
   const name = clientName(data);
   const client = data?.client;
   const barcode = data?.client.barcode || "";
   const isProfile = variant === "profile";
   const statusLabel = client?.status === "active" ? "Активный клиент" : client?.status ? `Статус: ${client.status}` : "Профиль клиента";
+  const draft = profileDraft || {
+    first_name: client?.first_name || "",
+    last_name: client?.last_name || "",
+    middle_name: client?.middle_name || "",
+    phone: client?.phone || "",
+    email: client?.email || "",
+    birth_date: dateInputValue(client?.birth_date),
+  };
+  const updateDraft = (patch: Partial<ClientMiniAppProfileInput>) => {
+    onProfileDraftChange?.({ ...draft, ...patch });
+  };
 
   return (
     <section className="relative overflow-hidden rounded-lg border border-[rgba(255,255,255,0.08)] bg-[linear-gradient(135deg,#11151d_0%,#121923_100%)] p-3 shadow-[0_14px_34px_rgba(0,0,0,0.24)]">
@@ -415,24 +450,106 @@ function ClientCard({ data, variant = "compact" }: { data: ClientMiniAppPayload 
         </div>
         <div className="min-w-0 flex-1">
           {isProfile ? <p className="mb-1 text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">{statusLabel}</p> : null}
-          <h2 className={`${isProfile ? "text-lg" : "text-sm"} truncate font-medium leading-tight text-[var(--text-main)]`}>{name}</h2>
+          {editingProfile ? (
+            <div className="grid grid-cols-2 gap-1.5">
+              <input
+                value={draft.last_name}
+                onChange={(event) => updateDraft({ last_name: event.target.value })}
+                placeholder="Фамилия"
+                className="h-8 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
+              />
+              <input
+                value={draft.first_name}
+                onChange={(event) => updateDraft({ first_name: event.target.value })}
+                placeholder="Имя"
+                className="h-8 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
+              />
+              <input
+                value={draft.middle_name}
+                onChange={(event) => updateDraft({ middle_name: event.target.value })}
+                placeholder="Отчество"
+                className="col-span-2 h-8 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
+              />
+            </div>
+          ) : (
+            <h2 className={`${isProfile ? "text-lg" : "text-sm"} truncate font-medium leading-tight text-[var(--text-main)]`}>{name}</h2>
+          )}
           <p className="mt-1 truncate font-[family:var(--font-mono)] text-[11px] text-[var(--text-muted)]">ЛК {cabinetNumber(data)}</p>
         </div>
+        {isProfile ? (
+          editingProfile ? (
+            <div className="flex shrink-0 flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={onCancelProfile}
+                className="rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1 text-[10px] font-medium text-[var(--text-main)]"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={onSaveProfile}
+                disabled={savingProfile}
+                className="rounded-full bg-[var(--accent)] px-2.5 py-1 text-[10px] font-medium text-[var(--text-inverse)] disabled:opacity-60"
+              >
+                {savingProfile ? "..." : "Сохранить"}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onEditProfile}
+              className="shrink-0 rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1 text-[10px] font-medium text-[var(--text-main)]"
+            >
+              Изменить
+            </button>
+          )
+        ) : null}
       </div>
       {isProfile ? (
         <div className="relative mt-3 grid gap-2 text-xs">
           <div className="flex justify-between gap-4 rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] px-3 py-2">
             <span className="text-[var(--text-muted)]">Телефон</span>
-            <span className="min-w-0 truncate text-right text-[var(--text-main)]">{client?.phone || "Не указан"}</span>
+            {editingProfile ? (
+              <input
+                value={draft.phone}
+                onChange={(event) => updateDraft({ phone: event.target.value })}
+                placeholder="Телефон"
+                inputMode="tel"
+                className="min-w-0 flex-1 bg-transparent text-right text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
+              />
+            ) : (
+              <span className="min-w-0 truncate text-right text-[var(--text-main)]">{client?.phone || "Не указан"}</span>
+            )}
           </div>
           <div className="flex justify-between gap-4 rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] px-3 py-2">
             <span className="text-[var(--text-muted)]">Email</span>
-            <span className="min-w-0 truncate text-right text-[var(--text-main)]">{client?.email || "Не указан"}</span>
+            {editingProfile ? (
+              <input
+                value={draft.email}
+                onChange={(event) => updateDraft({ email: event.target.value })}
+                placeholder="Email"
+                inputMode="email"
+                className="min-w-0 flex-1 bg-transparent text-right text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
+              />
+            ) : (
+              <span className="min-w-0 truncate text-right text-[var(--text-main)]">{client?.email || "Не указан"}</span>
+            )}
           </div>
           <div className="flex justify-between gap-4 rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] px-3 py-2">
             <span className="text-[var(--text-muted)]">Дата рождения</span>
-            <span className="min-w-0 truncate text-right text-[var(--text-main)]">{client?.birth_date ? formatDate(client.birth_date) : "Не указана"}</span>
+            {editingProfile ? (
+              <input
+                value={draft.birth_date}
+                onChange={(event) => updateDraft({ birth_date: event.target.value })}
+                type="date"
+                className="min-w-0 flex-1 bg-transparent text-right text-[var(--text-main)] outline-none"
+              />
+            ) : (
+              <span className="min-w-0 truncate text-right text-[var(--text-main)]">{client?.birth_date ? formatDate(client.birth_date) : "Не указана"}</span>
+            )}
           </div>
+          {profileSaveError ? <p className="text-xs text-[#ffb599]">{profileSaveError}</p> : null}
         </div>
       ) : null}
       {!isProfile ? (
@@ -1248,101 +1365,33 @@ function ProfileScreen({
 
   return (
     <div className="space-y-3 px-3 pb-3 pt-2">
-      <ClientCard data={data} variant="profile" />
-      <section className="rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.025)] p-3">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">Личные данные</p>
-          {editingProfile ? (
-            <div className="flex shrink-0 gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  const client = data?.client;
-                  setProfileDraft({
-                    first_name: client?.first_name || "",
-                    last_name: client?.last_name || "",
-                    middle_name: client?.middle_name || "",
-                    phone: client?.phone || "",
-                    email: client?.email || "",
-                    birth_date: dateInputValue(client?.birth_date),
-                  });
-                  setProfileSaveError("");
-                  setEditingProfile(false);
-                }}
-                className="rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1 text-[10px] font-medium text-[var(--text-main)]"
-              >
-                Отмена
-              </button>
-              <button
-                type="button"
-                onClick={() => void saveProfile()}
-                disabled={savingProfile}
-                className="rounded-full bg-[var(--accent)] px-2.5 py-1 text-[10px] font-medium text-[var(--text-inverse)] disabled:opacity-60"
-              >
-                {savingProfile ? "..." : "Сохранить"}
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setProfileSaveError("");
-                setEditingProfile(true);
-              }}
-              className="rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1 text-[10px] font-medium text-[var(--text-main)]"
-            >
-              Изменить
-            </button>
-          )}
-        </div>
-        {editingProfile ? (
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <input
-              value={profileDraft.last_name}
-              onChange={(event) => setProfileDraft((state) => ({ ...state, last_name: event.target.value }))}
-              placeholder="Фамилия"
-              className="h-10 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)] focus:border-[rgba(94,244,216,0.28)]"
-            />
-            <input
-              value={profileDraft.first_name}
-              onChange={(event) => setProfileDraft((state) => ({ ...state, first_name: event.target.value }))}
-              placeholder="Имя"
-              className="h-10 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)] focus:border-[rgba(94,244,216,0.28)]"
-            />
-            <input
-              value={profileDraft.middle_name}
-              onChange={(event) => setProfileDraft((state) => ({ ...state, middle_name: event.target.value }))}
-              placeholder="Отчество"
-              className="h-10 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)] focus:border-[rgba(94,244,216,0.28)]"
-            />
-            <input
-              value={profileDraft.birth_date}
-              onChange={(event) => setProfileDraft((state) => ({ ...state, birth_date: event.target.value }))}
-              type="date"
-              className="h-10 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 text-xs text-[var(--text-main)] outline-none focus:border-[rgba(94,244,216,0.28)]"
-            />
-            <input
-              value={profileDraft.phone}
-              onChange={(event) => setProfileDraft((state) => ({ ...state, phone: event.target.value }))}
-              placeholder="Телефон"
-              inputMode="tel"
-              className="col-span-2 h-10 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)] focus:border-[rgba(94,244,216,0.28)]"
-            />
-            <input
-              value={profileDraft.email}
-              onChange={(event) => setProfileDraft((state) => ({ ...state, email: event.target.value }))}
-              placeholder="Email"
-              inputMode="email"
-              className="col-span-2 h-10 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)] focus:border-[rgba(94,244,216,0.28)]"
-            />
-          </div>
-        ) : (
-          <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
-            Здесь можно обновить имя, телефон, email и дату рождения. Штрихкод формируется автоматически.
-          </p>
-        )}
-        {profileSaveError ? <p className="mt-2 text-xs text-[#ffb599]">{profileSaveError}</p> : null}
-      </section>
+      <ClientCard
+        data={data}
+        variant="profile"
+        editingProfile={editingProfile}
+        profileDraft={profileDraft}
+        profileSaveError={profileSaveError}
+        savingProfile={savingProfile}
+        onProfileDraftChange={setProfileDraft}
+        onEditProfile={() => {
+          setProfileSaveError("");
+          setEditingProfile(true);
+        }}
+        onCancelProfile={() => {
+          const client = data?.client;
+          setProfileDraft({
+            first_name: client?.first_name || "",
+            last_name: client?.last_name || "",
+            middle_name: client?.middle_name || "",
+            phone: client?.phone || "",
+            email: client?.email || "",
+            birth_date: dateInputValue(client?.birth_date),
+          });
+          setProfileSaveError("");
+          setEditingProfile(false);
+        }}
+        onSaveProfile={() => void saveProfile()}
+      />
       <section className="grid grid-cols-1 gap-2">
         <Stat label="посещений" value={data?.visits.length ?? "..."} onClick={onOpenVisits} />
       </section>
