@@ -230,3 +230,101 @@ test('cash send-to-aqsi stores AQSI receipt id from completed v4 receipt operati
   assert.equal(rows[0].fiscal_fn, 'fn-ci');
   assert.equal(rows[0].fiscal_fp, '67890');
 });
+
+test('cash AQSI rejection stays visible in paid history and can be retried', async () => {
+  const user = await createUser();
+  const sessionUser = {
+    id: Number(user.id),
+    name: user.name,
+    username: user.username,
+    role: user.role,
+  };
+
+  const order = await createOpenOrder({
+    total_amount: 120,
+    items_count: 1,
+  });
+
+  await query(
+    `INSERT INTO order_items (order_id, kind, name, sale_price, quantity)
+     VALUES ($1, 'product', 'CI Product Rejection', 120, 1)`,
+    [order.id]
+  );
+
+  const rejection = new Error('{"error":"Смена не открыта"}');
+  rejection.isAqsiRejection = true;
+  mockSendOrderToAqsiV4 = async () => {
+    throw rejection;
+  };
+
+  const failed = await request(`/api/orders/${order.id}/send-to-aqsi`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-hardzone-session': createSessionToken(sessionUser),
+    },
+    body: JSON.stringify({ payment_type: 'cash' }),
+  });
+
+  assert.equal(failed.response.status, 500);
+
+  const { rows: failedRows } = await query(
+    'SELECT aqsi_sent_at, aqsi_receipt_status, aqsi_error FROM orders WHERE id = $1',
+    [order.id]
+  );
+
+  assert.equal(failedRows[0].aqsi_sent_at, null);
+  assert.equal(failedRows[0].aqsi_receipt_status, 'error');
+  assert.match(failedRows[0].aqsi_error, /Смена не открыта/);
+
+  const history = await request('/api/orders?paid=true&limit=50', {
+    headers: {
+      'x-hardzone-session': createSessionToken(sessionUser),
+    },
+  });
+
+  assert.equal(history.response.status, 200);
+  assert.equal(history.body.success, true);
+  assert.ok(history.body.data.some((item) => item.id === order.id));
+
+  mockSendOrderToAqsiV4 = async () => ({ operationId: 'ci-cash-retry-op' });
+  mockPollOperation = async () => ({
+    status: 'Completed',
+    result: JSON.stringify({
+      id: 'ci-cash-retry-receipt',
+      info: {
+        dateTime: '2026-06-17T12:05:00.000+10:00',
+        docInfo: {
+          docNumber: 12346,
+          fiscalStorageNumber: 'fn-ci-retry',
+          docFiscalAttributeInt: 67891,
+          deviceRegNumber: 'kkt-ci',
+        },
+        hasMarkingCodeErrors: false,
+      },
+    }),
+  });
+
+  const retried = await request(`/api/orders/${order.id}/send-to-aqsi`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-hardzone-session': createSessionToken(sessionUser),
+    },
+    body: JSON.stringify({ payment_type: 'cash' }),
+  });
+
+  assert.equal(retried.response.status, 200);
+  assert.equal(retried.body.success, true);
+
+  const { rows: retriedRows } = await query(
+    'SELECT status, payment_type, aqsi_receipt_id, aqsi_receipt_status, aqsi_error FROM orders WHERE id = $1',
+    [order.id]
+  );
+
+  assert.equal(retriedRows[0].status, 'confirmed');
+  assert.equal(retriedRows[0].payment_type, 'cash');
+  assert.equal(retriedRows[0].aqsi_receipt_id, 'ci-cash-retry-receipt');
+  assert.equal(retriedRows[0].aqsi_receipt_status, 'completed');
+  assert.equal(retriedRows[0].aqsi_error, null);
+});

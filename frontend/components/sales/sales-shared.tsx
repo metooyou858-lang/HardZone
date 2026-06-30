@@ -344,7 +344,14 @@ export function getClientSubscriptionLabel(client: ClientListItem) {
 }
 
 export function isOrderWithReceiptError(order: Order) {
-  return order.status === "open" && order.aqsi_payment_status === "completed";
+  return (
+    order.status === "open" &&
+    (
+      order.aqsi_payment_status === "completed" ||
+      order.aqsi_receipt_status === "error" ||
+      Boolean(order.aqsi_error && (order.aqsi_sent_at || order.aqsi_receipt_operation_id))
+    )
+  );
 }
 
 export function shouldDisplayInHistory(order: Order, filter: HistoryFilter) {

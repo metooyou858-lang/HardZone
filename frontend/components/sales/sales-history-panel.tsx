@@ -106,9 +106,19 @@ export function SalesHistoryPanel({
               const detailLoading = detailLoadingId === historyOrder.id;
               const refunding = refundingId === historyOrder.id;
               const syncingHistoryOrder = syncingOrderId === historyOrder.id;
+              const receiptHasTrace = Boolean(
+                historyOrder.aqsi_receipt_id ||
+                  historyOrder.aqsi_sent_at ||
+                  historyOrder.aqsi_payment_operation_id ||
+                  historyOrder.aqsi_slip_id ||
+                  historyOrder.aqsi_receipt_operation_id
+              );
+              const hasReceiptError = isOrderWithReceiptError(historyOrder);
               const canCheckPayment =
                 canRecoverSalesAqsi &&
-                historyOrder.status === "open" && historyOrder.items_count > 0 && !!historyOrder.aqsi_receipt_id;
+                hasReceiptError &&
+                historyOrder.items_count > 0 &&
+                receiptHasTrace;
               const canRefund =
                 canRefundSales &&
                 (historyOrder.status === "confirmed" || historyOrder.status === "partially_refunded");
@@ -156,11 +166,11 @@ export function SalesHistoryPanel({
                             disabled={syncingHistoryOrder}
                             className={getHistoryActionButtonClass("accent")}
                           >
-                            {syncingHistoryOrder ? "Проверяем..." : "Проверить оплату"}
+                            {syncingHistoryOrder ? "Проверяем..." : "Восстановить чек"}
                           </button>
                         ) : (
                           <div className="flex flex-wrap items-center gap-1.5">
-                            {isOrderWithReceiptError(historyOrder) ? (
+                            {hasReceiptError ? (
                               <span className="inline-flex rounded-full border border-[rgba(255,116,57,0.4)] bg-[rgba(255,116,57,0.1)] px-3 py-1 text-xs text-[var(--danger)]">
                                 Ошибка чека
                               </span>
@@ -202,6 +212,19 @@ export function SalesHistoryPanel({
 
                   {isExpanded && (
                     <div className="border-t border-[var(--line-soft)] bg-[var(--bg-panel)] px-5 py-4">
+                      {hasReceiptError && (
+                        <div className="mb-3 rounded-2xl border border-[rgba(255,116,57,0.28)] bg-[rgba(255,116,57,0.08)] px-4 py-3 text-sm text-[var(--danger)]">
+                          <p className="font-medium">Фискализация не завершена</p>
+                          <p className="mt-1 break-words text-xs">
+                            {historyOrder.aqsi_error || "Касса не вернула подробность ошибки"}
+                          </p>
+                          {historyOrder.aqsi_receipt_operation_id && (
+                            <p className="mt-1 break-all text-[11px] text-[var(--text-muted)]">
+                              Операция AQSI: {historyOrder.aqsi_receipt_operation_id}
+                            </p>
+                          )}
+                        </div>
+                      )}
                       {detailLoading ? (
                         <div className="py-6 text-sm text-[var(--text-muted)]">Загружаем состав заказа...</div>
                       ) : detail ? (

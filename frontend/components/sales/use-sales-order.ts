@@ -306,6 +306,7 @@ export function useSalesOrder({
       if (order) {
         await basketApi.refreshOrder(order.id).catch(() => {});
       }
+      onHistoryChanged?.();
       setBanner({
         tone: "error",
         text: error instanceof Error ? error.message : "Не удалось отправить чек",

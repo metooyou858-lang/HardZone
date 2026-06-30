@@ -636,6 +636,16 @@ function orderRequiresClient(items) {
   return items.some((item) => item.kind === 'service' || item.kind === 'subscription');
 }
 
+function hasAqsiReceiptLock(order) {
+  return (
+    order.aqsi_receipt_status === 'pending' ||
+    (
+      order.aqsi_receipt_status === 'error' &&
+      Boolean(order.aqsi_sent_at || order.aqsi_receipt_operation_id || order.aqsi_receipt_id)
+    )
+  );
+}
+
 async function getOpenOrder(client, orderId) {
   const { rows } = await client.query('SELECT * FROM orders WHERE id = $1', [orderId]);
   const order = rows[0];
@@ -653,8 +663,7 @@ async function getOpenOrder(client, orderId) {
     order.aqsi_payment_operation_id ||
     order.aqsi_slip_id ||
     order.aqsi_receipt_operation_id ||
-    order.aqsi_receipt_status === 'pending' ||
-    order.aqsi_receipt_status === 'error'
+    hasAqsiReceiptLock(order)
   ) {
     return { error: { code: 409, message: 'Заказ уже передан на кассу' } };
   }
@@ -697,7 +706,12 @@ router.get('/', async (req, res) => {
     const params = [];
 
     if (paid === 'true') {
-      sql += ` WHERE (o.aqsi_payment_status = 'completed' OR o.status IN ('confirmed', 'partially_refunded', 'refunded'))`;
+      sql += ` WHERE (
+        o.aqsi_payment_status = 'completed'
+        OR o.aqsi_receipt_status IN ('error', 'marking_error')
+        OR (o.aqsi_error IS NOT NULL AND (o.aqsi_sent_at IS NOT NULL OR o.aqsi_receipt_operation_id IS NOT NULL))
+        OR o.status IN ('confirmed', 'partially_refunded', 'refunded')
+      )`;
       if (status) {
         params.push(status);
         sql += ` AND o.status = $${params.length}`;
@@ -1197,8 +1211,7 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
       order.aqsi_payment_operation_id ||
       order.aqsi_slip_id ||
       order.aqsi_receipt_operation_id ||
-      order.aqsi_receipt_status === 'pending' ||
-      order.aqsi_receipt_status === 'error'
+      hasAqsiReceiptLock(order)
     ) {
       validationError = { code: 409, message: 'Заказ уже передан на кассу' };
     } else if (order.items_count === 0) {
@@ -1287,7 +1300,10 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
     // AQSI validation errors are definite failures. Network/timeouts are uncertain:
     // keep aqsi_sent_at so recovery/manual reconciliation can inspect the order.
     if (err.isAqsiRejection) {
-      await pool.query('UPDATE orders SET aqsi_sent_at = NULL, aqsi_error = $2 WHERE id = $1', [orderId, err.message]).catch(() => {});
+      await pool.query(
+        'UPDATE orders SET aqsi_sent_at = NULL, aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
+        [orderId, 'error', err.message]
+      ).catch(() => {});
     } else {
       await pool.query(
         'UPDATE orders SET aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
