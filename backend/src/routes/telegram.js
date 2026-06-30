@@ -343,7 +343,6 @@ async function updateClientMiniAppProfile(clientId, body) {
         FROM clients
         WHERE phone_normalized = $1
           AND id <> $2
-          AND status <> 'deleted'
         LIMIT 1
       `,
       [phoneNormalized, clientId]
