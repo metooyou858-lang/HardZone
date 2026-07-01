@@ -38,6 +38,17 @@ function hasSavedReceiptResult(order) {
   );
 }
 
+function hasUsablePaidSlipResult(operation, slipData) {
+  return operation?.status === 'Finishing' && slipData?.content && isSlipPaid(slipData);
+}
+
+function hasUsableReceiptResult(operation) {
+  if (operation?.status !== 'Finishing') return false;
+
+  const fiscalData = extractReceiptFiscalData(operation);
+  return Boolean(fiscalData?.fiscal_fd && fiscalData?.fiscal_fn && fiscalData?.fiscal_fp);
+}
+
 // Сбрасывает все поля платёжного состояния. Единая точка очистки — не забыть ни одно поле.
 // Бросает если БД недоступна — не глотает ошибку молча.
 async function clearPaymentState(orderId, { status = null, error = null } = {}) {
@@ -95,11 +106,12 @@ async function checkReceiptOp(orderId, receiptOperationId) {
   }
 
   const PENDING = new Set(['Pending', 'Processing', 'Finishing']);
-  if (PENDING.has(receiptOp.status)) {
+  const receiptResultReady = hasUsableReceiptResult(receiptOp);
+  if (PENDING.has(receiptOp.status) && !receiptResultReady) {
     return { status: 'pending', operation_status: receiptOp.status };
   }
 
-  if (receiptOp.status !== 'Completed') {
+  if (receiptOp.status !== 'Completed' && !receiptResultReady) {
     const msg = receiptOp.status === 'Timeout'
       ? 'Тайм-аут фискализации чека'
       : (receiptOp.message || `Ошибка фискализации (${receiptOp.status})`);
@@ -605,7 +617,9 @@ async function syncSlip(orderId) {
   }
 
   const PENDING = new Set(['Pending', 'Processing', 'Finishing']);
-  if (PENDING.has(paymentOp.status)) {
+  const slipData = extractSlipResultData(paymentOp);
+  const paidSlipReady = hasUsablePaidSlipResult(paymentOp, slipData);
+  if (PENDING.has(paymentOp.status) && !paidSlipReady) {
     return { status: 'pending', operation_status: paymentOp.status };
   }
 
@@ -620,12 +634,11 @@ async function syncSlip(orderId) {
     return { status: 'failed', message: msg };
   }
 
-  if (paymentOp.status !== 'Completed') {
+  if (paymentOp.status !== 'Completed' && !paidSlipReady) {
     return { status: 'pending', operation_status: paymentOp.status };
   }
 
-  // Completed — parse result to verify actual payment success
-  const slipData = extractSlipResultData(paymentOp);
+  // Completed, or Finishing with an already approved result — verify actual payment success.
   if (!slipData || !slipData.content) {
     await clearPaymentState(orderId, { status: 'failed', error: 'Нет данных результата оплаты' });
     logger.error('orders', { action: 'slip_result_missing', order_id: orderId, result: paymentOp.result });
@@ -679,17 +692,18 @@ async function syncAqsiV4(orderId) {
     }
 
     const PENDING = new Set(['Pending', 'Processing', 'Finishing']);
-    if (PENDING.has(paymentOp.status)) {
+    const slipData = extractSlipResultData(paymentOp);
+    const paidSlipReady = hasUsablePaidSlipResult(paymentOp, slipData);
+    if (PENDING.has(paymentOp.status) && !paidSlipReady) {
       return { status: 'payment_pending', operation_status: paymentOp.status };
     }
 
-    if (paymentOp.status !== 'Completed') {
+    if (paymentOp.status !== 'Completed' && !paidSlipReady) {
       const msg = paymentOp.message || `Оплата не прошла (${paymentOp.status})`;
       await clearPaymentState(orderId, { status: 'failed', error: msg });
       return { status: 'payment_failed', message: msg };
     }
 
-    const slipData = extractSlipResultData(paymentOp);
     if (!slipData || !isSlipPaid(slipData)) {
       await clearPaymentState(orderId, { status: 'declined' });
       const rc = slipData?.content?.responseCode;
@@ -791,11 +805,12 @@ async function syncAqsiV4(orderId) {
   }
 
   const PENDING_RECEIPT = new Set(['Pending', 'Processing', 'Finishing']);
-  if (PENDING_RECEIPT.has(receiptOp.status)) {
+  const receiptResultReady = hasUsableReceiptResult(receiptOp);
+  if (PENDING_RECEIPT.has(receiptOp.status) && !receiptResultReady) {
     return { status: 'receipt_pending', operation_status: receiptOp.status };
   }
 
-  if (receiptOp.status !== 'Completed') {
+  if (receiptOp.status !== 'Completed' && !receiptResultReady) {
     const msg = receiptOp.status === 'Timeout' ? 'Тайм-аут фискализации' : (receiptOp.message || `Ошибка фискализации (${receiptOp.status})`);
     await pool.query(
       `UPDATE orders SET
