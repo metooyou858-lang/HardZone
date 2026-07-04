@@ -161,6 +161,63 @@ export type LegacySubscriptionService = {
   training_types: Array<{ id: string; name: string; color: string | null }>;
 };
 
+export type ClientDuplicateCandidate = {
+  id: string;
+  first_name: string;
+  last_name: string;
+  middle_name: string | null;
+  phone: string | null;
+  phone_normalized: string | null;
+  email: string | null;
+  has_telegram: boolean;
+  has_barcode: boolean;
+  status: ClientStatus;
+  subscriptions_count: number;
+  active_subscriptions_count: number;
+  visits_count: number;
+  bookings_count: number;
+  orders_count: number;
+  profile_values_count: number;
+  created_at: string;
+  updated_at: string;
+  suggested_master: boolean;
+};
+
+export type ClientDuplicateGroup = {
+  group_type: "phone" | "name";
+  group_key: string;
+  group_label: string;
+  reason: string;
+  clients: ClientDuplicateCandidate[];
+};
+
+export type ClientDuplicateResolution = {
+  id: string;
+  group_key: string;
+  group_type: "phone" | "name";
+  master_client_id: string;
+  duplicate_client_id: string;
+  resolution: "master_selected" | "not_duplicate";
+  note: string | null;
+  resolved_by: string | null;
+  resolved_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ClientDuplicateMergeSummary = {
+  duplicate_client_id: string;
+  merged_subscriptions: number;
+  transferred_subscriptions: number;
+  merged_bookings: number;
+  transferred_bookings: number;
+  transferred_visits: number;
+  transferred_orders: number;
+  merged_reviews: number;
+  transferred_reviews: number;
+  transferred_profile_values: number;
+};
+
 type ApiEnvelope<T> = {
   success: boolean;
   data: T;
@@ -186,6 +243,31 @@ export async function fetchClients(params?: {
 
   const response = await apiFetch<ApiEnvelope<ClientListItem[]>>(`/clients?${query.toString()}`);
   return response.data;
+}
+
+export async function fetchClientDuplicateGroups(): Promise<ClientDuplicateGroup[]> {
+  const response = await apiFetch<ApiEnvelope<ClientDuplicateGroup[]>>("/clients/duplicates");
+  return response.data;
+}
+
+export async function resolveClientDuplicateGroup(data: {
+  group_key: string;
+  group_type: "phone" | "name";
+  master_client_id: string | number;
+  duplicate_client_ids: Array<string | number>;
+  resolution?: "master_selected" | "not_duplicate";
+  note?: string | null;
+}): Promise<ClientDuplicateResolution[]> {
+  const response = await apiFetch<
+    ApiEnvelope<{
+      resolutions: ClientDuplicateResolution[];
+      summaries: ClientDuplicateMergeSummary[];
+    }>
+  >("/clients/duplicates/resolve", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return response.data.resolutions;
 }
 
 export async function fetchClient(id: string): Promise<ClientDetail> {

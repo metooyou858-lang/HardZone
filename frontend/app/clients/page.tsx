@@ -21,8 +21,9 @@ import {
   formatClientDate,
   formatClientName,
 } from "@/components/clients/shared";
+import { ClientDuplicatesPanel } from "@/components/clients/duplicates-panel";
 
-type ClientsTab = "clients" | "import";
+type ClientsTab = "clients" | "duplicates" | "import";
 const PAGE_SIZE = 50;
 
 const emptyForm = {
@@ -117,8 +118,10 @@ export default function ClientsPage() {
 
   const canCreateClient = hasModuleAccess(currentModules, "clients_create");
   const canImportClients = hasModuleAccess(currentModules, "clients_import");
+  const canResolveDuplicates = hasModuleAccess(currentModules, "clients_update");
   const tabs: Array<{ id: ClientsTab; label: string }> = [
     { id: "clients", label: "Клиенты" },
+    ...(canResolveDuplicates ? [{ id: "duplicates" as const, label: "Дубли" }] : []),
     ...(canImportClients ? [{ id: "import" as const, label: "Импорт" }] : []),
   ];
 
@@ -153,7 +156,10 @@ export default function ClientsPage() {
     if (tab === "import" && !canImportClients) {
       setTab("clients");
     }
-  }, [canImportClients, tab]);
+    if (tab === "duplicates" && !canResolveDuplicates) {
+      setTab("clients");
+    }
+  }, [canImportClients, canResolveDuplicates, tab]);
 
   useEffect(() => {
     if (tab !== "clients") {
@@ -531,6 +537,8 @@ export default function ClientsPage() {
             )}
           </div>
         </section>
+      ) : tab === "duplicates" && canResolveDuplicates ? (
+        <ClientDuplicatesPanel />
       ) : (
         <section className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-6">
           <div className="max-w-2xl space-y-5">

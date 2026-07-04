@@ -319,6 +319,555 @@ async function getClientAthleteProfile(clientId, { includeInactive = false, acce
   return rows;
 }
 
+function buildDuplicateGroupReason(groupType) {
+  if (groupType === 'phone') {
+    return 'Совпадает нормализованный телефон';
+  }
+
+  return 'Совпадают фамилия и имя';
+}
+
+function subscriptionMergeKey(subscription) {
+  return [
+    subscription.product_id || '',
+    subscription.type || '',
+    subscription.status || '',
+    subscription.visits_total ?? '',
+    subscription.started_at ? subscription.started_at.toISOString?.().slice(0, 10) || String(subscription.started_at).slice(0, 10) : '',
+    subscription.expires_at ? subscription.expires_at.toISOString?.().slice(0, 10) || String(subscription.expires_at).slice(0, 10) : '',
+    subscription.is_family ? 'family' : 'single',
+  ].join('|');
+}
+
+async function mergeDuplicateClient(db, {
+  masterClientId,
+  duplicateClientId,
+  groupKey,
+  groupType,
+  resolution,
+  note,
+  resolvedBy,
+}) {
+  const { rows: clientRows } = await db.query(
+    'SELECT * FROM clients WHERE id = ANY($1::BIGINT[]) FOR UPDATE',
+    [[masterClientId, duplicateClientId]]
+  );
+  const master = clientRows.find((row) => Number(row.id) === masterClientId);
+  const duplicate = clientRows.find((row) => Number(row.id) === duplicateClientId);
+
+  if (!master || !duplicate) {
+    throw Object.assign(new Error('Одна из карточек клиента не найдена'), { statusCode: 404 });
+  }
+
+  if (
+    master.telegram_id &&
+    duplicate.telegram_id &&
+    String(master.telegram_id) !== String(duplicate.telegram_id)
+  ) {
+    throw Object.assign(new Error('У карточек разные Telegram-привязки. Сначала разберите их вручную.'), { statusCode: 409 });
+  }
+
+  if (!master.telegram_id && duplicate.telegram_id) {
+    await db.query('UPDATE clients SET telegram_id = NULL WHERE id = $1', [duplicateClientId]);
+  }
+
+  await db.query(
+    `
+      UPDATE clients
+      SET middle_name = COALESCE(NULLIF(middle_name, ''), NULLIF($2, '')),
+          phone = COALESCE(NULLIF(phone, ''), NULLIF($3, '')),
+          phone_normalized = COALESCE(NULLIF(phone_normalized, ''), NULLIF($4, '')),
+          email = COALESCE(NULLIF(email, ''), NULLIF($5, '')),
+          birth_date = COALESCE(birth_date, $6),
+          photo_url = COALESCE(NULLIF(photo_url, ''), NULLIF($7, '')),
+          telegram_id = COALESCE(NULLIF(telegram_id, ''), NULLIF($8, '')),
+          status_comment = COALESCE(NULLIF(status_comment, ''), NULLIF($9, '')),
+          comment = COALESCE(NULLIF(comment, ''), NULLIF($10, '')),
+          updated_at = NOW()
+      WHERE id = $1
+    `,
+    [
+      masterClientId,
+      duplicate.middle_name,
+      duplicate.phone,
+      duplicate.phone_normalized,
+      duplicate.email,
+      duplicate.birth_date,
+      duplicate.photo_url,
+      duplicate.telegram_id,
+      duplicate.status_comment,
+      duplicate.comment,
+    ]
+  );
+
+  const { rows: masterSubscriptions } = await db.query(
+    'SELECT * FROM client_subscriptions WHERE client_id = $1 ORDER BY id FOR UPDATE',
+    [masterClientId]
+  );
+  const { rows: duplicateSubscriptions } = await db.query(
+    'SELECT * FROM client_subscriptions WHERE client_id = $1 ORDER BY id FOR UPDATE',
+    [duplicateClientId]
+  );
+
+  const masterSubscriptionsByKey = new Map();
+  masterSubscriptions.forEach((subscription) => {
+    if (!masterSubscriptionsByKey.has(subscriptionMergeKey(subscription))) {
+      masterSubscriptionsByKey.set(subscriptionMergeKey(subscription), subscription);
+    }
+  });
+
+  const subscriptionIdMap = new Map();
+  let mergedSubscriptions = 0;
+  let transferredSubscriptions = 0;
+
+  for (const duplicateSubscription of duplicateSubscriptions) {
+    const existingMasterSubscription = masterSubscriptionsByKey.get(subscriptionMergeKey(duplicateSubscription));
+
+    if (existingMasterSubscription) {
+      subscriptionIdMap.set(String(duplicateSubscription.id), existingMasterSubscription.id);
+      await db.query('UPDATE bookings SET subscription_id = $1 WHERE subscription_id = $2', [
+        existingMasterSubscription.id,
+        duplicateSubscription.id,
+      ]);
+      await db.query('UPDATE client_visits SET subscription_id = $1 WHERE subscription_id = $2', [
+        existingMasterSubscription.id,
+        duplicateSubscription.id,
+      ]);
+      await db.query('DELETE FROM subscription_freezes WHERE subscription_id = $1', [duplicateSubscription.id]);
+      await db.query('DELETE FROM client_subscriptions WHERE id = $1', [duplicateSubscription.id]);
+      mergedSubscriptions += 1;
+      continue;
+    }
+
+    await db.query('UPDATE client_subscriptions SET client_id = $1, updated_at = NOW() WHERE id = $2', [
+      masterClientId,
+      duplicateSubscription.id,
+    ]);
+    masterSubscriptionsByKey.set(subscriptionMergeKey(duplicateSubscription), duplicateSubscription);
+    transferredSubscriptions += 1;
+  }
+
+  const { rows: duplicateBookings } = await db.query(
+    'SELECT * FROM bookings WHERE client_id = $1 ORDER BY id FOR UPDATE',
+    [duplicateClientId]
+  );
+  let mergedBookings = 0;
+  let transferredBookings = 0;
+
+  for (const booking of duplicateBookings) {
+    const { rows: existingRows } = await db.query(
+      'SELECT * FROM bookings WHERE slot_id = $1 AND client_id = $2 LIMIT 1 FOR UPDATE',
+      [booking.slot_id, masterClientId]
+    );
+    const existingBooking = existingRows[0];
+
+    if (existingBooking) {
+      await db.query(
+        `
+          UPDATE client_visits
+          SET client_id = $1,
+              booking_id = $2
+          WHERE booking_id = $3
+        `,
+        [masterClientId, existingBooking.id, booking.id]
+      );
+      if (['confirmed', 'attended'].includes(booking.status)) {
+        await db.query(
+          'UPDATE schedule_slots SET booked_count = GREATEST(0, booked_count - $1), updated_at = NOW() WHERE id = $2',
+          [booking.places_count || 1, booking.slot_id]
+        );
+      }
+      await db.query('DELETE FROM bookings WHERE id = $1', [booking.id]);
+      mergedBookings += 1;
+      continue;
+    }
+
+    await db.query('UPDATE bookings SET client_id = $1, updated_at = NOW() WHERE id = $2', [
+      masterClientId,
+      booking.id,
+    ]);
+    transferredBookings += 1;
+  }
+
+  const { rowCount: transferredVisits } = await db.query(
+    'UPDATE client_visits SET client_id = $1 WHERE client_id = $2',
+    [masterClientId, duplicateClientId]
+  );
+
+  const { rowCount: transferredOrders } = await db.query(
+    'UPDATE orders SET client_id = $1 WHERE client_id = $2',
+    [masterClientId, duplicateClientId]
+  );
+
+  const { rows: duplicateReviews } = await db.query(
+    'SELECT * FROM trainer_reviews WHERE client_id = $1 ORDER BY id FOR UPDATE',
+    [duplicateClientId]
+  );
+  let mergedReviews = 0;
+  let transferredReviews = 0;
+
+  for (const review of duplicateReviews) {
+    const { rows: existingRows } = await db.query(
+      'SELECT * FROM trainer_reviews WHERE trainer_id = $1 AND client_id = $2 LIMIT 1 FOR UPDATE',
+      [review.trainer_id, masterClientId]
+    );
+    const existingReview = existingRows[0];
+
+    if (existingReview) {
+      await db.query(
+        `
+          UPDATE trainer_reviews
+          SET comment = COALESCE(NULLIF(comment, ''), NULLIF($2, '')),
+              is_visible = trainer_reviews.is_visible OR $3,
+              updated_at = NOW()
+          WHERE id = $1
+        `,
+        [existingReview.id, review.comment, review.is_visible]
+      );
+      await db.query('DELETE FROM trainer_reviews WHERE id = $1', [review.id]);
+      mergedReviews += 1;
+      continue;
+    }
+
+    await db.query('UPDATE trainer_reviews SET client_id = $1, updated_at = NOW() WHERE id = $2', [
+      masterClientId,
+      review.id,
+    ]);
+    transferredReviews += 1;
+  }
+
+  const { rowCount: transferredProfileValues } = await db.query(
+    `
+      UPDATE client_athlete_profile_values duplicate_value
+      SET client_id = $1,
+          updated_at = NOW()
+      WHERE duplicate_value.client_id = $2
+        AND NOT EXISTS (
+          SELECT 1
+          FROM client_athlete_profile_values master_value
+          WHERE master_value.client_id = $1
+            AND master_value.field_id = duplicate_value.field_id
+        )
+    `,
+    [masterClientId, duplicateClientId]
+  );
+  await db.query('DELETE FROM client_athlete_profile_values WHERE client_id = $1', [duplicateClientId]);
+
+  await db.query(
+    'UPDATE client_miniapp_auth_audit SET matched_client_id = $1 WHERE matched_client_id = $2',
+    [masterClientId, duplicateClientId]
+  );
+
+  const { rows: resolutionRows } = await db.query(
+    `
+      INSERT INTO client_duplicate_resolutions (
+        group_key,
+        group_type,
+        master_client_id,
+        duplicate_client_id,
+        resolution,
+        note,
+        resolved_by,
+        resolved_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+      ON CONFLICT (duplicate_client_id)
+      DO UPDATE SET group_key = EXCLUDED.group_key,
+                    group_type = EXCLUDED.group_type,
+                    master_client_id = EXCLUDED.master_client_id,
+                    resolution = EXCLUDED.resolution,
+                    note = EXCLUDED.note,
+                    resolved_by = EXCLUDED.resolved_by,
+                    resolved_at = NOW(),
+                    updated_at = NOW()
+      RETURNING *
+    `,
+    [groupKey, groupType, masterClientId, duplicateClientId, resolution, note, resolvedBy]
+  );
+
+  await db.query(
+    'UPDATE client_duplicate_resolutions SET master_client_id = $1 WHERE master_client_id = $2',
+    [masterClientId, duplicateClientId]
+  );
+  await db.query('DELETE FROM clients WHERE id = $1', [duplicateClientId]);
+
+  return {
+    resolution: resolutionRows[0],
+    summary: {
+      duplicate_client_id: duplicateClientId,
+      merged_subscriptions: mergedSubscriptions,
+      transferred_subscriptions: transferredSubscriptions,
+      merged_bookings: mergedBookings,
+      transferred_bookings: transferredBookings,
+      transferred_visits: transferredVisits,
+      transferred_orders: transferredOrders,
+      merged_reviews: mergedReviews,
+      transferred_reviews: transferredReviews,
+      transferred_profile_values: transferredProfileValues,
+    },
+  };
+}
+
+router.get('/duplicates', requireClientsRead, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `
+        WITH client_stats AS (
+          SELECT
+            c.id,
+            c.first_name,
+            c.last_name,
+            c.middle_name,
+            c.phone,
+            c.phone_normalized,
+            c.email,
+            c.telegram_id,
+            c.barcode,
+            c.status,
+            c.created_at,
+            c.updated_at,
+            lower(trim(c.last_name)) AS last_name_key,
+            lower(trim(c.first_name)) AS first_name_key,
+            (
+              SELECT count(*)
+              FROM client_subscriptions cs
+              WHERE cs.client_id = c.id
+            )::INT AS subscriptions_count,
+            (
+              SELECT count(*)
+              FROM client_subscriptions cs
+              WHERE cs.client_id = c.id
+                AND cs.status = 'active'
+            )::INT AS active_subscriptions_count,
+            (
+              SELECT count(*)
+              FROM client_visits cv
+              WHERE cv.client_id = c.id
+            )::INT AS visits_count,
+            (
+              SELECT count(*)
+              FROM bookings b
+              WHERE b.client_id = c.id
+            )::INT AS bookings_count,
+            (
+              SELECT count(*)
+              FROM orders o
+              WHERE o.client_id = c.id
+            )::INT AS orders_count,
+            (
+              SELECT count(*)
+              FROM client_athlete_profile_values apv
+              WHERE apv.client_id = c.id
+            )::INT AS profile_values_count
+          FROM clients c
+        ),
+        phone_groups AS (
+          SELECT
+            'phone'::TEXT AS group_type,
+            'phone:' || phone_normalized AS group_key,
+            phone_normalized AS group_label,
+            array_agg(id ORDER BY id) AS client_ids
+          FROM client_stats
+          WHERE NULLIF(phone_normalized, '') IS NOT NULL
+          GROUP BY phone_normalized
+          HAVING count(*) > 1
+        ),
+        name_groups AS (
+          SELECT
+            'name'::TEXT AS group_type,
+            'name:' || last_name_key || ':' || first_name_key AS group_key,
+            concat_ws(' ', max(last_name), max(first_name)) AS group_label,
+            array_agg(id ORDER BY id) AS client_ids
+          FROM client_stats
+          WHERE NULLIF(last_name_key, '') IS NOT NULL
+            AND NULLIF(first_name_key, '') IS NOT NULL
+          GROUP BY last_name_key, first_name_key
+          HAVING count(*) > 1
+        ),
+        groups AS (
+          SELECT * FROM phone_groups
+          UNION ALL
+          SELECT * FROM name_groups
+        ),
+        ranked_members AS (
+          SELECT
+            g.group_type,
+            g.group_key,
+            g.group_label,
+            cs.*,
+            row_number() OVER (
+              PARTITION BY g.group_key
+              ORDER BY
+                (cs.telegram_id IS NOT NULL) DESC,
+                cs.active_subscriptions_count DESC,
+                cs.subscriptions_count DESC,
+                cs.visits_count DESC,
+                cs.bookings_count DESC,
+                cs.orders_count DESC,
+                cs.profile_values_count DESC,
+                cs.updated_at DESC,
+                cs.id ASC
+            ) AS suggested_rank
+          FROM groups g
+          JOIN client_stats cs ON cs.id = ANY(g.client_ids)
+          LEFT JOIN client_duplicate_resolutions cdr
+            ON cdr.duplicate_client_id = cs.id
+           AND cdr.group_key = g.group_key
+          WHERE cdr.id IS NULL
+        )
+        SELECT
+          group_type,
+          group_key,
+          group_label,
+          jsonb_agg(
+            jsonb_build_object(
+              'id', id,
+              'first_name', first_name,
+              'last_name', last_name,
+              'middle_name', middle_name,
+              'phone', phone,
+              'phone_normalized', phone_normalized,
+              'email', email,
+              'has_telegram', telegram_id IS NOT NULL,
+              'has_barcode', barcode IS NOT NULL,
+              'status', status,
+              'subscriptions_count', subscriptions_count,
+              'active_subscriptions_count', active_subscriptions_count,
+              'visits_count', visits_count,
+              'bookings_count', bookings_count,
+              'orders_count', orders_count,
+              'profile_values_count', profile_values_count,
+              'created_at', created_at,
+              'updated_at', updated_at,
+              'suggested_master', suggested_rank = 1
+            )
+            ORDER BY suggested_rank, id
+          ) AS clients
+        FROM ranked_members
+        GROUP BY group_type, group_key, group_label
+        HAVING count(*) > 1
+        ORDER BY group_type, group_label
+        LIMIT 100
+      `
+    );
+
+    res.json({
+      success: true,
+      data: rows.map((row) => ({
+        ...row,
+        reason: buildDuplicateGroupReason(row.group_type),
+      })),
+    });
+  } catch (err) {
+    sendInternalError(res, err, { route: 'clients.duplicates.list' });
+  }
+});
+
+router.post('/duplicates/resolve', requireClientsUpdate, async (req, res) => {
+  const db = await pool.connect();
+
+  try {
+    const groupKey = String(req.body?.group_key || '').trim();
+    const groupType = String(req.body?.group_type || '').trim();
+    const masterClientId = Number.parseInt(req.body?.master_client_id, 10);
+    const duplicateClientIds = Array.isArray(req.body?.duplicate_client_ids)
+      ? req.body.duplicate_client_ids.map((id) => Number.parseInt(id, 10)).filter(Boolean)
+      : [];
+    const resolution = req.body?.resolution === 'not_duplicate' ? 'not_duplicate' : 'master_selected';
+    const note = String(req.body?.note || '').trim() || null;
+
+    if (!groupKey || !['phone', 'name'].includes(groupType)) {
+      return res.status(422).json({ success: false, error: 'Некорректная группа дублей' });
+    }
+
+    if (!masterClientId || duplicateClientIds.length === 0) {
+      return res.status(422).json({ success: false, error: 'Выберите главную карточку и хотя бы один дубль' });
+    }
+
+    if (duplicateClientIds.includes(masterClientId)) {
+      return res.status(422).json({ success: false, error: 'Главная карточка не может быть второстепенной' });
+    }
+
+    await db.query('BEGIN');
+
+    const allClientIds = [masterClientId, ...duplicateClientIds];
+    const { rowCount } = await db.query(
+      'SELECT 1 FROM clients WHERE id = ANY($1::BIGINT[])',
+      [allClientIds]
+    );
+
+    if (rowCount !== allClientIds.length) {
+      throw Object.assign(new Error('Одна из карточек клиента не найдена'), { statusCode: 404 });
+    }
+
+    const resolvedRows = [];
+    const summaries = [];
+
+    if (resolution === 'not_duplicate') {
+      for (const duplicateClientId of duplicateClientIds) {
+        const { rows } = await db.query(
+          `
+            INSERT INTO client_duplicate_resolutions (
+              group_key,
+              group_type,
+              master_client_id,
+              duplicate_client_id,
+              resolution,
+              note,
+              resolved_by,
+              resolved_at,
+              updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+            ON CONFLICT (duplicate_client_id)
+            DO UPDATE SET group_key = EXCLUDED.group_key,
+                          group_type = EXCLUDED.group_type,
+                          master_client_id = EXCLUDED.master_client_id,
+                          resolution = EXCLUDED.resolution,
+                          note = EXCLUDED.note,
+                          resolved_by = EXCLUDED.resolved_by,
+                          resolved_at = NOW(),
+                          updated_at = NOW()
+            RETURNING *
+          `,
+          [groupKey, groupType, masterClientId, duplicateClientId, resolution, note, req.user?.id || null]
+        );
+
+        resolvedRows.push(rows[0]);
+      }
+    } else {
+      for (const duplicateClientId of duplicateClientIds) {
+        const result = await mergeDuplicateClient(db, {
+          masterClientId,
+          duplicateClientId,
+          groupKey,
+          groupType,
+          resolution,
+          note,
+          resolvedBy: req.user?.id || null,
+        });
+        resolvedRows.push(result.resolution);
+        summaries.push(result.summary);
+      }
+    }
+
+    await db.query('COMMIT');
+
+    res.json({ success: true, data: { resolutions: resolvedRows, summaries } });
+  } catch (err) {
+    await db.query('ROLLBACK').catch(() => {});
+
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ success: false, error: err.message });
+    }
+
+    return sendInternalError(res, err, { route: 'clients.duplicates.resolve' });
+  } finally {
+    db.release();
+  }
+});
+
 router.get('/', requireClientsRead, async (req, res) => {
   try {
     await expireActiveSubscriptions(pool);
