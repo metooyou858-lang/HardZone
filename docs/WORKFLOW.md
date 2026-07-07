@@ -103,6 +103,8 @@ If mojibake appears in UI/code/docs, fix the text first, then rebuild or rerun s
 
 Work in branches by meaning, not by accident. Before committing, compare the current task with the current branch name. If they do not match, create or switch to a semantic branch first, then commit there. Do not keep unrelated feature, audit, stabilization, hotfix, or UI work in the same branch just because it is already checked out.
 
+The root file `текст` is the user's local voice-message scratch buffer for Codex sessions. It may exist empty or change temporarily; do not read, edit, delete, or commit it. It is intentionally ignored by Git.
+
 Safe routine flow:
 
 ```powershell

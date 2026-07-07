@@ -69,6 +69,18 @@ html {
   min-height: 100%;
 }
 
+@media (min-width: 961px) and (max-width: 1500px) {
+  html {
+    font-size: 15px;
+  }
+}
+
+@media (min-width: 961px) and (max-width: 1280px) {
+  html {
+    font-size: 14px;
+  }
+}
+
 body {
   min-height: 100vh;
   margin: 0;
@@ -98,13 +110,45 @@ select {
   grid-template-columns: var(--sidebar-width, 200px) minmax(0, 1fr);
 }
 
+.crm-page {
+  max-width: min(100%, 1480px);
+  padding: 1.5rem;
+}
+
 .sidebar-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: rgba(139, 148, 158, 0.2) transparent;
 }
 
+@media (min-width: 1281px) {
+  .crm-page {
+    padding: 1.75rem;
+  }
+}
+
+@media (min-width: 1501px) {
+  .crm-page {
+    max-width: 1680px;
+    padding: 2rem 2.5rem;
+  }
+}
+
 @media (max-width: 960px) {
   .app-grid {
     grid-template-columns: 1fr;
+  }
+
+  html {
+    font-size: 16px;
+  }
+
+  .crm-page {
+    padding: 1.5rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .crm-page {
+    padding: 1rem;
   }
 }

@@ -249,7 +249,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div
       className="app-grid bg-[var(--bg-app)]"
-      style={{ ["--sidebar-width" as string]: collapsed ? "64px" : "200px" }}
+      style={{ ["--sidebar-width" as string]: collapsed ? "64px" : "clamp(184px, 13vw, 200px)" }}
       data-sidebar-collapsed={collapsed ? "true" : "false"}
     >
       {/* Сайдбар */}
@@ -392,7 +392,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1680px] px-6 py-6 sm:px-8 sm:py-8 lg:px-10">{children}</main>
+        <main className="crm-page mx-auto w-full">{children}</main>
       </div>
     </div>
   );

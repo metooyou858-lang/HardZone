@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { formatClientName } from "@/components/clients/shared";
@@ -369,12 +370,20 @@ export function GymSidebarBlock({
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className="min-w-0 truncate text-sm text-[var(--text-main)]">{visit.client_name}</span>
-                    {subscriptionLabel && (
-                      <span className="min-w-0 truncate border-l border-[var(--line-soft)] pl-2 text-xs text-[var(--text-muted)]">
-                        {subscriptionLabel}
+                    <Link
+                      href={`/clients/${visit.client_id}`}
+                      className="group flex min-w-0 items-center gap-2 rounded-[0.75rem] pr-1 transition-colors hover:text-[var(--accent)]"
+                      title="Открыть карточку клиента"
+                    >
+                      <span className="min-w-0 truncate text-sm text-[var(--text-main)] transition-colors group-hover:text-[var(--accent)]">
+                        {visit.client_name || `Клиент #${visit.client_id}`}
                       </span>
-                    )}
+                      {subscriptionLabel && (
+                        <span className="min-w-0 truncate border-l border-[var(--line-soft)] pl-2 text-xs text-[var(--text-muted)] transition-colors group-hover:text-[var(--accent)]">
+                          {subscriptionLabel}
+                        </span>
+                      )}
+                    </Link>
                     {!visit.subscription_id && (
                       <button
                         type="button"

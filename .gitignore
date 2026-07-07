@@ -21,3 +21,6 @@ pnpm-debug.log*
 
 .DS_Store
 Thumbs.db
+
+# Local voice-message scratch file used by the user during Codex sessions.
+/текст

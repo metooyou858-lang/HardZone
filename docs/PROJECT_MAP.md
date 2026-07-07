@@ -18,6 +18,7 @@ HardZone - monorepo CRM для CrossFit-клуба:
 - `scripts/backup-production.ps1` - production PostgreSQL backup.
 - `scripts/test-restore-production-backup.ps1` - проверка восстановления production backup во временную БД.
 - `swagger (3).json` - каноничная локальная Swagger-документация AQSI по кассе и кассовым операциям.
+- `текст` - локальный пользовательский буфер для голосовых сообщений во время работы с Codex. Не является проектным артефактом; не читать, не менять, не удалять и не коммитить.
 - `docs/STABILIZATION_PLAN.md` - план стабилизации.
 - `docs/COMMANDS.md` - короткая шпаргалка команд.
 - `docs/OPERATIONS.md` - production, deploy, домен, smoke, backup.
@@ -67,6 +68,7 @@ HardZone - monorepo CRM для CrossFit-клуба:
 2. Before AQSI changes, compare payload/endpoints with `swagger (3).json` and `docs/PAYMENTS.md`.
 3. Use `apply_patch` for manual edits.
 4. After frontend/backend text changes, run a mojibake check or `.\scripts\smoke-local.ps1 -SkipFrontendLint -SkipFrontendBuild -SkipBackendMigrate`.
-5. If production deploy is needed from Windows, use `deploy.ps1`.
-6. Before risky production work, create or confirm a recent backup and restore evidence.
-7. Long-term stabilization changes go through `docs/STABILIZATION_PLAN.md`.
+5. Do not touch the root `текст` file; it is the user's local voice-message scratch buffer and is intentionally ignored by Git.
+6. If production deploy is needed from Windows, use `deploy.ps1`.
+7. Before risky production work, create or confirm a recent backup and restore evidence.
+8. Long-term stabilization changes go through `docs/STABILIZATION_PLAN.md`.
