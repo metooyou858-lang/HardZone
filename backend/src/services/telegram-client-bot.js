@@ -1,8 +1,11 @@
 const logger = require('./logger');
 const { query } = require('../db');
 const telegramRoute = require('../routes/telegram');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const TELEGRAM_API_BASE = process.env.TELEGRAM_API_BASE || 'https://api.telegram.org/bot';
+const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads');
 
 const MENU_BUTTONS = {
   schedule: '📅 Расписание',
@@ -15,6 +18,24 @@ const MENU_BUTTONS = {
 function getClientMiniAppUrl() {
   const baseUrl = process.env.FRONTEND_BASE_URL || process.env.APP_BASE_URL || 'https://hardzone.space';
   return `${String(baseUrl).replace(/\/+$/, '')}/telegram/client`;
+}
+
+function getPublicBaseUrl() {
+  return String(process.env.FRONTEND_BASE_URL || process.env.APP_BASE_URL || 'https://hardzone.space').replace(/\/+$/, '');
+}
+
+function getPublicPhotoUrl(value) {
+  const photoUrl = compact(value, '');
+  if (!photoUrl) {
+    return null;
+  }
+
+  try {
+    const url = new URL(photoUrl);
+    return ['http:', 'https:'].includes(url.protocol) ? photoUrl : null;
+  } catch {
+    return photoUrl.startsWith('/') ? `${getPublicBaseUrl()}${photoUrl}` : null;
+  }
 }
 
 async function configureClientMenuButton() {
@@ -56,12 +77,91 @@ async function telegramClientRequest(method, payload, options = {}) {
   return body;
 }
 
+async function telegramClientMultipartRequest(method, formData, options = {}) {
+  const token = process.env.TELEGRAM_CLIENT_BOT_TOKEN;
+  if (!token) {
+    return null;
+  }
+
+  const timeoutMs = options.timeoutMs || 30000;
+  const response = await fetch(`${TELEGRAM_API_BASE}${token}/${method}`, {
+    method: 'POST',
+    body: formData,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Telegram client ${method} failed: ${response.status} ${text.slice(0, 300)}`);
+  }
+
+  const body = await response.json();
+  if (body && body.ok === false) {
+    throw new Error(`Telegram client ${method} failed: ${body.description || 'unknown error'}`);
+  }
+
+  return body;
+}
+
+function getUploadPhotoPath(value) {
+  const photoUrl = compact(value, '');
+  if (!photoUrl) {
+    return null;
+  }
+
+  let pathname = photoUrl;
+  try {
+    pathname = new URL(photoUrl).pathname;
+  } catch {
+    pathname = photoUrl;
+  }
+
+  if (!pathname.startsWith('/uploads/trainers/')) {
+    return null;
+  }
+
+  const relativePath = pathname.replace(/^\/uploads\//, '').split('/').filter(Boolean);
+  const filePath = path.resolve(UPLOADS_DIR, ...relativePath);
+  return filePath.startsWith(path.resolve(UPLOADS_DIR, 'trainers') + path.sep) ? filePath : null;
+}
+
+function getImageMimeType(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension === '.png') return 'image/png';
+  if (extension === '.webp') return 'image/webp';
+  return 'image/jpeg';
+}
+
 function sendClientMessage(chatId, text, replyMarkup = null) {
   return telegramClientRequest('sendMessage', {
     chat_id: chatId,
     text,
     parse_mode: 'HTML',
     disable_web_page_preview: true,
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+  });
+}
+
+async function sendClientPhoto(chatId, photo, caption, replyMarkup = null) {
+  if (photo?.localPath) {
+    const buffer = await fs.promises.readFile(photo.localPath);
+    const formData = new FormData();
+    formData.append('chat_id', String(chatId));
+    formData.append('photo', new Blob([buffer], { type: getImageMimeType(photo.localPath) }), path.basename(photo.localPath));
+    formData.append('caption', caption);
+    formData.append('parse_mode', 'HTML');
+    if (replyMarkup) {
+      formData.append('reply_markup', JSON.stringify(replyMarkup));
+    }
+
+    return telegramClientMultipartRequest('sendPhoto', formData);
+  }
+
+  return telegramClientRequest('sendPhoto', {
+    chat_id: chatId,
+    photo: photo.url,
+    caption,
+    parse_mode: 'HTML',
     ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
   });
 }
@@ -73,6 +173,14 @@ function editClientMessage(chatId, messageId, text, replyMarkup = null) {
     text,
     parse_mode: 'HTML',
     disable_web_page_preview: true,
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+  });
+}
+
+function editClientMessageReplyMarkup(chatId, messageId, replyMarkup = null) {
+  return telegramClientRequest('editMessageReplyMarkup', {
+    chat_id: chatId,
+    message_id: messageId,
     ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
   });
 }
@@ -387,10 +495,64 @@ async function getSubscriptionProducts() {
 }
 
 function buildSubscriptionLine(item) {
-  const isSingle = item.subscription_type === 'single';
-  const period = !isSingle && item.validity_days ? ` / ${Number(item.validity_days)} дней` : '';
-  const family = item.is_family ? ' · семейный' : '';
-  return `• ${escapeHtml(item.name)} — ${formatMoney(item.sale_price)} ₽${period}${family}`;
+  const title = getSubscriptionDisplayName(item);
+  const period = shouldShowSubscriptionPeriod(item)
+    ? ` / ${Number(item.validity_days)} дней`
+    : '';
+
+  return `• ${escapeHtml(title)} — ${formatMoney(item.sale_price)} ₽${period}`;
+}
+
+function isOpenGymSubscription(item) {
+  const name = String(item.name || '').trim().toLowerCase();
+  return name.includes('свобод') || name.includes('open gym');
+}
+
+function isChildSubscription(item) {
+  const name = String(item.name || '').trim().toLowerCase();
+  return name.includes('дет');
+}
+
+function isUnlimitedSubscription(item) {
+  const name = String(item.name || '').trim().toLowerCase();
+  return item.subscription_type === 'unlimited' || name.includes('безлимит');
+}
+
+function shouldShowSubscriptionPeriod(item) {
+  return item.subscription_type !== 'single'
+    && item.validity_days;
+}
+
+function pluralTraining(count) {
+  const value = Math.abs(Number(count || 0));
+  const lastTwo = value % 100;
+  const last = value % 10;
+  if (lastTwo >= 11 && lastTwo <= 14) return 'тренировок';
+  if (last === 1) return 'тренировка';
+  if (last >= 2 && last <= 4) return 'тренировки';
+  return 'тренировок';
+}
+
+function getSubscriptionDisplayName(item) {
+  if (item.subscription_type === 'single' && isOpenGymSubscription(item)) {
+    return 'Разовое посещение в зал';
+  }
+
+  if (item.subscription_type === 'visits' && item.visits_total) {
+    const visits = Number(item.visits_total);
+    const childLabel = isChildSubscription(item) ? 'детских ' : '';
+    return `${visits} ${childLabel}${pluralTraining(visits)}`;
+  }
+
+  if (isUnlimitedSubscription(item)) {
+    return 'Безлимит';
+  }
+
+  if (isOpenGymSubscription(item)) {
+    return 'Свободное посещение';
+  }
+
+  return compact(item.name, 'Абонемент');
 }
 
 async function buildSubscriptionsText(payload) {
@@ -404,7 +566,11 @@ async function buildSubscriptionsText(payload) {
     lines.push(
       '',
       '<b>Ваш абонемент</b>',
-      escapeHtml(compact(activeSubscription.product_name, activeSubscription.type)),
+      escapeHtml(getSubscriptionDisplayName({
+        name: activeSubscription.product_name,
+        subscription_type: activeSubscription.type,
+        visits_total: activeSubscription.visits_total,
+      })),
       activeSubscription.visits_left === null || activeSubscription.visits_left === undefined
         ? 'Остаток: безлимит'
         : `Осталось: ${Number(activeSubscription.visits_left)}`
@@ -608,7 +774,17 @@ async function handleClientCallback(callbackQuery) {
 
   if (data === 'trainers') {
     await answerCallback(callbackId);
-    await editClientMessage(chatId, messageId, buildTrainersText(payload), buildTrainersKeyboard(payload));
+    if (callbackQuery.message?.photo?.length) {
+      await editClientMessageReplyMarkup(chatId, messageId).catch((error) => {
+        logger.warn('telegram_client', {
+          action: 'remove_trainer_photo_keyboard_failed',
+          message: error.message,
+        });
+      });
+      await sendClientMessage(chatId, buildTrainersText(payload), buildTrainersKeyboard(payload));
+    } else {
+      await editClientMessage(chatId, messageId, buildTrainersText(payload), buildTrainersKeyboard(payload));
+    }
     return;
   }
 
@@ -620,6 +796,26 @@ async function handleClientCallback(callbackQuery) {
     if (!trainer) {
       await editClientMessage(chatId, messageId, 'Тренер не найден.', buildTrainerKeyboard());
       return;
+    }
+
+    const localPath = getUploadPhotoPath(trainer.photo_url);
+    const photo = localPath
+      ? { localPath }
+      : getPublicPhotoUrl(trainer.photo_url)
+        ? { url: getPublicPhotoUrl(trainer.photo_url) }
+        : null;
+    if (photo) {
+      try {
+        await sendClientPhoto(chatId, photo, buildTrainerText(trainer), buildTrainerKeyboard());
+        return;
+      } catch (error) {
+        logger.warn('telegram_client', {
+          action: 'send_trainer_photo_failed',
+          trainer_id: trainer.id,
+          photo_url: trainer.photo_url,
+          message: error.message,
+        });
+      }
     }
 
     await editClientMessage(chatId, messageId, buildTrainerText(trainer), buildTrainerKeyboard());
