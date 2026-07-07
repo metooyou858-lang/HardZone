@@ -9,6 +9,7 @@ import { withAlpha, PlusIcon, type BannerState, getBannerClass } from "@/compone
 import { hasModuleAccess, type AuthModulePermission, type AuthUserRole } from "@/lib/access";
 import { UsersPanel } from "@/components/admin/users-panel";
 import { SystemStatusPanel } from "@/components/settings/system-status-panel";
+import { fetchClubContacts, updateClubContacts, type ClubContacts } from "@/lib/api/club-settings";
 import {
   createAthleteProfileField,
   createAthleteProfileSection,
@@ -27,7 +28,7 @@ import { fetchGymOverview, saveGymHours, type GymHour } from "@/lib/api/schedule
 import { deleteTrainer, fetchTrainerStaffUsers, fetchTrainers, type Trainer, type TrainerStaffUser } from "@/lib/api/trainers";
 import { fetchTrainingTypes, type TrainingType } from "@/lib/api/training-types";
 
-type SettingsTab = "trainers" | "gym" | "athlete" | "users" | "system";
+type SettingsTab = "trainers" | "contacts" | "gym" | "athlete" | "users" | "system";
 
 type AthleteFieldForm = {
   id: string | null;
@@ -102,8 +103,51 @@ const weekdayLabels: Record<number, string> = {
 
 const baseTabs: { value: SettingsTab; label: string }[] = [
   { value: "trainers", label: "Тренеры" },
+  { value: "contacts", label: "Контакты" },
   { value: "gym", label: "Часы работы зала" },
   { value: "athlete", label: "Профиль атлета" },
+];
+
+const emptyClubContacts: ClubContacts = {
+  title: "HardZone",
+  address: null,
+  phone: null,
+  email: null,
+  yandex_maps_url: null,
+  google_maps_url: null,
+  two_gis_url: null,
+  vk_url: null,
+  instagram_url: null,
+  telegram_url: null,
+  whatsapp_url: null,
+  max_url: null,
+  schedule_note: null,
+  extra_note: null,
+  updated_at: "",
+};
+
+type ContactFormField = {
+  key: keyof Omit<ClubContacts, "updated_at">;
+  label: string;
+  placeholder: string;
+  multiline?: boolean;
+};
+
+const contactFormFields: ContactFormField[] = [
+  { key: "title", label: "Название", placeholder: "HardZone" },
+  { key: "address", label: "Адрес", placeholder: "г. Владивосток, ..." },
+  { key: "phone", label: "Телефон", placeholder: "+7 ..." },
+  { key: "email", label: "Email", placeholder: "info@hardzone.space" },
+  { key: "yandex_maps_url", label: "Яндекс Карты", placeholder: "https://yandex.ru/maps/..." },
+  { key: "google_maps_url", label: "Google Maps", placeholder: "https://maps.google.com/..." },
+  { key: "two_gis_url", label: "2ГИС", placeholder: "https://2gis.ru/..." },
+  { key: "vk_url", label: "VK", placeholder: "https://vk.com/..." },
+  { key: "instagram_url", label: "Instagram", placeholder: "https://instagram.com/..." },
+  { key: "telegram_url", label: "Telegram", placeholder: "https://t.me/..." },
+  { key: "whatsapp_url", label: "WhatsApp", placeholder: "https://wa.me/..." },
+  { key: "max_url", label: "MAX", placeholder: "https://max.ru/..." },
+  { key: "schedule_note", label: "Режим работы", placeholder: "Пн-пт 7:00-22:00, сб-вс 9:00-18:00", multiline: true },
+  { key: "extra_note", label: "Дополнительно", placeholder: "Как найти вход, парковка, ориентиры", multiline: true },
 ];
 
 function formatShortDate(value: string) {
@@ -132,6 +176,11 @@ export function SettingsPage() {
   const [hoursForm, setHoursForm] = useState<GymHour[]>([]);
   const [gymLoading, setGymLoading] = useState(false);
   const [savingHours, setSavingHours] = useState(false);
+
+  // Club contacts state
+  const [clubContacts, setClubContacts] = useState<ClubContacts>(emptyClubContacts);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [savingContacts, setSavingContacts] = useState(false);
 
   // Athlete profile fields state
   const [athleteSections, setAthleteSections] = useState<AthleteProfileSection[]>([]);
@@ -180,6 +229,28 @@ export function SettingsPage() {
       })
       .finally(() => {
         if (!cancelled) setTrainersLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== "contacts") return;
+
+    let cancelled = false;
+    setContactsLoading(true);
+
+    fetchClubContacts()
+      .then((contacts) => {
+        if (!cancelled) setClubContacts({ ...emptyClubContacts, ...contacts });
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setBanner({ tone: "error", text: err instanceof Error ? err.message : "Не удалось загрузить контакты клуба" });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setContactsLoading(false);
       });
 
     return () => { cancelled = true; };
@@ -249,6 +320,7 @@ export function SettingsPage() {
     hasModuleAccess(currentModules, "schedule_gym") ||
     hasModuleAccess(currentModules, "schedule");
   const canManageAthleteFields = currentUserRole === "owner" || currentUserRole === "admin";
+  const canManageClubContacts = currentUserRole === "owner" || currentUserRole === "admin";
 
   function fieldToForm(field: AthleteProfileField): AthleteFieldForm {
     return {
@@ -356,6 +428,20 @@ export function SettingsPage() {
       setBanner({ tone: "error", text: err instanceof Error ? err.message : "Не удалось сохранить раздел" });
     } finally {
       setSavingAthleteSection(false);
+    }
+  }
+
+  async function handleSaveClubContacts() {
+    setSavingContacts(true);
+
+    try {
+      const saved = await updateClubContacts(clubContacts);
+      setClubContacts({ ...emptyClubContacts, ...saved });
+      setBanner({ tone: "success", text: "Контакты клуба сохранены" });
+    } catch (err) {
+      setBanner({ tone: "error", text: err instanceof Error ? err.message : "Не удалось сохранить контакты" });
+    } finally {
+      setSavingContacts(false);
     }
   }
 
@@ -837,6 +923,71 @@ export function SettingsPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {tab === "contacts" && (
+        <section className="space-y-4">
+          <div className="flex flex-col gap-4 rounded-[30px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-lg font-semibold text-[var(--text-main)]">Контакты клуба</p>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">
+                Эти данные показываются клиентам в Telegram и используются как общий источник контактов.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleSaveClubContacts()}
+              disabled={!canManageClubContacts || savingContacts || contactsLoading}
+              className="rounded-[18px] bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[#062b26] transition-all hover:brightness-110 disabled:opacity-50"
+            >
+              {savingContacts ? "Сохраняем..." : "Сохранить"}
+            </button>
+          </div>
+
+          {contactsLoading ? (
+            <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-6 py-16 text-center text-sm text-[var(--text-muted)]">
+              Загружаем контакты...
+            </div>
+          ) : (
+            <div className="rounded-[28px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
+              <div className="grid gap-4 lg:grid-cols-2">
+                {contactFormFields.map((field) => {
+                  const value = clubContacts[field.key] ?? "";
+                  const commonClassName =
+                    "mt-2 w-full rounded-[16px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-4 py-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)] disabled:opacity-60";
+
+                  return (
+                    <div key={field.key} className={field.multiline ? "lg:col-span-2" : ""}>
+                      <label className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">{field.label}</label>
+                      {field.multiline ? (
+                        <textarea
+                          value={value}
+                          onChange={(event) => setClubContacts((prev) => ({ ...prev, [field.key]: event.target.value }))}
+                          rows={3}
+                          className={`${commonClassName} resize-none`}
+                          placeholder={field.placeholder}
+                          disabled={!canManageClubContacts}
+                        />
+                      ) : (
+                        <input
+                          type="text"
+                          value={value}
+                          onChange={(event) => setClubContacts((prev) => ({ ...prev, [field.key]: event.target.value }))}
+                          className={commonClassName}
+                          placeholder={field.placeholder}
+                          disabled={!canManageClubContacts}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {!canManageClubContacts ? (
+                <p className="mt-4 text-sm text-[var(--text-muted)]">Недостаточно прав для изменения контактов.</p>
+              ) : null}
             </div>
           )}
         </section>

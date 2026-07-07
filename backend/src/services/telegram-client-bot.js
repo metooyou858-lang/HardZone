@@ -1,11 +1,13 @@
 const logger = require('./logger');
 const { query } = require('../db');
 const telegramRoute = require('../routes/telegram');
+const { getClubContacts } = require('./club-settings');
 const fs = require('node:fs');
 const path = require('node:path');
 
 const TELEGRAM_API_BASE = process.env.TELEGRAM_API_BASE || 'https://api.telegram.org/bot';
 const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads');
+const PROJECT_UPLOADS_DIR = path.join(__dirname, '..', '..', '..', 'uploads');
 
 const MENU_BUTTONS = {
   schedule: '📅 Расписание',
@@ -14,6 +16,19 @@ const MENU_BUTTONS = {
   trainers: '🏋️ Тренеры',
   contacts: '📍 Контакты',
 };
+
+const CONTACT_LINK_FIELDS = [
+  ['🗺️ Яндекс Карты', 'yandex_maps_url'],
+  ['🌍 Google Maps', 'google_maps_url'],
+  ['📍 2ГИС', 'two_gis_url'],
+  ['VK ВКонтакте', 'vk_url'],
+  ['📷 Instagram', 'instagram_url'],
+  ['✈️ Telegram', 'telegram_url'],
+  ['🟢 WhatsApp', 'whatsapp_url'],
+  ['🔵 MAX', 'max_url'],
+];
+
+const WEEKDAY_LABELS = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
 
 function getClientMiniAppUrl() {
   const baseUrl = process.env.FRONTEND_BASE_URL || process.env.APP_BASE_URL || 'https://hardzone.space';
@@ -35,6 +50,14 @@ function getPublicPhotoUrl(value) {
     return ['http:', 'https:'].includes(url.protocol) ? photoUrl : null;
   } catch {
     return photoUrl.startsWith('/') ? `${getPublicBaseUrl()}${photoUrl}` : null;
+  }
+}
+
+function safeDecodePathname(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
   }
 }
 
@@ -111,9 +134,9 @@ function getUploadPhotoPath(value) {
 
   let pathname = photoUrl;
   try {
-    pathname = new URL(photoUrl).pathname;
+    pathname = safeDecodePathname(new URL(photoUrl).pathname);
   } catch {
-    pathname = photoUrl;
+    pathname = safeDecodePathname(photoUrl);
   }
 
   if (!pathname.startsWith('/uploads/trainers/')) {
@@ -121,8 +144,23 @@ function getUploadPhotoPath(value) {
   }
 
   const relativePath = pathname.replace(/^\/uploads\//, '').split('/').filter(Boolean);
-  const filePath = path.resolve(UPLOADS_DIR, ...relativePath);
-  return filePath.startsWith(path.resolve(UPLOADS_DIR, 'trainers') + path.sep) ? filePath : null;
+  const candidates = [
+    [UPLOADS_DIR, path.resolve(UPLOADS_DIR, 'trainers')],
+    [PROJECT_UPLOADS_DIR, path.resolve(PROJECT_UPLOADS_DIR, 'trainers')],
+  ];
+
+  for (const [uploadsDir, trainersDir] of candidates) {
+    const filePath = path.resolve(uploadsDir, ...relativePath);
+    if (
+      filePath.startsWith(trainersDir + path.sep) &&
+      fs.existsSync(filePath) &&
+      fs.statSync(filePath).isFile()
+    ) {
+      return filePath;
+    }
+  }
+
+  return null;
 }
 
 function getImageMimeType(filePath) {
@@ -205,6 +243,11 @@ function compact(value, fallback = 'Не указано') {
   return text || fallback;
 }
 
+function isButtonUrl(value) {
+  const text = String(value || '').trim();
+  return /^https?:\/\//i.test(text) || /^tg:\/\//i.test(text);
+}
+
 function formatMoney(value) {
   const amount = Number(value || 0);
   return new Intl.NumberFormat('ru-RU', {
@@ -230,6 +273,34 @@ function addDays(date, days) {
 
 function getDateKeyByOffset(offset = 0) {
   return toDateKey(addDays(new Date(), Number(offset || 0)));
+}
+
+function getCurrentWeekScheduleOffsets() {
+  const today = new Date();
+  const day = today.getDay();
+  const daysFromMonday = day === 0 ? 6 : day - 1;
+  const mondayOffset = -daysFromMonday;
+  const sundayOffset = mondayOffset + 6;
+  const offsets = [];
+
+  for (let offset = Math.max(0, mondayOffset); offset <= sundayOffset; offset += 1) {
+    offsets.push(offset);
+  }
+
+  return offsets.length ? offsets : [0];
+}
+
+function formatScheduleDayButton(offset, activeOffset) {
+  const date = addDays(new Date(), Number(offset || 0));
+  const dayLabel = WEEKDAY_LABELS[date.getDay()] || '';
+  const prefix = Number(offset || 0) === Number(activeOffset || 0) ? '● ' : '';
+  return `${prefix}${dayLabel}`;
+}
+
+function normalizeScheduleOffset(offset = 0) {
+  const parsed = Number.parseInt(String(offset || '0'), 10) || 0;
+  const offsets = getCurrentWeekScheduleOffsets();
+  return offsets.includes(parsed) ? parsed : offsets[0] || 0;
 }
 
 function formatDateLabel(dateKey) {
@@ -308,6 +379,7 @@ function buildNotLinkedText() {
 }
 
 function getSlotsForDay(payload, dayOffset = 0) {
+  dayOffset = normalizeScheduleOffset(dayOffset);
   const dateKey = getDateKeyByOffset(dayOffset);
   return (payload?.available_slots || [])
     .filter((slot) => toDateKey(slot.date) === dateKey)
@@ -319,22 +391,30 @@ function findSlot(payload, slotId) {
 }
 
 function buildScheduleKeyboard(slots, dayOffset) {
+  dayOffset = normalizeScheduleOffset(dayOffset);
   const rows = slots.map((slot) => [{
     text: `${formatTime(slot.start_time)} ${compact(slot.training_type_name, 'Тренировка')}`,
     callback_data: `slot:${slot.id}:${dayOffset}`,
   }]);
 
-  rows.push([
-    { text: dayOffset === 0 ? 'Показать завтра' : 'Показать сегодня', callback_data: `schedule:${dayOffset === 0 ? 1 : 0}` },
-  ]);
+  const dayButtons = getCurrentWeekScheduleOffsets().map((offset) => ({
+    text: formatScheduleDayButton(offset, dayOffset),
+    callback_data: `schedule:${offset}`,
+  }));
+
+  for (let index = 0; index < dayButtons.length; index += 2) {
+    rows.push(dayButtons.slice(index, index + 2));
+  }
 
   return { inline_keyboard: rows };
 }
 
 function buildScheduleText(slots, dayOffset = 0, title = 'Расписание') {
+  dayOffset = normalizeScheduleOffset(dayOffset);
   const dateKey = getDateKeyByOffset(dayOffset);
-  const label = dayOffset === 0 ? 'сегодня' : 'завтра';
-  const lines = [`<b>${escapeHtml(title)} на ${label}, ${escapeHtml(formatDateLabel(dateKey))}</b>`, ''];
+  const date = addDays(new Date(), Number(dayOffset || 0));
+  const dayLabel = WEEKDAY_LABELS[date.getDay()] || '';
+  const lines = [`<b>${escapeHtml(title)}: ${escapeHtml(dayLabel)}, ${escapeHtml(formatDateLabel(dateKey))}</b>`, ''];
 
   if (slots.length === 0) {
     lines.push('На этот день доступных групповых тренировок для записи нет.');
@@ -455,6 +535,30 @@ function buildTrainerText(trainer) {
   return lines.join('\n');
 }
 
+function buildTrainerPhotoCaption(trainer) {
+  const name = `${compact(trainer.first_name, '')} ${compact(trainer.last_name, '')}`.trim();
+  const lines = [`<b>${escapeHtml(name || 'Тренер')}</b>`];
+
+  if (trainer.position) {
+    lines.push(escapeHtml(trainer.position));
+  }
+
+  const specialties = Array.isArray(trainer.specialties) ? trainer.specialties.filter(Boolean) : [];
+  if (specialties.length) {
+    lines.push('', `Специализация: ${escapeHtml(specialties.join(', '))}`);
+  }
+
+  if (trainer.bio) {
+    const shortBio = String(trainer.bio).trim().slice(0, 520);
+    lines.push('', escapeHtml(shortBio));
+    if (String(trainer.bio).trim().length > shortBio.length) {
+      lines.push('...');
+    }
+  }
+
+  return lines.join('\n');
+}
+
 function buildTrainerKeyboard() {
   return { inline_keyboard: [[{ text: 'Назад к тренерам', callback_data: 'trainers' }]] };
 }
@@ -465,13 +569,19 @@ async function getSubscriptionProducts() {
       SELECT
         p.name,
         p.sale_price,
+        pt.name AS product_type_name,
+        c.name AS category_name,
         psp.subscription_type,
         psp.visits_total,
         psp.validity_days,
-        psp.is_family
+        psp.is_family,
+        psp.allow_free_visit,
+        psp.allow_group_training,
+        psp.allow_personal_training
       FROM products p
       JOIN product_subscription_params psp ON psp.product_id = p.id
       LEFT JOIN product_types pt ON pt.id = p.product_type_id
+      LEFT JOIN categories c ON c.id = p.category_id
       WHERE p.is_archived = false
         AND p.sale_price IS NOT NULL
         AND p.sale_price > 0
@@ -505,7 +615,7 @@ function buildSubscriptionLine(item) {
 
 function isOpenGymSubscription(item) {
   const name = String(item.name || '').trim().toLowerCase();
-  return name.includes('свобод') || name.includes('open gym');
+  return item.allow_free_visit === true || name.includes('свобод') || name.includes('open gym');
 }
 
 function isChildSubscription(item) {
@@ -516,6 +626,18 @@ function isChildSubscription(item) {
 function isUnlimitedSubscription(item) {
   const name = String(item.name || '').trim().toLowerCase();
   return item.subscription_type === 'unlimited' || name.includes('безлимит');
+}
+
+function isPersonalTrainingProduct(item) {
+  const haystack = [
+    item.name,
+    item.category_name,
+    item.product_type_name,
+  ].map((value) => String(value || '').trim().toLowerCase()).join(' ');
+
+  return item.allow_personal_training === true
+    || haystack.includes('персон')
+    || haystack.includes('сплит');
 }
 
 function shouldShowSubscriptionPeriod(item) {
@@ -533,9 +655,79 @@ function pluralTraining(count) {
   return 'тренировок';
 }
 
+function getMembershipSuffix(item) {
+  const name = String(item.name || '').trim().toLowerCase();
+
+  if (name.includes('не членов') || name.includes('не член')) {
+    return ' не для членов клуба';
+  }
+
+  if (name.includes('для членов') || name.includes('для клуба')) {
+    return ' для членов клуба';
+  }
+
+  return '';
+}
+
+function getSingleVisitDisplayName(item) {
+  const name = String(item.name || '').trim();
+  const lowerName = name.toLowerCase();
+  const membershipSuffix = getMembershipSuffix(item);
+
+  if (isOpenGymSubscription(item)) {
+    return 'Свободное посещение зала';
+  }
+
+  if (lowerName.includes('группов')) {
+    return 'Групповое занятие';
+  }
+
+  if (lowerName.includes('ниндз')) {
+    return `Ниндзя${membershipSuffix}`;
+  }
+
+  if (lowerName.includes('растяж')) {
+    return `Растяжка${membershipSuffix}`;
+  }
+
+  if (lowerName.includes('тяж') && lowerName.includes('атлет')) {
+    return `Тяжелая атлетика${membershipSuffix}`;
+  }
+
+  return compact(name, 'Разовое посещение')
+    .replace(/^разовое\s+посещение\s+/i, '')
+    .replace(/^разовая\s+тренировка\s+/i, '')
+    .replace(/\s+разовое\s+посещение$/i, '')
+    .trim() || 'Разовое посещение';
+}
+
+function getPersonalTrainingDisplayName(item) {
+  const name = String(item.name || '').trim();
+  const lowerName = name.toLowerCase();
+
+  if (lowerName.includes('трисплит')) {
+    return 'ТриСплит';
+  }
+
+  if (lowerName.includes('сплит')) {
+    return 'Сплит тренировка';
+  }
+
+  if (item.visits_total && item.subscription_type !== 'single') {
+    const visits = Number(item.visits_total);
+    return `${visits} персональных ${pluralTraining(visits)}`;
+  }
+
+  return 'Персональная тренировка';
+}
+
 function getSubscriptionDisplayName(item) {
-  if (item.subscription_type === 'single' && isOpenGymSubscription(item)) {
-    return 'Разовое посещение в зал';
+  if (isPersonalTrainingProduct(item)) {
+    return getPersonalTrainingDisplayName(item);
+  }
+
+  if (item.subscription_type === 'single') {
+    return getSingleVisitDisplayName(item);
   }
 
   if (item.subscription_type === 'visits' && item.visits_total) {
@@ -558,8 +750,9 @@ function getSubscriptionDisplayName(item) {
 async function buildSubscriptionsText(payload) {
   const products = await getSubscriptionProducts();
   const activeSubscription = (payload?.subscriptions || []).find((item) => item.status === 'active');
-  const subscriptions = products.filter((item) => item.subscription_type !== 'single');
-  const singleVisits = products.filter((item) => item.subscription_type === 'single');
+  const personalTrainings = products.filter(isPersonalTrainingProduct);
+  const subscriptions = products.filter((item) => item.subscription_type !== 'single' && !isPersonalTrainingProduct(item));
+  const singleVisits = products.filter((item) => item.subscription_type === 'single' && !isPersonalTrainingProduct(item));
   const lines = ['<b>Абонементы HardZone</b>'];
 
   if (activeSubscription) {
@@ -584,19 +777,54 @@ async function buildSubscriptionsText(payload) {
     lines.push('Цены пока не заполнены в CRM.');
   }
 
+  if (personalTrainings.length) {
+    lines.push('', '<b>Персональные тренировки</b>', ...personalTrainings.map(buildSubscriptionLine));
+  }
+
   if (singleVisits.length) {
-    lines.push('', '<b>Разовое посещение</b>', ...singleVisits.map(buildSubscriptionLine));
+    lines.push('', '<b>Разовые посещения</b>', ...singleVisits.map(buildSubscriptionLine));
   }
 
   return lines.join('\n');
 }
 
-function buildContactsText() {
-  return [
-    '<b>Контакты HardZone</b>',
-    '',
-    'Раздел скоро появится здесь.',
-  ].join('\n');
+async function buildContactsText(contacts = null) {
+  contacts = contacts || await getClubContacts();
+  const title = compact(contacts?.title, 'HardZone');
+  const lines = [`<b>Контакты ${escapeHtml(title)}</b>`];
+
+  const contactLines = [
+    contacts?.address ? `📍 ${escapeHtml(contacts.address)}` : null,
+    contacts?.phone ? `☎️ ${escapeHtml(contacts.phone)}` : null,
+    contacts?.email ? `✉️ ${escapeHtml(contacts.email)}` : null,
+    contacts?.schedule_note ? `\n<b>Режим работы</b>\n${escapeHtml(contacts.schedule_note)}` : null,
+    contacts?.extra_note ? `\n${escapeHtml(contacts.extra_note)}` : null,
+  ].filter(Boolean);
+  const hasContactLinks = CONTACT_LINK_FIELDS.some(([, field]) => isButtonUrl(contacts?.[field]));
+
+  if (!contactLines.length) {
+    lines.push('', hasContactLinks ? 'Выберите нужную площадку ниже.' : 'Контакты пока не заполнены в CRM.');
+    return lines.join('\n');
+  }
+
+  lines.push('', ...contactLines);
+  return lines.join('\n');
+}
+
+function buildContactsKeyboard(contacts = null) {
+  contacts = contacts || {};
+  const buttons = CONTACT_LINK_FIELDS
+    .map(([label, field]) => {
+      const url = String(contacts[field] || '').trim();
+      return isButtonUrl(url) ? { text: label, url } : null;
+    })
+    .filter(Boolean);
+
+  if (!buttons.length) {
+    return null;
+  }
+
+  return { inline_keyboard: buttons.map((button) => [button]) };
 }
 
 async function loadClientPayload(telegramId) {
@@ -630,6 +858,7 @@ async function sendSchedule(chatId, telegramId, dayOffset = 0, title = 'Расп
     return;
   }
 
+  dayOffset = normalizeScheduleOffset(dayOffset);
   const slots = getSlotsForDay(payload, dayOffset);
   await sendClientMessage(chatId, buildScheduleText(slots, dayOffset, title), buildScheduleKeyboard(slots, dayOffset));
 }
@@ -707,7 +936,8 @@ async function handleClientMessage(message) {
   }
 
   if (text === MENU_BUTTONS.contacts) {
-    await sendClientMessage(chatId, buildContactsText());
+    const contacts = await getClubContacts();
+    await sendClientMessage(chatId, await buildContactsText(contacts), buildContactsKeyboard(contacts));
     return;
   }
 
@@ -734,7 +964,7 @@ async function handleClientCallback(callbackQuery) {
   }
 
   if (data.startsWith('schedule:')) {
-    const dayOffset = Number.parseInt(data.split(':')[1] || '0', 10) || 0;
+    const dayOffset = normalizeScheduleOffset(data.split(':')[1] || '0');
     const slots = getSlotsForDay(payload, dayOffset);
     await answerCallback(callbackId);
     await editClientMessage(chatId, messageId, buildScheduleText(slots, dayOffset), buildScheduleKeyboard(slots, dayOffset));
@@ -744,7 +974,7 @@ async function handleClientCallback(callbackQuery) {
   if (data.startsWith('slot:')) {
     const [, slotId, dayOffsetRaw] = data.split(':');
     const slot = findSlot(payload, slotId);
-    const dayOffset = Number.parseInt(dayOffsetRaw || '0', 10) || 0;
+    const dayOffset = normalizeScheduleOffset(dayOffsetRaw || '0');
     await answerCallback(callbackId);
 
     if (!slot) {
@@ -806,7 +1036,7 @@ async function handleClientCallback(callbackQuery) {
         : null;
     if (photo) {
       try {
-        await sendClientPhoto(chatId, photo, buildTrainerText(trainer), buildTrainerKeyboard());
+        await sendClientPhoto(chatId, photo, buildTrainerPhotoCaption(trainer), buildTrainerKeyboard());
         return;
       } catch (error) {
         logger.warn('telegram_client', {

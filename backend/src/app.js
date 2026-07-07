@@ -26,6 +26,7 @@ const webhooksRouter = require('./routes/webhooks');
 const telegramRouter = require('./routes/telegram');
 const systemRouter = require('./routes/system');
 const staffRouter = require('./routes/staff');
+const clubSettingsRouter = require('./routes/club-settings');
 const { startDelayedAqsiSyncScheduler } = require('./services/order-sync');
 const { markMissedBookings } = require('./jobs/schedule-cleanup');
 const { ensureBootstrapUser } = require('./services/user-auth');
@@ -90,6 +91,7 @@ app.use('/api/staff', authMiddleware, staffRouter);
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/telegram', telegramRouter);
 app.use('/api/system', authMiddleware, systemRouter);
+app.use('/api/club-settings', authMiddleware, clubSettingsRouter);
 
 app.use((req, res) => {
   res.status(404).json({
