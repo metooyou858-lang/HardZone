@@ -405,6 +405,7 @@ type ClientCardProps = {
   profileDraft?: ClientMiniAppProfileInput;
   profileSaveError?: string;
   savingProfile?: boolean;
+  profileRequired?: boolean;
   onProfileDraftChange?: (draft: ClientMiniAppProfileInput) => void;
   onEditProfile?: () => void;
   onCancelProfile?: () => void;
@@ -418,6 +419,7 @@ function ClientCard({
   profileDraft,
   profileSaveError = "",
   savingProfile = false,
+  profileRequired = false,
   onProfileDraftChange,
   onEditProfile,
   onCancelProfile,
@@ -461,19 +463,22 @@ function ClientCard({
                 value={draft.last_name}
                 onChange={(event) => updateDraft({ last_name: event.target.value })}
                 placeholder="Фамилия"
-                className="h-8 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
+                style={{ fontSize: 16 }}
+                className="h-9 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2 text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
               />
               <input
                 value={draft.first_name}
                 onChange={(event) => updateDraft({ first_name: event.target.value })}
                 placeholder="Имя"
-                className="h-8 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
+                style={{ fontSize: 16 }}
+                className="h-9 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2 text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
               />
               <input
                 value={draft.middle_name}
                 onChange={(event) => updateDraft({ middle_name: event.target.value })}
                 placeholder="Отчество"
-                className="col-span-2 h-8 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
+                style={{ fontSize: 16 }}
+                className="col-span-2 h-9 min-w-0 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2 text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
               />
             </div>
           ) : (
@@ -484,13 +489,15 @@ function ClientCard({
         {isProfile ? (
           editingProfile ? (
             <div className="flex shrink-0 flex-col gap-1.5">
-              <button
-                type="button"
-                onClick={onCancelProfile}
-                className="rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1 text-[10px] font-medium text-[var(--text-main)]"
-              >
-                Отмена
-              </button>
+              {!profileRequired ? (
+                <button
+                  type="button"
+                  onClick={onCancelProfile}
+                  className="rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1 text-[10px] font-medium text-[var(--text-main)]"
+                >
+                  Отмена
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={onSaveProfile}
@@ -513,6 +520,11 @@ function ClientCard({
       </div>
       {isProfile ? (
         <div className="relative mt-3 grid gap-2 text-xs">
+          {profileRequired ? (
+            <div className="rounded-md border border-[rgba(246,212,107,0.28)] bg-[rgba(246,212,107,0.08)] px-3 py-2 text-[11px] leading-5 text-[#f6d46b]">
+              Заполните имя, фамилию, email, телефон и дату рождения, чтобы продолжить.
+            </div>
+          ) : null}
           <div className="flex justify-between gap-4 rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] px-3 py-2">
             <span className="text-[var(--text-muted)]">Телефон</span>
             {editingProfile ? (
@@ -521,6 +533,7 @@ function ClientCard({
                 onChange={(event) => updateDraft({ phone: event.target.value })}
                 placeholder="Телефон"
                 inputMode="tel"
+                style={{ fontSize: 16 }}
                 className="min-w-0 flex-1 bg-transparent text-right text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
               />
             ) : (
@@ -535,6 +548,7 @@ function ClientCard({
                 onChange={(event) => updateDraft({ email: event.target.value })}
                 placeholder="Email"
                 inputMode="email"
+                style={{ fontSize: 16 }}
                 className="min-w-0 flex-1 bg-transparent text-right text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
               />
             ) : (
@@ -548,6 +562,7 @@ function ClientCard({
                 value={draft.birth_date}
                 onChange={(event) => updateDraft({ birth_date: event.target.value })}
                 type="date"
+                style={{ fontSize: 16 }}
                 className="min-w-0 flex-1 bg-transparent text-right text-[var(--text-main)] outline-none"
               />
             ) : (
@@ -1169,7 +1184,8 @@ function TrainersScreen({
                 rows={3}
                 maxLength={1000}
                 placeholder="Ваш отзыв"
-                className="mt-3 w-full resize-none rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.04)] px-3 py-2 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
+                style={{ fontSize: 16 }}
+                className="mt-3 w-full resize-none rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.04)] px-3 py-2 text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
               />
               {reviewError ? <p className="mt-2 text-xs text-[#ffb599]">{reviewError}</p> : null}
               <button
@@ -1226,7 +1242,8 @@ function TrainersScreen({
         value={search}
         onChange={(event) => setSearch(event.target.value)}
         placeholder="Поиск"
-        className="h-10 w-full rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.04)] px-3 text-sm text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
+        style={{ fontSize: 16 }}
+        className="h-10 w-full rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.04)] px-3 text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]"
       />
       <section className="grid grid-cols-2 gap-3">
         {visibleTrainers.length === 0 ? (
@@ -1313,6 +1330,7 @@ function ProfileScreen({
   const [savingProfile, setSavingProfile] = useState(false);
   const [editingProfile, setEditingProfile] = useState(false);
   const [editingAthleteProfile, setEditingAthleteProfile] = useState(false);
+  const profileRequired = Boolean(data?.profile_required);
 
   useEffect(() => {
     const editableProfileFields = (data?.athlete_profile || []).filter((field) => field.can_edit);
@@ -1332,6 +1350,12 @@ function ProfileScreen({
       birth_date: dateInputValue(client?.birth_date),
     });
   }, [data?.client]);
+
+  useEffect(() => {
+    if (profileRequired) {
+      setEditingProfile(true);
+    }
+  }, [profileRequired]);
 
   async function saveProfile() {
     setSavingProfile(true);
@@ -1377,12 +1401,16 @@ function ProfileScreen({
         profileDraft={profileDraft}
         profileSaveError={profileSaveError}
         savingProfile={savingProfile}
+        profileRequired={profileRequired}
         onProfileDraftChange={setProfileDraft}
         onEditProfile={() => {
           setProfileSaveError("");
           setEditingProfile(true);
         }}
         onCancelProfile={() => {
+          if (profileRequired) {
+            return;
+          }
           const client = data?.client;
           setProfileDraft({
             first_name: client?.first_name || "",
@@ -1485,7 +1513,8 @@ function ProfileScreen({
                               onChange={(event) => setDraftValues((state) => ({ ...state, [String(field.id)]: event.target.value }))}
                               rows={3}
                               placeholder="Заполните поле"
-                              className="mt-1 w-full resize-none rounded-md border border-transparent bg-transparent p-0 text-xs leading-5 text-[var(--text-muted)] outline-none placeholder:text-[var(--text-muted)] focus:border-[rgba(94,244,216,0.24)] focus:bg-[rgba(255,255,255,0.03)] focus:px-2 focus:py-1"
+                              style={{ fontSize: 16 }}
+                              className="mt-1 w-full resize-none rounded-md border border-transparent bg-transparent p-0 leading-5 text-[var(--text-muted)] outline-none placeholder:text-[var(--text-muted)] focus:border-[rgba(94,244,216,0.24)] focus:bg-[rgba(255,255,255,0.03)] focus:px-2 focus:py-1"
                             />
                           ) : (
                             <input
@@ -1493,7 +1522,8 @@ function ProfileScreen({
                               onChange={(event) => setDraftValues((state) => ({ ...state, [String(field.id)]: event.target.value }))}
                               inputMode={field.field_type === "number" ? "decimal" : "text"}
                               placeholder={field.unit ? `Значение, ${field.unit}` : "Заполните поле"}
-                              className="mt-1 h-5 w-full rounded-md border border-transparent bg-transparent p-0 text-xs leading-5 text-[var(--text-muted)] outline-none placeholder:text-[var(--text-muted)] focus:h-8 focus:border-[rgba(94,244,216,0.24)] focus:bg-[rgba(255,255,255,0.03)] focus:px-2"
+                              style={{ fontSize: 16 }}
+                              className="mt-1 h-6 w-full rounded-md border border-transparent bg-transparent p-0 leading-5 text-[var(--text-muted)] outline-none placeholder:text-[var(--text-muted)] focus:h-9 focus:border-[rgba(94,244,216,0.24)] focus:bg-[rgba(255,255,255,0.03)] focus:px-2"
                             />
                           )}
                         </div>
@@ -1649,7 +1679,7 @@ export function ClientMiniApp() {
 
     try {
       const payload = await loginClientMiniApp(telegramInitData);
-      setData(payload);
+      applyClientPayload(payload);
       setAuthMode("linked");
       setAuthError("");
     } catch (error) {
@@ -1673,7 +1703,7 @@ export function ClientMiniApp() {
 
     try {
       const payload = await linkClientMiniAppPhone(initData, phone);
-      setData(payload);
+      applyClientPayload(payload);
       setPhone("");
       setAuthMode("linked");
     } catch (error) {
@@ -1728,6 +1758,14 @@ export function ClientMiniApp() {
     void authenticate();
   }, []);
 
+  function applyClientPayload(payload: ClientMiniAppPayload) {
+    setData(payload);
+    if (payload.profile_required) {
+      setSelectedTrainerId(null);
+      setActiveTab("profile");
+    }
+  }
+
   if (authMode === "checking" || (authMode === "linked" && !data?.client)) {
     return <ClientLoadingScreen viewportHeight={viewportHeight} />;
   }
@@ -1769,7 +1807,7 @@ export function ClientMiniApp() {
           <TrainersScreen
             trainers={data?.trainers || []}
             initData={initData}
-            onPayloadUpdate={(payload) => setData(payload)}
+            onPayloadUpdate={applyClientPayload}
             initialSelectedId={selectedTrainerId}
           />
         ) : null}
@@ -1778,7 +1816,7 @@ export function ClientMiniApp() {
             data={data}
             initData={initData}
             onOpenVisits={() => setActiveTab("visits")}
-            onPayloadUpdate={(payload) => setData(payload)}
+            onPayloadUpdate={applyClientPayload}
           />
         ) : null}
         {activeTab === "visits" ? <VisitsScreen visits={data?.visits || []} /> : null}
@@ -1788,6 +1826,10 @@ export function ClientMiniApp() {
         active={activeTab}
         onChange={(tab) => {
           setSelectedTrainerId(null);
+          if (data?.profile_required) {
+            setActiveTab("profile");
+            return;
+          }
           setActiveTab(tab);
         }}
       />

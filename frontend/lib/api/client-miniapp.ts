@@ -135,6 +135,7 @@ export type ClientMiniAppAthleteProfileField = {
 
 export type ClientMiniAppPayload = {
   client: ClientMiniAppClient;
+  profile_required: boolean;
   subscriptions: ClientMiniAppSubscription[];
   bookings: ClientMiniAppBooking[];
   visits: ClientMiniAppVisit[];

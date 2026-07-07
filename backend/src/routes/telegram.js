@@ -1,5 +1,7 @@
 const express = require('express');
-const { createHmac, timingSafeEqual } = require('node:crypto');
+const { createHmac, randomUUID, timingSafeEqual } = require('node:crypto');
+const fs = require('fs');
+const path = require('path');
 
 const { handleTelegramUpdate } = require('../services/telegram-bot');
 const { resolveModules } = require('../authz');
@@ -13,6 +15,13 @@ const { sendInternalError } = require('../utils/http-response');
 const { normalizePhone } = require('../utils/phones');
 
 const router = express.Router();
+const CLIENT_PHOTO_DIR = path.join(__dirname, '..', '..', 'uploads', 'clients');
+const TELEGRAM_PHOTO_TYPES = new Map([
+  ['image/jpeg', '.jpg'],
+  ['image/png', '.png'],
+  ['image/webp', '.webp'],
+]);
+const CLIENT_PROFILE_PLACEHOLDERS = new Set(['telegram', 'client', 'клиент', 'новый клиент']);
 
 function isTelegramEnabled() {
   return process.env.TELEGRAM_ENABLED === 'true';
@@ -160,6 +169,26 @@ function toClientIdentity(client) {
   };
 }
 
+function isClientProfileComplete(client) {
+  const firstName = normalizeOptionalText(client?.first_name, 120);
+  const lastName = normalizeOptionalText(client?.last_name, 120);
+  const email = normalizeOptionalText(client?.email, 255);
+  const phone = normalizeOptionalText(client?.phone, 40);
+  const birthDate = normalizeOptionalText(client?.birth_date, 10);
+  const firstNameKey = String(firstName || '').toLowerCase();
+  const lastNameKey = String(lastName || '').toLowerCase();
+
+  return Boolean(
+    firstName &&
+    lastName &&
+    email &&
+    phone &&
+    birthDate &&
+    !CLIENT_PROFILE_PLACEHOLDERS.has(firstNameKey) &&
+    !CLIENT_PROFILE_PLACEHOLDERS.has(lastNameKey)
+  );
+}
+
 function normalizeTelegramPhotoUrl(value) {
   const photoUrl = normalizeOptionalText(value, 2048);
   if (!photoUrl) {
@@ -174,8 +203,64 @@ function normalizeTelegramPhotoUrl(value) {
   }
 }
 
+async function saveTelegramPhotoToClientUploads(telegramUser) {
+  const telegramPhotoUrl = normalizeTelegramPhotoUrl(telegramUser?.photo_url);
+  if (!telegramPhotoUrl) {
+    return null;
+  }
+
+  let response;
+  try {
+    response = await fetch(telegramPhotoUrl, { redirect: 'follow' });
+  } catch (error) {
+    logger.warn('telegram_client_photo_fetch_failed', {
+      telegram_id: telegramUser?.id ? String(telegramUser.id) : null,
+      message: error.message,
+    });
+    return null;
+  }
+
+  if (!response.ok) {
+    logger.warn('telegram_client_photo_fetch_failed', {
+      telegram_id: telegramUser?.id ? String(telegramUser.id) : null,
+      status: response.status,
+    });
+    return null;
+  }
+
+  const contentType = String(response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  const extension = TELEGRAM_PHOTO_TYPES.get(contentType);
+  if (!extension) {
+    return null;
+  }
+
+  const contentLength = Number.parseInt(response.headers.get('content-length') || '', 10);
+  if (Number.isFinite(contentLength) && contentLength > 5 * 1024 * 1024) {
+    return null;
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length === 0 || buffer.length > 5 * 1024 * 1024) {
+    return null;
+  }
+
+  await fs.promises.mkdir(CLIENT_PHOTO_DIR, { recursive: true });
+  const filename = `${Date.now()}-${randomUUID()}${extension}`;
+  await fs.promises.writeFile(path.join(CLIENT_PHOTO_DIR, filename), buffer);
+  return `/uploads/clients/${filename}`;
+}
+
 async function syncClientTelegramPhoto(clientId, telegramUser) {
-  const photoUrl = normalizeTelegramPhotoUrl(telegramUser?.photo_url);
+  const { rows } = await query(
+    'SELECT photo_url FROM clients WHERE id = $1 LIMIT 1',
+    [clientId]
+  );
+
+  if (normalizeOptionalText(rows[0]?.photo_url, 2048)) {
+    return;
+  }
+
+  const photoUrl = await saveTelegramPhotoToClientUploads(telegramUser);
   if (!photoUrl) {
     return;
   }
@@ -364,8 +449,20 @@ async function updateClientMiniAppProfile(clientId, body) {
     return { status: 'invalid', error: 'Укажите фамилию' };
   }
 
-  if (phone && !phoneNormalized) {
+  if (!phone) {
+    return { status: 'invalid', error: 'Укажите телефон' };
+  }
+
+  if (!phoneNormalized) {
     return { status: 'invalid', error: 'Укажите корректный номер телефона' };
+  }
+
+  if (!email) {
+    return { status: 'invalid', error: 'Укажите email' };
+  }
+
+  if (!birthDate) {
+    return { status: 'invalid', error: 'Укажите дату рождения' };
   }
 
   if (phoneNormalized) {
@@ -697,6 +794,7 @@ async function buildClientMiniAppPayload(clientId) {
 
   return {
     client: toClientIdentity(client),
+    profile_required: !isClientProfileComplete(client),
     subscriptions,
     bookings,
     visits,
@@ -759,7 +857,7 @@ async function linkClientByPhone(telegramId, phone, telegramUser = null) {
 
   const { rows } = await query(
     `
-      SELECT id
+      SELECT id, photo_url
       FROM clients
       WHERE phone_normalized = $1
         AND status <> 'inactive'
@@ -777,7 +875,9 @@ async function linkClientByPhone(telegramId, phone, telegramUser = null) {
   }
 
   const matchedClientId = rows[0].id;
-  const telegramPhotoUrl = normalizeTelegramPhotoUrl(telegramUser?.photo_url);
+  const telegramPhotoUrl = normalizeOptionalText(rows[0].photo_url, 2048)
+    ? null
+    : await saveTelegramPhotoToClientUploads(telegramUser);
 
   await query(
     `
@@ -797,17 +897,6 @@ async function linkClientByPhone(telegramId, phone, telegramUser = null) {
     phone_normalized: phoneNormalized,
     matched_client_id: matchedClientId,
     data: await buildClientMiniAppPayload(matchedClientId),
-  };
-}
-
-function getTelegramClientName(telegramUser) {
-  const firstName = String(telegramUser?.first_name || '').trim();
-  const lastName = String(telegramUser?.last_name || '').trim();
-  const username = String(telegramUser?.username || '').trim();
-
-  return {
-    firstName: firstName || username || 'Клиент',
-    lastName,
   };
 }
 
@@ -841,22 +930,19 @@ async function createAndLinkClientByPhone(telegramUser, phone) {
   );
 
   if (inactiveTelegramRows[0]) {
-    const { firstName, lastName } = getTelegramClientName(telegramUser);
     const clientId = inactiveTelegramRows[0].id;
-    const telegramPhotoUrl = normalizeTelegramPhotoUrl(telegramUser?.photo_url);
+    const telegramPhotoUrl = await saveTelegramPhotoToClientUploads(telegramUser);
     await query(
       `
         UPDATE clients
-        SET first_name = CASE WHEN NULLIF(first_name, '') IS NULL THEN $1 ELSE first_name END,
-            last_name = CASE WHEN NULLIF(last_name, '') IS NULL THEN $2 ELSE last_name END,
-            phone = COALESCE(NULLIF(phone, ''), $3),
-            phone_normalized = $4,
-            photo_url = COALESCE(NULLIF(photo_url, ''), $5),
+        SET phone = COALESCE(NULLIF(phone, ''), $1),
+            phone_normalized = $2,
+            photo_url = COALESCE(NULLIF(photo_url, ''), $3),
             status = 'active',
             updated_at = NOW()
-        WHERE id = $6
+        WHERE id = $4
       `,
-      [firstName, lastName, phone, phoneNormalized, telegramPhotoUrl, clientId]
+      [phone, phoneNormalized, telegramPhotoUrl, clientId]
     );
 
     return {
@@ -872,8 +958,7 @@ async function createAndLinkClientByPhone(telegramUser, phone) {
     return linkedResult;
   }
 
-  const { firstName, lastName } = getTelegramClientName(telegramUser);
-  const telegramPhotoUrl = normalizeTelegramPhotoUrl(telegramUser?.photo_url);
+  const telegramPhotoUrl = await saveTelegramPhotoToClientUploads(telegramUser);
   const barcode = await generateClientBarcode();
   const { rows } = await query(
     `
@@ -884,8 +969,8 @@ async function createAndLinkClientByPhone(telegramUser, phone) {
       RETURNING id
     `,
     [
-      firstName,
-      lastName,
+      'Клиент',
+      'Telegram',
       phone,
       phoneNormalized,
       telegramId,
@@ -1508,6 +1593,7 @@ router.post('/webhook/:secret', async (req, res) => {
 });
 
 router.findClientByTelegramId = findClientByTelegramId;
+router.createAndLinkClientByPhone = createAndLinkClientByPhone;
 router.buildClientMiniAppPayload = buildClientMiniAppPayload;
 router.bookClientSlot = bookClientSlot;
 router.cancelClientBooking = cancelClientBooking;

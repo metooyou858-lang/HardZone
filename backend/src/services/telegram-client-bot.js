@@ -166,6 +166,17 @@ function buildClientMiniAppKeyboard(text = 'Открыть личный каби
   };
 }
 
+function buildClientPhoneKeyboard() {
+  return {
+    keyboard: [
+      [{ text: 'Поделиться телефоном', request_contact: true }],
+      [{ text: 'Открыть личный кабинет', web_app: { url: getClientMiniAppUrl() } }],
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: true,
+  };
+}
+
 function buildMainMenuText(payload, telegramUser = null) {
   const name = escapeHtml(getClientName(payload, telegramUser));
   return [
@@ -430,7 +441,16 @@ async function loadClientPayload(telegramId) {
 async function sendMainMenu(chatId, telegramUser = null) {
   const payload = await loadClientPayload(telegramUser?.id);
   if (!payload) {
-    await sendClientMessage(chatId, buildNotLinkedText(), buildClientMiniAppKeyboard('Привязать аккаунт'));
+    await sendClientMessage(chatId, buildNotLinkedText(), buildClientPhoneKeyboard());
+    return;
+  }
+
+  if (payload.profile_required) {
+    await sendClientMessage(
+      chatId,
+      'Профиль нужно заполнить: имя, фамилия, email, телефон и дата рождения.',
+      buildClientMiniAppKeyboard('Заполнить профиль')
+    );
     return;
   }
 
@@ -440,7 +460,7 @@ async function sendMainMenu(chatId, telegramUser = null) {
 async function sendSchedule(chatId, telegramId, dayOffset = 0, title = 'Расписание') {
   const payload = await loadClientPayload(telegramId);
   if (!payload) {
-    await sendClientMessage(chatId, buildNotLinkedText(), buildClientMiniAppKeyboard('Привязать аккаунт'));
+    await sendClientMessage(chatId, buildNotLinkedText(), buildClientPhoneKeyboard());
     return;
   }
 
@@ -453,6 +473,35 @@ async function handleClientMessage(message) {
   const telegramUser = message.from;
   const text = String(message.text || '').trim();
   if (!chatId) {
+    return;
+  }
+
+  if (message.contact) {
+    const contact = message.contact;
+    if (!telegramUser?.id || Number(contact.user_id) !== Number(telegramUser.id)) {
+      await sendClientMessage(chatId, 'Отправьте свой номер через кнопку "Поделиться телефоном".', buildClientPhoneKeyboard());
+      return;
+    }
+
+    const result = await telegramRoute.createAndLinkClientByPhone(telegramUser, contact.phone_number);
+    if (result.status === 'invalid_phone') {
+      await sendClientMessage(chatId, 'Не удалось распознать номер телефона. Попробуйте ещё раз.', buildClientPhoneKeyboard());
+      return;
+    }
+
+    if (result.status === 'duplicate') {
+      await sendClientMessage(
+        chatId,
+        'В CRM найдено несколько клиентов с таким номером. Обратитесь к администратору HardZone.'
+      );
+      return;
+    }
+
+    await sendClientMessage(
+      chatId,
+      'Телефон получен. Откройте личный кабинет и заполните персональные данные.',
+      buildClientMiniAppKeyboard()
+    );
     return;
   }
 
@@ -477,7 +526,7 @@ async function handleClientMessage(message) {
 
   const payload = await loadClientPayload(telegramUser?.id);
   if (!payload) {
-    await sendClientMessage(chatId, buildNotLinkedText(), buildClientMiniAppKeyboard('Привязать аккаунт'));
+    await sendClientMessage(chatId, buildNotLinkedText(), buildClientPhoneKeyboard());
     return;
   }
 
