@@ -8,6 +8,7 @@ import { TrainerFormModal } from "@/components/schedule/trainer-form-modal";
 import { withAlpha, PlusIcon, type BannerState, getBannerClass } from "@/components/schedule/schedule-shared";
 import { hasModuleAccess, type AuthModulePermission, type AuthUserRole } from "@/lib/access";
 import { UsersPanel } from "@/components/admin/users-panel";
+import { ServicesSettingsPanel } from "@/components/settings/services-settings-panel";
 import { SystemStatusPanel } from "@/components/settings/system-status-panel";
 import { fetchClubContacts, updateClubContacts, type ClubContacts } from "@/lib/api/club-settings";
 import {
@@ -28,7 +29,7 @@ import { fetchGymOverview, saveGymHours, type GymHour } from "@/lib/api/schedule
 import { deleteTrainer, fetchTrainerStaffUsers, fetchTrainers, type Trainer, type TrainerStaffUser } from "@/lib/api/trainers";
 import { fetchTrainingTypes, type TrainingType } from "@/lib/api/training-types";
 
-type SettingsTab = "trainers" | "contacts" | "gym" | "athlete" | "users" | "system";
+type SettingsTab = "trainers" | "contacts" | "gym" | "athlete" | "services" | "users" | "system";
 
 type AthleteFieldForm = {
   id: string | null;
@@ -107,6 +108,16 @@ const baseTabs: { value: SettingsTab; label: string }[] = [
   { value: "gym", label: "Часы работы зала" },
   { value: "athlete", label: "Профиль атлета" },
 ];
+
+const settingsTabValues = new Set<SettingsTab>([
+  "trainers",
+  "contacts",
+  "gym",
+  "athlete",
+  "services",
+  "users",
+  "system",
+]);
 
 const emptyClubContacts: ClubContacts = {
   title: "HardZone",
@@ -192,6 +203,13 @@ export function SettingsPage() {
   const [showAthleteFieldEditor, setShowAthleteFieldEditor] = useState(false);
   const [athleteSectionForm, setAthleteSectionForm] = useState<AthleteSectionForm>(emptyAthleteSectionForm);
   const [athleteFieldForm, setAthleteFieldForm] = useState<AthleteFieldForm>(emptyAthleteFieldForm);
+
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    if (settingsTabValues.has(requestedTab as SettingsTab)) {
+      setTab(requestedTab as SettingsTab);
+    }
+  }, []);
 
   useEffect(() => {
     fetch("/auth-api/me", { credentials: "same-origin" })
@@ -308,9 +326,11 @@ export function SettingsPage() {
 
   const canManageUsers = hasModuleAccess(currentModules, "users_manage");
   const canViewSystem = canManageUsers;
+  const canManageServices = hasModuleAccess(currentModules, "services");
 
   const tabs = [
     ...baseTabs,
+    ...(canManageServices ? [{ value: "services" as SettingsTab, label: "Услуги" }] : []),
     ...(canManageUsers ? [{ value: "users" as SettingsTab, label: "Сотрудники" }] : []),
     ...(canViewSystem ? [{ value: "system" as SettingsTab, label: "Система" }] : []),
   ];
@@ -732,6 +752,12 @@ export function SettingsPage() {
     }
   }
 
+  function handleSelectTab(nextTab: SettingsTab) {
+    setTab(nextTab);
+    const nextUrl = nextTab === "trainers" ? "/settings" : `/settings?tab=${nextTab}`;
+    window.history.replaceState(null, "", nextUrl);
+  }
+
   function handleToggleOpen(dayOfWeek: number, isOpen: boolean) {
     setHoursForm((prev) =>
       prev.map((item) =>
@@ -767,12 +793,12 @@ export function SettingsPage() {
           </p>
         </div>
 
-        <div className="inline-flex rounded-full border border-[var(--line-soft)] bg-[var(--bg-card)] p-1">
+        <div className="flex flex-wrap gap-1 rounded-[24px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-1">
           {tabs.map((t) => (
             <button
               key={t.value}
               type="button"
-              onClick={() => setTab(t.value)}
+              onClick={() => handleSelectTab(t.value)}
               className={`rounded-full px-4 py-2 text-sm transition-colors ${
                 tab === t.value
                   ? "bg-[var(--accent)] text-[#062b26]"
@@ -1242,6 +1268,10 @@ export function SettingsPage() {
             )}
           </div>
         </section>
+      )}
+
+      {tab === "services" && canManageServices && (
+        <ServicesSettingsPanel />
       )}
 
       {tab === "users" && canManageUsers && (

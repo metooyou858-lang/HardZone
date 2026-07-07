@@ -36,12 +36,6 @@ const secondaryModules = [
     permission: "warehouse",
   },
   {
-    href: "/services",
-    title: "Услуги",
-    description: "Абонементы, параметры услуг и виды тренировок.",
-    permission: "services",
-  },
-  {
     href: "/analytics",
     title: "Аналитика",
     description: "Слой, куда постепенно сводятся продажи, посещения и абонементы.",

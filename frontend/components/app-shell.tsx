@@ -21,20 +21,6 @@ function WarehouseIcon() {
   );
 }
 
-function ServicesIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
-      <path
-        d="M6.25 4.167h5.417a2.5 2.5 0 0 1 2.5 2.5v8.333H5.833a1.667 1.667 0 0 1-1.666-1.667V6.25a2.083 2.083 0 0 1 2.083-2.083Z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-      <path d="M7.5 7.5h3.75M7.5 10h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function SalesIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
@@ -142,7 +128,6 @@ function LogoutIcon() {
 
 const navItems: Array<{ href: string; label: string; icon: React.ReactNode; permission: AuthModulePermission }> = [
   { href: "/warehouse", label: "Склад", icon: <WarehouseIcon />, permission: "warehouse" },
-  { href: "/services", label: "Услуги", icon: <ServicesIcon />, permission: "services" },
   { href: "/sales", label: "Продажи", icon: <SalesIcon />, permission: "sales" },
   { href: "/clients", label: "Клиенты", icon: <ClientsIcon />, permission: "clients" },
   { href: "/schedule", label: "Расписание", icon: <ScheduleIcon />, permission: "schedule" },
@@ -254,6 +239,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const canAccessSettings =
+    hasModuleAccess(user?.modules, "services") ||
+    hasModuleAccess(user?.modules, "users_manage") ||
     hasModuleAccess(user?.modules, "schedule") ||
     hasModuleAccess(user?.modules, "schedule_gym") ||
     hasModuleAccess(user?.modules, "schedule_clients") ||
