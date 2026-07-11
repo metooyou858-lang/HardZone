@@ -12,6 +12,7 @@ const { after, before, test } = require('node:test');
 const app = require('../src/app');
 const { pool, query } = require('../src/db');
 const { hashPassword } = require('../src/utils/passwords');
+const { handleTelegramClientUpdate } = require('../src/services/telegram-client-bot');
 
 let server;
 let baseUrl;
@@ -579,6 +580,139 @@ test('telegram client mini app login returns the linked client payload', async (
     assert.equal(result.body.data.client.first_name, 'CI');
   } finally {
     await query("DELETE FROM clients WHERE barcode LIKE 'ci-client-login-%'");
+    process.env.TELEGRAM_CLIENT_BOT_TOKEN = previousToken;
+  }
+});
+
+test('telegram client bot links only the sender own shared contact', async () => {
+  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const telegramId = 600000000 + Math.floor(Math.random() * 100000000);
+  const originalFetch = global.fetch;
+  const sentMessages = [];
+
+  global.fetch = async (url, options = {}) => {
+    if (String(url).startsWith('https://api.telegram.org/bot')) {
+      sentMessages.push(JSON.parse(options.body || '{}'));
+      return new Response(JSON.stringify({ ok: true, result: {} }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return originalFetch(url, options);
+  };
+
+  try {
+    const { rows } = await query(
+      `INSERT INTO clients (first_name, last_name, phone, phone_normalized, barcode)
+       VALUES ('CI', 'Contact Client', '+7 (999) 123-45-67', '79991234567', $1)
+       RETURNING id`,
+      [`ci-contact-${suffix}`]
+    );
+    const clientId = rows[0].id;
+
+    await handleTelegramClientUpdate({
+      message: {
+        chat: { id: telegramId },
+        from: { id: telegramId, first_name: 'CI' },
+        contact: { user_id: telegramId + 1, phone_number: '+7 (999) 123-45-67' },
+      },
+    });
+    let client = await query('SELECT telegram_id FROM clients WHERE id = $1', [clientId]);
+    assert.equal(client.rows[0].telegram_id, null);
+
+    await handleTelegramClientUpdate({
+      message: {
+        chat: { id: telegramId },
+        from: { id: telegramId, first_name: 'CI' },
+        contact: { user_id: telegramId, phone_number: '+7 (999) 123-45-67' },
+      },
+    });
+    client = await query('SELECT telegram_id FROM clients WHERE id = $1', [clientId]);
+    assert.equal(client.rows[0].telegram_id, String(telegramId));
+    assert.equal(sentMessages.length, 2);
+  } finally {
+    global.fetch = originalFetch;
+    await query("DELETE FROM clients WHERE barcode LIKE 'ci-contact-%'");
+  }
+});
+
+test('telegram client booking is isolated by identity and cancellation restores capacity', async () => {
+  const previousToken = process.env.TELEGRAM_CLIENT_BOT_TOKEN;
+  process.env.TELEGRAM_CLIENT_BOT_TOKEN = 'test-telegram-client-bot-token';
+  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const ownerTelegramId = 700000000 + Math.floor(Math.random() * 10000000);
+  const otherTelegramId = ownerTelegramId + 10000000;
+  let slotId = null;
+
+  try {
+    const { rows: clientRows } = await query(
+      `INSERT INTO clients (first_name, last_name, telegram_id, barcode)
+       VALUES ('CI', 'Booking Owner', $1, $2), ('CI', 'Booking Other', $3, $4)
+       RETURNING id, telegram_id`,
+      [
+        String(ownerTelegramId),
+        `ci-client-book-owner-${suffix}`,
+        String(otherTelegramId),
+        `ci-client-book-other-${suffix}`,
+      ]
+    );
+    const ownerClientId = clientRows.find((row) => row.telegram_id === String(ownerTelegramId)).id;
+
+    const { rows: slotRows } = await query(
+      `INSERT INTO schedule_slots (date, start_time, capacity, slot_type, status)
+       VALUES ((CURRENT_DATE + INTERVAL '30 days')::date, '10:00', 2, 'group', 'active')
+       RETURNING id`
+    );
+    slotId = slotRows[0].id;
+
+    const signedBody = (telegramId, body = {}) => JSON.stringify({
+      init_data: createTelegramInitData(
+        { id: telegramId, first_name: 'CI' },
+        'test-telegram-client-bot-token'
+      ),
+      ...body,
+    });
+
+    const booked = await request('/api/telegram/client-miniapp-book', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: signedBody(ownerTelegramId, { slot_id: slotId }),
+    });
+    assert.equal(booked.response.status, 201);
+    assert.equal(booked.body.success, true);
+
+    const bookingRows = await query(
+      'SELECT id, client_id, coverage_status, coverage_reason FROM bookings WHERE slot_id = $1',
+      [slotId]
+    );
+    assert.equal(bookingRows.rows.length, 1);
+    assert.equal(bookingRows.rows[0].client_id, ownerClientId);
+    assert.equal(bookingRows.rows[0].coverage_status, 'unpaid');
+    assert.equal(bookingRows.rows[0].coverage_reason, 'no_subscription');
+    const bookingId = bookingRows.rows[0].id;
+
+    const foreignCancellation = await request('/api/telegram/client-miniapp-cancel-booking', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: signedBody(otherTelegramId, { booking_id: bookingId }),
+    });
+    assert.equal(foreignCancellation.response.status, 404);
+
+    const cancelled = await request('/api/telegram/client-miniapp-cancel-booking', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: signedBody(ownerTelegramId, { booking_id: bookingId }),
+    });
+    assert.equal(cancelled.response.status, 200);
+    assert.equal(cancelled.body.success, true);
+
+    const remaining = await query('SELECT count(*)::int AS count FROM bookings WHERE id = $1', [bookingId]);
+    assert.equal(remaining.rows[0].count, 0);
+    const slot = await query('SELECT booked_count FROM schedule_slots WHERE id = $1', [slotId]);
+    assert.equal(slot.rows[0].booked_count, 0);
+  } finally {
+    if (slotId) await query('DELETE FROM schedule_slots WHERE id = $1', [slotId]);
+    await query("DELETE FROM clients WHERE barcode LIKE 'ci-client-book-%'");
     process.env.TELEGRAM_CLIENT_BOT_TOKEN = previousToken;
   }
 });
