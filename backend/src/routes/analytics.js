@@ -26,6 +26,28 @@ function parseAmount(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function parseNonNegativeAmount(value, fallback = 0) {
+  if (value === null || value === undefined || value === '') return fallback;
+  const parsed = Number.parseFloat(String(value).replace(',', '.'));
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function parseOptionalNonNegativeInteger(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number.parseInt(String(value), 10);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : Number.NaN;
+}
+
+function normalizeIdList(value) {
+  if (!Array.isArray(value)) return [];
+
+  return [...new Set(
+    value
+      .map((item) => Number.parseInt(String(item), 10))
+      .filter((item) => Number.isInteger(item) && item > 0)
+  )];
+}
+
 function getDefaultRange() {
   const now = new Date();
   const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
@@ -139,6 +161,306 @@ function sumByKind(checks, kind, field = 'revenue') {
     )
   );
 }
+
+async function fetchPayrollRules() {
+  const { rows } = await pool.query(`
+      SELECT
+        pr.id,
+        pr.base_amount,
+        pr.bonus_threshold,
+        pr.bonus_per_person,
+        pr.effective_from::text AS effective_from,
+      pr.comment,
+      pr.created_by,
+      pr.created_at,
+      pr.updated_at,
+      COALESCE(
+        json_agg(
+          json_build_object(
+            'id', pri.id,
+            'training_type_id', pri.training_type_id,
+            'training_type_name', tt.name,
+            'product_id', pri.product_id,
+            'product_name', p.name
+          )
+          ORDER BY COALESCE(tt.name, p.name)
+        ) FILTER (WHERE pri.id IS NOT NULL),
+        '[]'
+      ) AS items
+    FROM payroll_rules pr
+    LEFT JOIN payroll_rule_items pri ON pri.rule_id = pr.id
+    LEFT JOIN training_types tt ON tt.id = pri.training_type_id
+    LEFT JOIN products p ON p.id = pri.product_id
+    GROUP BY pr.id
+    ORDER BY pr.effective_from DESC, pr.id DESC
+  `);
+
+  return rows.map((row) => ({
+    ...row,
+    base_amount: Number(row.base_amount || 0),
+    bonus_threshold: row.bonus_threshold === null ? null : Number(row.bonus_threshold),
+    bonus_per_person: row.bonus_per_person === null ? null : Number(row.bonus_per_person),
+  }));
+}
+
+function getRuleForSlot(slot, rules) {
+  const slotDate = String(slot.date);
+  const productRule = rules.find((rule) =>
+    String(rule.effective_from) <= slotDate &&
+    rule.items.some((item) => item.product_id !== null && Number(item.product_id) === Number(slot.product_id))
+  );
+
+  if (productRule) return productRule;
+
+  return rules.find((rule) =>
+    String(rule.effective_from) <= slotDate &&
+    rule.items.some((item) => item.training_type_id !== null && Number(item.training_type_id) === Number(slot.training_type_id))
+  ) || null;
+}
+
+function buildPayrollLine(slot, rules) {
+  const rule = getRuleForSlot(slot, rules);
+  const attendedCount = Number(slot.attended_count || 0);
+  const confirmedCount = Number(slot.confirmed_count || 0);
+  const baseAmount = rule ? Number(rule.base_amount || 0) : 0;
+  const threshold = rule?.bonus_threshold === null || rule?.bonus_threshold === undefined
+    ? null
+    : Number(rule.bonus_threshold);
+  const bonusPerPerson = rule?.bonus_per_person === null || rule?.bonus_per_person === undefined
+    ? 0
+    : Number(rule.bonus_per_person);
+  const bonusPeople = threshold === null ? 0 : Math.max(0, attendedCount - threshold);
+  const bonusAmount = roundMoney(bonusPeople * bonusPerPerson);
+  const totalAmount = roundMoney(baseAmount + bonusAmount);
+  const warnings = [];
+
+  if (!rule) {
+    warnings.push('Нет правила оплаты для занятия');
+  }
+
+  if (confirmedCount > 0 && attendedCount === 0) {
+    warnings.push('Есть записи, но нет отметок прихода');
+  }
+
+  return {
+    slot_id: slot.id,
+    date: slot.date,
+    start_time: slot.start_time,
+    slot_type: slot.slot_type,
+    training_type_id: slot.training_type_id,
+    training_type_name: slot.training_type_name || slot.product_name || 'Занятие',
+    product_id: slot.product_id,
+    product_name: slot.product_name,
+    trainer_id: slot.trainer_id,
+    trainer_name: slot.trainer_name,
+    attended_count: attendedCount,
+    confirmed_count: confirmedCount,
+    base_amount: baseAmount,
+    bonus_threshold: threshold,
+    bonus_per_person: bonusPerPerson,
+    bonus_people: bonusPeople,
+    bonus_amount: bonusAmount,
+    total_amount: totalAmount,
+    rule_id: rule?.id || null,
+    warnings,
+  };
+}
+
+router.get('/payroll/rules', async (_req, res) => {
+  try {
+    res.json({ success: true, data: await fetchPayrollRules() });
+  } catch (err) {
+    return sendInternalError(res, err, { route: 'analytics.payroll.rules' });
+  }
+});
+
+router.post('/payroll/rules', async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const trainingTypeIds = normalizeIdList(req.body?.training_type_ids);
+    const productIds = normalizeIdList(req.body?.product_ids);
+    const baseAmount = parseNonNegativeAmount(req.body?.base_amount, 0);
+    const bonusThreshold = parseOptionalNonNegativeInteger(req.body?.bonus_threshold);
+    const bonusPerPerson = parseNonNegativeAmount(req.body?.bonus_per_person, 0);
+    const effectiveFrom = parseDate(req.body?.effective_from, null);
+    const comment = asOptionalString(req.body?.comment);
+
+    if (trainingTypeIds.length === 0 && productIds.length === 0) {
+      return res.status(422).json({ success: false, error: 'Выберите хотя бы одно занятие или услугу' });
+    }
+
+    if (baseAmount === null) {
+      return res.status(422).json({ success: false, error: 'Укажите корректную базовую сумму' });
+    }
+
+    if (Number.isNaN(bonusThreshold)) {
+      return res.status(422).json({ success: false, error: 'Укажите корректный порог доплаты' });
+    }
+
+    if (bonusPerPerson === null) {
+      return res.status(422).json({ success: false, error: 'Укажите корректную сумму доплаты' });
+    }
+
+    if (!effectiveFrom) {
+      return res.status(422).json({ success: false, error: 'Укажите дату начала действия' });
+    }
+
+    await client.query('BEGIN');
+
+    const { rows } = await client.query(
+      `INSERT INTO payroll_rules (
+         base_amount, bonus_threshold, bonus_per_person, effective_from, comment, created_by
+       )
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id`,
+      [
+        baseAmount.toFixed(2),
+        bonusThreshold,
+        bonusPerPerson.toFixed(2),
+        effectiveFrom,
+        comment,
+        req.user?.id || null,
+      ]
+    );
+    const ruleId = rows[0].id;
+
+    for (const trainingTypeId of trainingTypeIds) {
+      await client.query(
+        'INSERT INTO payroll_rule_items (rule_id, training_type_id) VALUES ($1, $2)',
+        [ruleId, trainingTypeId]
+      );
+    }
+
+    for (const productId of productIds) {
+      await client.query(
+        'INSERT INTO payroll_rule_items (rule_id, product_id) VALUES ($1, $2)',
+        [ruleId, productId]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    return res.status(201).json({ success: true, data: { id: Number(ruleId) } });
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('Payroll rule rollback failed', rollbackError);
+    }
+
+    return sendInternalError(res, err, { route: 'analytics.payroll.rules.create' });
+  } finally {
+    client.release();
+  }
+});
+
+router.delete('/payroll/rules/:id', async (req, res) => {
+  try {
+    const id = Number.parseInt(String(req.params.id), 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(422).json({ success: false, error: 'Некорректное правило' });
+    }
+
+    const { rowCount } = await pool.query('DELETE FROM payroll_rules WHERE id = $1', [id]);
+    if (rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Правило не найдено' });
+    }
+
+    return res.json({ success: true, data: { id } });
+  } catch (err) {
+    return sendInternalError(res, err, { route: 'analytics.payroll.rules.delete' });
+  }
+});
+
+router.get('/payroll', async (req, res) => {
+  try {
+    const defaults = getDefaultRange();
+    const from = parseDate(req.query.from, defaults.from);
+    const to = parseDate(req.query.to, defaults.to);
+    const [rules, slotsResult] = await Promise.all([
+      fetchPayrollRules(),
+      pool.query(
+        `
+          SELECT
+            ss.id,
+            ss.date::text AS date,
+            ss.start_time,
+            ss.slot_type,
+            ss.training_type_id,
+            ss.product_id,
+            ss.trainer_id,
+            tt.name AS training_type_name,
+            p.name AS product_name,
+            CONCAT_WS(' ', t.last_name, t.first_name) AS trainer_name,
+            COALESCE(SUM(CASE WHEN b.status = 'attended' THEN b.places_count ELSE 0 END), 0)::INT AS attended_count,
+            COALESCE(SUM(CASE WHEN b.status IN ('confirmed', 'attended') THEN b.places_count ELSE 0 END), 0)::INT AS confirmed_count
+          FROM schedule_slots ss
+          JOIN trainers t ON t.id = ss.trainer_id
+          LEFT JOIN training_types tt ON tt.id = ss.training_type_id
+          LEFT JOIN products p ON p.id = ss.product_id
+          LEFT JOIN bookings b ON b.slot_id = ss.id
+          WHERE ss.date >= $1::date
+            AND ss.date <= $2::date
+            AND ss.status <> 'cancelled'
+            AND ss.trainer_id IS NOT NULL
+          GROUP BY ss.id, tt.name, p.name, t.last_name, t.first_name
+          ORDER BY ss.date DESC, ss.start_time DESC, ss.id DESC
+        `,
+        [from, to]
+      ),
+    ]);
+
+    const lines = slotsResult.rows.map((slot) => buildPayrollLine(slot, rules));
+    const trainerMap = new Map();
+
+    for (const line of lines) {
+      const key = String(line.trainer_id);
+      const current = trainerMap.get(key) || {
+        trainer_id: line.trainer_id,
+        trainer_name: line.trainer_name,
+        slots_count: 0,
+        attended_count: 0,
+        base_amount: 0,
+        bonus_amount: 0,
+        total_amount: 0,
+        warnings_count: 0,
+        lines: [],
+      };
+
+      current.slots_count += 1;
+      current.attended_count += line.attended_count;
+      current.base_amount = roundMoney(current.base_amount + line.base_amount);
+      current.bonus_amount = roundMoney(current.bonus_amount + line.bonus_amount);
+      current.total_amount = roundMoney(current.total_amount + line.total_amount);
+      current.warnings_count += line.warnings.length;
+      current.lines.push(line);
+      trainerMap.set(key, current);
+    }
+
+    const trainers = Array.from(trainerMap.values()).sort((left, right) => right.total_amount - left.total_amount);
+    const summary = {
+      trainers_count: trainers.length,
+      slots_count: lines.length,
+      attended_count: lines.reduce((sum, line) => sum + line.attended_count, 0),
+      base_amount: roundMoney(lines.reduce((sum, line) => sum + line.base_amount, 0)),
+      bonus_amount: roundMoney(lines.reduce((sum, line) => sum + line.bonus_amount, 0)),
+      total_amount: roundMoney(lines.reduce((sum, line) => sum + line.total_amount, 0)),
+      warnings_count: lines.reduce((sum, line) => sum + line.warnings.length, 0),
+    };
+
+    return res.json({
+      success: true,
+      data: {
+        range: { from, to },
+        summary,
+        trainers,
+      },
+    });
+  } catch (err) {
+    return sendInternalError(res, err, { route: 'analytics.payroll' });
+  }
+});
 
 router.get('/', async (req, res) => {
   try {

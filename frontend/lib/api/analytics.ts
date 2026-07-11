@@ -106,6 +106,76 @@ export type AnalyticsVisit = {
   client_name: string;
 };
 
+export type PayrollRuleItem = {
+  id: number;
+  training_type_id: number | null;
+  training_type_name: string | null;
+  product_id: number | null;
+  product_name: string | null;
+};
+
+export type PayrollRule = {
+  id: number;
+  base_amount: number;
+  bonus_threshold: number | null;
+  bonus_per_person: number | null;
+  effective_from: string;
+  comment: string | null;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+  items: PayrollRuleItem[];
+};
+
+export type PayrollLine = {
+  slot_id: number;
+  date: string;
+  start_time: string;
+  slot_type: "group" | "personal" | "rental";
+  training_type_id: number | null;
+  training_type_name: string;
+  product_id: number | null;
+  product_name: string | null;
+  trainer_id: number;
+  trainer_name: string;
+  attended_count: number;
+  confirmed_count: number;
+  base_amount: number;
+  bonus_threshold: number | null;
+  bonus_per_person: number;
+  bonus_people: number;
+  bonus_amount: number;
+  total_amount: number;
+  rule_id: number | null;
+  warnings: string[];
+};
+
+export type PayrollTrainerSummary = {
+  trainer_id: number;
+  trainer_name: string;
+  slots_count: number;
+  attended_count: number;
+  base_amount: number;
+  bonus_amount: number;
+  total_amount: number;
+  warnings_count: number;
+  lines: PayrollLine[];
+};
+
+export type PayrollReport = {
+  range: { from: string; to: string };
+  summary: {
+    trainers_count: number;
+    slots_count: number;
+    attended_count: number;
+    base_amount: number;
+    bonus_amount: number;
+    total_amount: number;
+    warnings_count: number;
+  };
+  trainers: PayrollTrainerSummary[];
+};
+
 export type AnalyticsReport = {
   range: { from: string; to: string };
   summary: AnalyticsSummary;
@@ -155,5 +225,44 @@ export async function deleteAnalyticsExpense(id: number) {
     method: "DELETE",
   });
 
+  return response.data;
+}
+
+export async function fetchPayrollRules() {
+  const response = await apiFetch<ApiEnvelope<PayrollRule[]>>("/analytics/payroll/rules");
+  return response.data;
+}
+
+export async function createPayrollRule(data: {
+  training_type_ids: number[];
+  product_ids: number[];
+  base_amount: number;
+  bonus_threshold?: number | null;
+  bonus_per_person?: number | null;
+  effective_from: string;
+  comment?: string | null;
+}) {
+  const response = await apiFetch<ApiEnvelope<{ id: number }>>("/analytics/payroll/rules", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+  return response.data;
+}
+
+export async function deletePayrollRule(id: number) {
+  const response = await apiFetch<ApiEnvelope<{ id: number }>>(`/analytics/payroll/rules/${id}`, {
+    method: "DELETE",
+  });
+
+  return response.data;
+}
+
+export async function fetchPayrollReport(params: { from: string; to: string }) {
+  const search = new URLSearchParams();
+  search.set("from", params.from);
+  search.set("to", params.to);
+
+  const response = await apiFetch<ApiEnvelope<PayrollReport>>(`/analytics/payroll?${search.toString()}`);
   return response.data;
 }

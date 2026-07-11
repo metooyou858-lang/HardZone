@@ -4,15 +4,24 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import {
   createAnalyticsExpense,
+  createPayrollRule,
   deleteAnalyticsExpense,
+  deletePayrollRule,
   fetchAnalyticsReport,
+  fetchPayrollReport,
+  fetchPayrollRules,
   type AnalyticsCheck,
   type AnalyticsExternalExpense,
   type AnalyticsReport,
   type AnalyticsSaleLine,
+  type PayrollReport,
+  type PayrollRule,
+  type PayrollTrainerSummary,
 } from "@/lib/api/analytics";
+import { fetchProducts, type Product } from "@/lib/api/products";
+import { fetchTrainingTypes, type TrainingType } from "@/lib/api/training-types";
 
-type Tab = "overview" | "checks" | "products" | "services" | "expenses" | "visits";
+type Tab = "overview" | "checks" | "products" | "services" | "expenses" | "visits" | "payroll";
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "overview", label: "Обзор" },
@@ -21,6 +30,7 @@ const tabs: { id: Tab; label: string }[] = [
   { id: "services", label: "Услуги" },
   { id: "expenses", label: "Расходы" },
   { id: "visits", label: "Посещения" },
+  { id: "payroll", label: "Зарплаты" },
 ];
 
 const paymentLabels: Record<string, string> = {
@@ -113,7 +123,7 @@ function shiftMonthValue(monthValue: string, shift: number) {
 }
 
 function formatPeriodDate(value: string) {
-  const [year, month, day] = value.split("-");
+  const [year, month, day] = value.slice(0, 10).split("-");
   return `${day}.${month}.${year}`;
 }
 
@@ -482,6 +492,426 @@ function ExpenseRowDeleteButton({
   );
 }
 
+function todayDateValue() {
+  const now = new Date();
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+}
+
+function PayrollRulesPanel({
+  rules,
+  trainingTypes,
+  services,
+  busy,
+  onCreate,
+  onDelete,
+}: {
+  rules: PayrollRule[];
+  trainingTypes: TrainingType[];
+  services: Product[];
+  busy: boolean;
+  onCreate: (data: {
+    training_type_ids: number[];
+    product_ids: number[];
+    base_amount: number;
+    bonus_threshold?: number | null;
+    bonus_per_person?: number | null;
+    effective_from: string;
+    comment?: string | null;
+  }) => Promise<void>;
+  onDelete: (rule: PayrollRule) => Promise<void>;
+}) {
+  const [selectedTrainingTypes, setSelectedTrainingTypes] = useState<number[]>([]);
+  const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
+  const [baseAmount, setBaseAmount] = useState("");
+  const [bonusThreshold, setBonusThreshold] = useState("");
+  const [bonusPerPerson, setBonusPerPerson] = useState("");
+  const [effectiveFrom, setEffectiveFrom] = useState(todayDateValue);
+  const [comment, setComment] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  function toggleId(list: number[], id: number) {
+    return list.includes(id) ? list.filter((item) => item !== id) : [...list, id];
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+
+    const parsedBase = Number.parseFloat(baseAmount.replace(",", "."));
+    const parsedBonusThreshold = bonusThreshold.trim() ? Number.parseInt(bonusThreshold, 10) : null;
+    const parsedBonus = bonusPerPerson.trim() ? Number.parseFloat(bonusPerPerson.replace(",", ".")) : null;
+
+    if (selectedTrainingTypes.length === 0 && selectedProducts.length === 0) {
+      setError("Выберите хотя бы одно занятие или услугу");
+      return;
+    }
+
+    if (!Number.isFinite(parsedBase) || parsedBase < 0) {
+      setError("Укажите базовую сумму");
+      return;
+    }
+
+    if (parsedBonusThreshold !== null && (!Number.isInteger(parsedBonusThreshold) || parsedBonusThreshold < 0)) {
+      setError("Порог доплаты должен быть целым числом");
+      return;
+    }
+
+    if (parsedBonus !== null && (!Number.isFinite(parsedBonus) || parsedBonus < 0)) {
+      setError("Укажите корректную доплату");
+      return;
+    }
+
+    await onCreate({
+      training_type_ids: selectedTrainingTypes,
+      product_ids: selectedProducts,
+      base_amount: parsedBase,
+      bonus_threshold: parsedBonusThreshold,
+      bonus_per_person: parsedBonus,
+      effective_from: effectiveFrom,
+      comment: comment.trim() || null,
+    });
+
+    setSelectedTrainingTypes([]);
+    setSelectedProducts([]);
+    setBaseAmount("");
+    setBonusThreshold("");
+    setBonusPerPerson("");
+    setComment("");
+  }
+
+  return (
+    <div className="space-y-4">
+      <form onSubmit={submit} className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-4">
+        <SectionTitle label="payroll rules" title="Правило оплаты занятий" />
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-[1.3fr_1fr]">
+          <div className="space-y-3">
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">Типы тренировок</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {trainingTypes.map((item) => {
+                const id = Number(item.id);
+                const checked = selectedTrainingTypes.includes(id);
+
+                return (
+                  <label key={item.id} className={`flex items-center gap-2 rounded-[8px] border px-3 py-2 text-sm ${checked ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]" : "border-[var(--line-soft)] text-[var(--text-main)]"}`}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => setSelectedTrainingTypes((list) => toggleId(list, id))}
+                    />
+                    <span className="min-w-0 truncate">{item.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">Услуги</p>
+            <div className="grid max-h-[220px] gap-2 overflow-auto pr-1">
+              {services.map((item) => {
+                const id = Number(item.id);
+                const checked = selectedProducts.includes(id);
+
+                return (
+                  <label key={item.id} className={`flex items-center gap-2 rounded-[8px] border px-3 py-2 text-sm ${checked ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]" : "border-[var(--line-soft)] text-[var(--text-main)]"}`}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => setSelectedProducts((list) => toggleId(list, id))}
+                    />
+                    <span className="min-w-0 truncate">{item.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-[0.8fr_0.8fr_0.8fr_0.9fr_1.3fr_auto] lg:items-end">
+          <label className="grid gap-1 text-xs text-[var(--text-muted)]">
+            База
+            <input value={baseAmount} onChange={(event) => setBaseAmount(event.target.value)} inputMode="decimal" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none" />
+          </label>
+          <label className="grid gap-1 text-xs text-[var(--text-muted)]">
+            Порог
+            <input value={bonusThreshold} onChange={(event) => setBonusThreshold(event.target.value)} inputMode="numeric" placeholder="10" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]" />
+          </label>
+          <label className="grid gap-1 text-xs text-[var(--text-muted)]">
+            Доплата
+            <input value={bonusPerPerson} onChange={(event) => setBonusPerPerson(event.target.value)} inputMode="decimal" placeholder="50" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]" />
+          </label>
+          <label className="grid gap-1 text-xs text-[var(--text-muted)]">
+            Действует с
+            <input value={effectiveFrom} onChange={(event) => setEffectiveFrom(event.target.value)} type="date" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none" />
+          </label>
+          <label className="grid gap-1 text-xs text-[var(--text-muted)]">
+            Комментарий
+            <input value={comment} onChange={(event) => setComment(event.target.value)} className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none" />
+          </label>
+          <button disabled={busy} className="h-10 rounded-[8px] border border-[var(--accent)] bg-[var(--accent-soft)] px-4 text-sm font-medium text-[var(--accent)] transition hover:bg-[rgba(94,244,216,0.18)] disabled:opacity-60">
+            {busy ? "Сохраняю" : "Сохранить"}
+          </button>
+        </div>
+
+        {error && <p className="mt-3 text-sm text-[var(--danger)]">{error}</p>}
+      </form>
+
+      <section className="overflow-hidden rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)]">
+        {rules.length === 0 ? (
+          <div className="px-6 py-10 text-center text-sm text-[var(--text-muted)]">Правил оплаты пока нет</div>
+        ) : (
+          rules.map((rule, index) => (
+            <div key={rule.id} className={`grid gap-3 px-4 py-4 text-sm lg:grid-cols-[1.4fr_0.7fr_0.9fr_0.8fr_auto] lg:items-center ${index < rules.length - 1 ? "border-b border-[var(--line-soft)]" : ""}`}>
+              <div className="min-w-0">
+                <p className="font-medium text-[var(--text-main)]">{rule.items.map((item) => item.training_type_name || item.product_name).filter(Boolean).join(", ")}</p>
+                {rule.comment && <p className="mt-1 text-xs text-[var(--text-muted)]">{rule.comment}</p>}
+              </div>
+              <p className="font-medium text-[var(--text-main)]">{formatMoney(rule.base_amount)}</p>
+              <p className="text-xs text-[var(--text-muted)]">
+                {rule.bonus_threshold === null ? "без доплаты" : `свыше ${rule.bonus_threshold}: +${formatMoney(rule.bonus_per_person || 0)}`}
+              </p>
+              <p className="text-xs text-[var(--text-muted)]">с {formatPeriodDate(rule.effective_from)}</p>
+              <button onClick={() => void onDelete(rule)} className="rounded-[8px] border border-[rgba(255,116,57,0.35)] px-3 py-2 text-xs font-medium text-[var(--danger)] transition hover:bg-[rgba(255,116,57,0.1)]">
+                Удалить
+              </button>
+            </div>
+          ))
+        )}
+      </section>
+    </div>
+  );
+}
+
+function PayrollCalculation({ report }: { report: PayrollReport }) {
+  const [expandedTrainerId, setExpandedTrainerId] = useState<number | null>(null);
+
+  if (report.trainers.length === 0) {
+    return <EmptyState text="За выбранный период занятий с тренерами нет" />;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="К выплате" value={formatMoney(report.summary.total_amount)} hint={`${report.summary.trainers_count} тренеров`} tone="good" />
+        <StatCard label="Занятия" value={formatNumber(report.summary.slots_count)} hint={`${report.summary.attended_count} посещений отмечено`} />
+        <StatCard label="База" value={formatMoney(report.summary.base_amount)} hint="сумма базовых ставок" />
+        <StatCard label="Доплаты" value={formatMoney(report.summary.bonus_amount)} hint={`${report.summary.warnings_count} предупреждений`} tone={report.summary.warnings_count > 0 ? "warn" : "neutral"} />
+      </div>
+
+      <section className="overflow-hidden rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)]">
+        {report.trainers.map((trainer) => {
+          const expanded = expandedTrainerId === Number(trainer.trainer_id);
+
+          return (
+            <div key={trainer.trainer_id} className="border-b border-[var(--line-soft)] last:border-b-0">
+              <button
+                onClick={() => setExpandedTrainerId(expanded ? null : Number(trainer.trainer_id))}
+                className="grid w-full gap-3 px-4 py-4 text-left text-sm lg:grid-cols-[1.4fr_0.7fr_0.8fr_0.8fr_0.8fr] lg:items-center"
+              >
+                <div>
+                  <p className="font-semibold text-[var(--text-main)]">{trainer.trainer_name}</p>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">{trainer.slots_count} занятий · {trainer.attended_count} посещений</p>
+                </div>
+                <p className="text-[var(--text-muted)]">База {formatMoney(trainer.base_amount)}</p>
+                <p className="text-[var(--text-muted)]">Доплаты {formatMoney(trainer.bonus_amount)}</p>
+                <p className={trainer.warnings_count > 0 ? "text-[var(--warning)]" : "text-[var(--text-muted)]"}>{trainer.warnings_count} предупреждений</p>
+                <p className="text-right text-base font-semibold text-[var(--text-main)]">{formatMoney(trainer.total_amount)}</p>
+              </button>
+
+              {expanded && <PayrollTrainerDetails trainer={trainer} />}
+            </div>
+          );
+        })}
+      </section>
+    </div>
+  );
+}
+
+function PayrollTrainerDetails({ trainer }: { trainer: PayrollTrainerSummary }) {
+  return (
+    <div className="bg-[var(--bg-panel)] px-4 py-3">
+      <div className="grid gap-2">
+        {trainer.lines.map((line) => (
+          <div key={line.slot_id} className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-3">
+            <div className="grid gap-2 text-sm lg:grid-cols-[1fr_1.4fr_0.7fr_0.8fr_0.8fr_0.8fr] lg:items-center">
+              <p className="text-[var(--text-muted)]">{formatPeriodDate(line.date)} {line.start_time.slice(0, 5)}</p>
+              <p className="min-w-0 truncate font-medium text-[var(--text-main)]">{line.training_type_name}</p>
+              <p className="text-[var(--text-muted)]">пришло {line.attended_count}</p>
+              <p className="text-[var(--text-muted)]">база {formatMoney(line.base_amount)}</p>
+              <p className="text-[var(--text-muted)]">
+                {line.bonus_threshold === null
+                  ? "доплаты нет"
+                  : `(${line.attended_count} - ${line.bonus_threshold}) x ${formatMoney(line.bonus_per_person)} = ${formatMoney(line.bonus_amount)}`}
+              </p>
+              <p className="text-right font-semibold text-[var(--text-main)]">{formatMoney(line.total_amount)}</p>
+            </div>
+            {line.warnings.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {line.warnings.map((warning) => (
+                  <span key={warning} className="rounded-[8px] border border-[rgba(245,197,66,0.25)] bg-[rgba(245,197,66,0.08)] px-2 py-1 text-xs text-[var(--warning)]">
+                    {warning}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PayrollTab() {
+  const initialRange = getMonthRange(currentMonthValue());
+  const [mode, setMode] = useState<"calculation" | "rules">("calculation");
+  const [from, setFrom] = useState(initialRange.from);
+  const [to, setTo] = useState(initialRange.to);
+  const [report, setReport] = useState<PayrollReport | null>(null);
+  const [rules, setRules] = useState<PayrollRule[]>([]);
+  const [trainingTypes, setTrainingTypes] = useState<TrainingType[]>([]);
+  const [services, setServices] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [rulesBusy, setRulesBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const [nextReport, nextRules, nextTrainingTypes, nextServices] = await Promise.all([
+          fetchPayrollReport({ from, to }),
+          fetchPayrollRules(),
+          fetchTrainingTypes({ include_inactive: true }),
+          fetchProducts({ type: "service", includeArchived: true }),
+        ]);
+
+        if (!cancelled) {
+          setReport(nextReport);
+          setRules(nextRules);
+          setTrainingTypes(nextTrainingTypes);
+          setServices(nextServices);
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить зарплаты");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [from, to, reloadToken]);
+
+  async function handleCreateRule(data: Parameters<typeof createPayrollRule>[0]) {
+    setRulesBusy(true);
+    setError(null);
+
+    try {
+      await createPayrollRule(data);
+      setReloadToken((value) => value + 1);
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "Не удалось сохранить правило");
+      throw createError;
+    } finally {
+      setRulesBusy(false);
+    }
+  }
+
+  async function handleDeleteRule(rule: PayrollRule) {
+    if (!window.confirm("Удалить правило оплаты? Прошлые расчёты по этому правилу перестанут находить ставку.")) {
+      return;
+    }
+
+    setError(null);
+    try {
+      await deletePayrollRule(rule.id);
+      setReloadToken((value) => value + 1);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Не удалось удалить правило");
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-4">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <SectionTitle label="payroll" title="Зарплаты за период" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+            <label className="grid gap-1 text-xs text-[var(--text-muted)]">
+              С
+              <input value={from} onChange={(event) => setFrom(event.target.value)} type="date" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none" />
+            </label>
+            <label className="grid gap-1 text-xs text-[var(--text-muted)]">
+              По
+              <input value={to} onChange={(event) => setTo(event.target.value)} type="date" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none" />
+            </label>
+            <button onClick={() => setReloadToken((value) => value + 1)} className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-4 text-sm font-medium text-[var(--text-main)] transition hover:border-[var(--accent)]">
+              Рассчитать
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {[
+            ["calculation", "Расчёт"],
+            ["rules", "Правила оплаты"],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => setMode(id as "calculation" | "rules")}
+              className={`rounded-[8px] border px-3 py-2 text-sm font-medium transition ${
+                mode === id
+                  ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
+                  : "border-[var(--line-soft)] text-[var(--text-muted)] hover:text-[var(--text-main)]"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {error && (
+        <div className="rounded-[8px] border border-[rgba(255,116,57,0.35)] bg-[rgba(255,116,57,0.1)] px-4 py-3 text-sm text-[var(--danger)]">
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-6 py-16 text-center text-sm text-[var(--text-muted)]">
+          Загрузка зарплат...
+        </div>
+      ) : mode === "rules" ? (
+        <PayrollRulesPanel
+          rules={rules}
+          trainingTypes={trainingTypes}
+          services={services}
+          busy={rulesBusy}
+          onCreate={handleCreateRule}
+          onDelete={handleDeleteRule}
+        />
+      ) : report ? (
+        <PayrollCalculation report={report} />
+      ) : null}
+    </div>
+  );
+}
+
 export default function AnalyticsPage() {
   const [tab, setTab] = useState<Tab>("overview");
   const [month, setMonth] = useState(currentMonthValue);
@@ -602,12 +1032,14 @@ export default function AnalyticsPage() {
           </h1>
         </div>
 
-        <div className="grid gap-3 xl:min-w-[520px]">
-          <MonthPeriodPicker month={month} range={range} onChange={setMonth} />
-          <button onClick={() => setReloadToken((value) => value + 1)} className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-4 py-2 text-sm font-medium text-[var(--text-main)] transition hover:border-[var(--accent)]">
-            Обновить
-          </button>
-        </div>
+        {tab !== "payroll" && (
+          <div className="grid gap-3 xl:min-w-[520px]">
+            <MonthPeriodPicker month={month} range={range} onChange={setMonth} />
+            <button onClick={() => setReloadToken((value) => value + 1)} className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-4 py-2 text-sm font-medium text-[var(--text-main)] transition hover:border-[var(--accent)]">
+              Обновить
+            </button>
+          </div>
+        )}
       </div>
 
       <section className="border-b border-[var(--line-soft)]">
@@ -632,19 +1064,21 @@ export default function AnalyticsPage() {
         </div>
       </section>
 
-      {error && (
+      {tab !== "payroll" && error && (
         <div className="rounded-[8px] border border-[rgba(255,116,57,0.35)] bg-[rgba(255,116,57,0.1)] px-4 py-3 text-sm text-[var(--danger)]">
           {error}
         </div>
       )}
 
-      {loading && (
+      {tab !== "payroll" && loading && (
         <div className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-6 py-16 text-center text-sm text-[var(--text-muted)]">
           Загрузка аналитики...
         </div>
       )}
 
-      {!loading && report && (
+      {tab === "payroll" && <PayrollTab />}
+
+      {tab !== "payroll" && !loading && report && (
         <>
           {tab === "overview" && <Overview report={report} />}
           {tab === "checks" && <ChecksTable checks={report.checks} />}
