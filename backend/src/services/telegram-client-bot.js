@@ -552,14 +552,6 @@ function buildTrainerPhotoCaption(trainer) {
     lines.push('', `Специализация: ${escapeHtml(specialties.join(', '))}`);
   }
 
-  if (trainer.bio) {
-    const shortBio = String(trainer.bio).trim().slice(0, 520);
-    lines.push('', escapeHtml(shortBio));
-    if (String(trainer.bio).trim().length > shortBio.length) {
-      lines.push('...');
-    }
-  }
-
   return lines.join('\n');
 }
 
@@ -1040,7 +1032,8 @@ async function handleClientCallback(callbackQuery) {
         : null;
     if (photo) {
       try {
-        await sendClientPhoto(chatId, photo, buildTrainerPhotoCaption(trainer), buildTrainerKeyboard());
+        await sendClientPhoto(chatId, photo, buildTrainerPhotoCaption(trainer));
+        await sendClientMessage(chatId, buildTrainerText(trainer), buildTrainerKeyboard());
         return;
       } catch (error) {
         logger.warn('telegram_client', {
