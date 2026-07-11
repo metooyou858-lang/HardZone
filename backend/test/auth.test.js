@@ -549,6 +549,40 @@ test('telegram client mini app blocks manual linking by a known client phone', a
   }
 });
 
+test('telegram client mini app login returns the linked client payload', async () => {
+  const previousToken = process.env.TELEGRAM_CLIENT_BOT_TOKEN;
+  process.env.TELEGRAM_CLIENT_BOT_TOKEN = 'test-telegram-client-bot-token';
+  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  try {
+    const { rows } = await query(
+      `INSERT INTO clients (first_name, last_name, phone, phone_normalized, telegram_id, barcode)
+       VALUES ('CI', 'Linked Client', '+7 (999) 111-44-55', '79991114455', $1, $2)
+       RETURNING id`,
+      [`ci-telegram-${suffix}`, `ci-client-login-${suffix}`]
+    );
+
+    const result = await request('/api/telegram/client-miniapp-login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        init_data: createTelegramInitData(
+          { id: `ci-telegram-${suffix}`, first_name: 'CI' },
+          'test-telegram-client-bot-token'
+        ),
+      }),
+    });
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.success, true);
+    assert.equal(result.body.data.client.id, Number(rows[0].id));
+    assert.equal(result.body.data.client.first_name, 'CI');
+  } finally {
+    await query("DELETE FROM clients WHERE barcode LIKE 'ci-client-login-%'");
+    process.env.TELEGRAM_CLIENT_BOT_TOKEN = previousToken;
+  }
+});
+
 test('staff read API returns telegram-ready payloads for authorized staff', async () => {
   const staffUser = await createUser();
 

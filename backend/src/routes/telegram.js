@@ -1276,8 +1276,8 @@ router.post('/client-miniapp-login', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Telegram авторизация недействительна' });
     }
 
-    let data = await findClientByTelegramId(telegramUser.id);
-    if (!data) {
+    const clientId = await findClientIdByTelegramId(telegramUser.id);
+    if (!clientId) {
       await logClientMiniAppAuthAttempt({
         action: 'login',
         status: 'not_linked',
@@ -1289,14 +1289,14 @@ router.post('/client-miniapp-login', async (req, res) => {
 
     // Telegram photo hosts are not always reachable from production. Photo
     // synchronization is best-effort and must never delay client sign-in.
-    void syncClientTelegramPhoto(data.client.id, telegramUser).catch((error) => {
+    void syncClientTelegramPhoto(clientId, telegramUser).catch((error) => {
       logger.warn('telegram_client_photo_sync_failed', {
         telegram_id: String(telegramUser.id),
-        client_id: data.client.id,
+        client_id: clientId,
         message: error.message,
       });
     });
-    data = await buildClientMiniAppPayload(data.client.id);
+    const data = await buildClientMiniAppPayload(clientId);
 
     await logClientMiniAppAuthAttempt({
       action: 'login',
