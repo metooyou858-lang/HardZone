@@ -26,6 +26,7 @@ HardZone - monorepo CRM для CrossFit-клуба:
 - `docs/PAYMENTS.md` - AQSI/оплаты.
 - `docs/ACCESS_MODEL.md` - роли, права, staff/client модель для CRM, Telegram и MAX.
 - `docs/STAGING.md` - staging-контур.
+- `docs/audits/` - постоянная библиотека аудитов: карта систем, связи, критические потоки, тестовое покрытие и известные риски.
 
 ## Production
 
