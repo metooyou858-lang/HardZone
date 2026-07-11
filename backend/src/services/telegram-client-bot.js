@@ -69,7 +69,11 @@ async function configureClientMenuButton() {
   });
 
   return telegramClientRequest('setChatMenuButton', {
-    menu_button: { type: 'commands' },
+    menu_button: {
+      type: 'web_app',
+      text: 'Личный кабинет',
+      web_app: { url: getClientMiniAppUrl() },
+    },
   });
 }
 
@@ -349,7 +353,7 @@ function buildClientPhoneKeyboard() {
   return {
     keyboard: [
       [{ text: 'Поделиться телефоном', request_contact: true }],
-      [{ text: 'Открыть личный кабинет', web_app: { url: getClientMiniAppUrl() } }],
+      [{ text: 'Открыть личный кабинет' }],
     ],
     resize_keyboard: true,
     one_time_keyboard: true,
@@ -910,7 +914,7 @@ async function handleClientMessage(message) {
     return;
   }
 
-  if (text === MENU_BUTTONS.account) {
+  if (text === MENU_BUTTONS.account || text === 'Открыть личный кабинет') {
     await sendClientMessage(
       chatId,
       'Откройте личный кабинет, чтобы посмотреть свои записи, абонемент, историю посещений и профиль.',
