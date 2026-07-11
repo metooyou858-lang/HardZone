@@ -11,6 +11,7 @@ const { addClientSearchConditions } = require('../services/client-search');
 const { generateClientBarcode } = require('../services/client-barcode');
 const { expireActiveSubscriptions } = require('../services/subscription-validity');
 const { sendInternalError } = require('../utils/http-response');
+const { normalizePhone } = require('../utils/phones');
 
 const router = express.Router();
 const upload = multer({ dest: '/tmp/' });
@@ -1205,8 +1206,8 @@ router.post('/import', requireClientsImport, upload.single('file'), async (req, 
           const values = [];
 
           if (phone) {
-            values.push(phone);
-            conditions.push(`phone = $${values.length}`);
+            values.push(normalizePhone(phone));
+            conditions.push(`phone_normalized = $${values.length}`);
           }
           if (email) {
             values.push(email);
@@ -1228,13 +1229,14 @@ router.post('/import', requireClientsImport, upload.single('file'), async (req, 
 
         await pool.query(
           `
-            INSERT INTO clients (first_name, last_name, phone, email, discount, comment, barcode, status)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
+            INSERT INTO clients (first_name, last_name, phone, phone_normalized, email, discount, comment, barcode, status)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active')
           `,
           [
             firstName,
             lastName,
             phone,
+            normalizePhone(phone),
             email,
             discount,
             [comment, tags ? `Теги: ${tags}` : null].filter(Boolean).join(' | ') || null,
@@ -1456,6 +1458,7 @@ router.post('/', requireClientsCreate, async (req, res) => {
           last_name,
           middle_name,
           phone,
+          phone_normalized,
           email,
           birth_date,
           barcode,
@@ -1464,7 +1467,7 @@ router.post('/', requireClientsCreate, async (req, res) => {
           status_comment,
           comment
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
         RETURNING *
       `,
       [
@@ -1472,6 +1475,7 @@ router.post('/', requireClientsCreate, async (req, res) => {
         last_name,
         middle_name || null,
         phone || null,
+        normalizePhone(phone),
         email || null,
         birth_date || null,
         barcode,
@@ -1511,6 +1515,11 @@ router.patch('/:id', requireClientsUpdate, async (req, res) => {
         updates.push(`${field} = $${values.length}`);
       }
     });
+
+    if (req.body.phone !== undefined) {
+      values.push(normalizePhone(req.body.phone));
+      updates.push(`phone_normalized = $${values.length}`);
+    }
 
     if (!updates.length) {
       return res.status(422).json({ success: false, error: 'Нет данных для обновления' });
