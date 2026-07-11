@@ -211,7 +211,10 @@ async function saveTelegramPhotoToClientUploads(telegramUser) {
 
   let response;
   try {
-    response = await fetch(telegramPhotoUrl, { redirect: 'follow' });
+    response = await fetch(telegramPhotoUrl, {
+      redirect: 'follow',
+      signal: AbortSignal.timeout(2000),
+    });
   } catch (error) {
     logger.warn('telegram_client_photo_fetch_failed', {
       telegram_id: telegramUser?.id ? String(telegramUser.id) : null,
@@ -1313,7 +1316,15 @@ router.post('/client-miniapp-login', async (req, res) => {
       return res.status(403).json({ success: false, error: 'Telegram не привязан к клиенту HardZone' });
     }
 
-    await syncClientTelegramPhoto(data.client.id, telegramUser);
+    // Telegram photo hosts are not always reachable from production. Photo
+    // synchronization is best-effort and must never delay client sign-in.
+    void syncClientTelegramPhoto(data.client.id, telegramUser).catch((error) => {
+      logger.warn('telegram_client_photo_sync_failed', {
+        telegram_id: String(telegramUser.id),
+        client_id: data.client.id,
+        message: error.message,
+      });
+    });
     data = await buildClientMiniAppPayload(data.client.id);
 
     await logClientMiniAppAuthAttempt({
@@ -1519,6 +1530,12 @@ router.post('/client-miniapp-profile', async (req, res) => {
 
     if (result.status !== 'saved') {
       const [status, message] = errorByStatus[result.status] || [500, 'Не удалось сохранить профиль'];
+      logger.warn('telegram_client_profile_validation_failed', {
+        telegram_id: String(telegramUser.id),
+        client_id: clientId,
+        result_status: result.status,
+        message,
+      });
       return res.status(status).json({ success: false, error: message });
     }
 
