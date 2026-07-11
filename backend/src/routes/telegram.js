@@ -1,5 +1,5 @@
 const express = require('express');
-const { createHmac, randomUUID, timingSafeEqual } = require('node:crypto');
+const { randomUUID } = require('node:crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -14,6 +14,7 @@ const { assertSubscriptionAccess } = require('../services/subscription-access');
 const { sendInternalError } = require('../utils/http-response');
 const { normalizePhone } = require('../utils/phones');
 const { clubDateTimeToDate } = require('../utils/club-time');
+const { parseTelegramInitData: parseSignedTelegramInitData } = require('../services/telegram-init-data');
 
 const router = express.Router();
 const CLIENT_PHOTO_DIR = path.join(__dirname, '..', '..', 'uploads', 'clients');
@@ -40,44 +41,8 @@ function getClientBotToken() {
   return String(process.env.TELEGRAM_CLIENT_BOT_TOKEN || '').trim();
 }
 
-function isSafeEqual(left, right) {
-  const leftBuffer = Buffer.from(String(left || ''), 'hex');
-  const rightBuffer = Buffer.from(String(right || ''), 'hex');
-
-  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
-}
-
 function parseTelegramInitData(initData, botToken = getBotToken()) {
-  const params = new URLSearchParams(String(initData || ''));
-  const hash = params.get('hash');
-
-  if (!hash || !botToken) {
-    return null;
-  }
-
-  params.delete('hash');
-  const dataCheckString = Array.from(params.entries())
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `${key}=${value}`)
-    .join('\n');
-
-  const secretKey = createHmac('sha256', 'WebAppData').update(botToken).digest();
-  const expectedHash = createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
-
-  if (!isSafeEqual(expectedHash, hash)) {
-    return null;
-  }
-
-  const authDate = Number.parseInt(params.get('auth_date') || '', 10);
-  if (!Number.isInteger(authDate) || Date.now() / 1000 - authDate > 24 * 60 * 60) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(params.get('user') || '{}');
-  } catch {
-    return null;
-  }
+  return parseSignedTelegramInitData(initData, botToken);
 }
 
 function toSessionUser(user) {
