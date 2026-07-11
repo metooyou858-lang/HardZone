@@ -10,6 +10,7 @@ const {
 } = require('./booking-attendance');
 const { addClientSearchConditions } = require('./client-search');
 const { normalizePhone } = require('../utils/phones');
+const { createTelegramApiError } = require('./telegram-api-error');
 
 const CLUB_TIME_ZONE = process.env.APP_TIMEZONE || 'Asia/Vladivostok';
 const TELEGRAM_API_BASE = process.env.TELEGRAM_API_BASE || 'https://api.telegram.org/bot';
@@ -78,8 +79,7 @@ async function telegramRequest(method, payload, options = {}) {
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Telegram ${method} failed: ${response.status} ${text.slice(0, 300)}`);
+    throw await createTelegramApiError(response, 'Telegram', method);
   }
 
   const body = await response.json();

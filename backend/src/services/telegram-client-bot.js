@@ -1,4 +1,5 @@
 const logger = require('./logger');
+const { createTelegramApiError } = require('./telegram-api-error');
 const { query } = require('../db');
 const telegramRoute = require('../routes/telegram');
 const { getClubContacts } = require('./club-settings');
@@ -88,8 +89,7 @@ async function telegramClientRequest(method, payload, options = {}) {
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Telegram client ${method} failed: ${response.status} ${text.slice(0, 300)}`);
+    throw await createTelegramApiError(response, 'Telegram client', method);
   }
 
   const body = await response.json();
@@ -114,8 +114,7 @@ async function telegramClientMultipartRequest(method, formData, options = {}) {
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Telegram client ${method} failed: ${response.status} ${text.slice(0, 300)}`);
+    throw await createTelegramApiError(response, 'Telegram client', method);
   }
 
   const body = await response.json();

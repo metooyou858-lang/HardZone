@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const { pool } = require('./db');
 const logger = require('./services/logger');
+const { getTelegramRetryDelayMs } = require('./services/telegram-api-error');
 const { configureClientMenuButton, handleTelegramClientUpdate, telegramClientRequest } = require('./services/telegram-client-bot');
 
 const POLL_TIMEOUT_SECONDS = Number.parseInt(process.env.TELEGRAM_CLIENT_POLL_TIMEOUT || process.env.TELEGRAM_POLL_TIMEOUT || '25', 10);
@@ -28,8 +29,23 @@ async function poll() {
     return;
   }
 
-  await telegramClientRequest('deleteWebhook', { drop_pending_updates: false }, { timeoutMs: 15000 });
-  await configureClientMenuButton();
+  while (!stopped) {
+    try {
+      await telegramClientRequest('deleteWebhook', { drop_pending_updates: false }, { timeoutMs: 15000 });
+      await configureClientMenuButton();
+      break;
+    } catch (error) {
+      const retryMs = getTelegramRetryDelayMs(error);
+      logger.error('telegram_client', {
+        action: 'poller_init_failed',
+        message: error.message,
+        retry_ms: retryMs,
+      });
+      await sleep(retryMs);
+    }
+  }
+
+  if (stopped) return;
   logger.info('telegram_client', { action: 'poller_started' });
 
   let offset;
@@ -60,12 +76,14 @@ async function poll() {
         }
       }
     } catch (error) {
+      const retryMs = getTelegramRetryDelayMs(error);
       logger.error('telegram_client', {
         action: 'poll_failed',
         message: error.message,
         stack: error.stack,
+        retry_ms: retryMs,
       });
-      await sleep(5000);
+      await sleep(retryMs);
     }
   }
 }
