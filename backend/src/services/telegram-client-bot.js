@@ -553,11 +553,7 @@ function buildTrainerPhotoCaption(trainer) {
   }
 
   if (trainer.bio) {
-    const shortBio = String(trainer.bio).trim().slice(0, 520);
-    lines.push('', escapeHtml(shortBio));
-    if (String(trainer.bio).trim().length > shortBio.length) {
-      lines.push('...');
-    }
+    lines.push('', escapeHtml(String(trainer.bio).trim()));
   }
 
   return lines.join('\n');
