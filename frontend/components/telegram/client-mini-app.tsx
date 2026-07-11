@@ -1686,8 +1686,8 @@ export function ClientMiniApp() {
       const message = error instanceof Error ? error.message : "";
       if (message.includes("не привязан")) {
         setData(null);
-        setAuthMode("phone");
-        setAuthError("");
+        setAuthMode("telegram");
+        setAuthError("Вернитесь в чат HardZone, отправьте /start и нажмите «Поделиться телефоном».");
         return;
       }
 

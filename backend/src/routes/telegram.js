@@ -1261,36 +1261,10 @@ router.post('/miniapp-login', async (req, res) => {
 });
 
 router.post('/miniapp-link-phone', async (req, res) => {
-  try {
-    if (!getBotToken()) {
-      return res.status(503).json({ success: false, error: 'Telegram bot token is not configured' });
-    }
-
-    const telegramUser = parseTelegramInitData(req.body?.init_data);
-    if (!telegramUser?.id) {
-      return res.status(401).json({ success: false, error: 'Telegram авторизация недействительна' });
-    }
-
-    const result = await linkSessionUserByPhone(telegramUser.id, req.body?.phone);
-    if (result.status === 'invalid_phone') {
-      return res.status(422).json({ success: false, error: 'Укажите корректный номер телефона' });
-    }
-
-    if (result.status === 'not_found') {
-      return res.status(404).json({ success: false, error: 'Номер не найден среди активных сотрудников HardZone' });
-    }
-
-    if (result.status === 'duplicate') {
-      return res.status(409).json({
-        success: false,
-        error: 'В CRM найдено несколько сотрудников с таким номером. Обратитесь к администратору.',
-      });
-    }
-
-    return res.json({ success: true, data: { user: result.user } });
-  } catch (error) {
-    return sendInternalError(res, error, { route: 'telegram.miniapp_link_phone' });
-  }
+  return res.status(403).json({
+    success: false,
+    error: 'Привязка сотрудника доступна только через кнопку «Поделиться телефоном» в боте HardZone.',
+  });
 });
 
 router.post('/client-miniapp-login', async (req, res) => {
@@ -1341,54 +1315,10 @@ router.post('/client-miniapp-login', async (req, res) => {
 });
 
 router.post('/client-miniapp-link-phone', async (req, res) => {
-  try {
-    const clientBotToken = getClientBotToken();
-    if (!clientBotToken) {
-      return res.status(503).json({ success: false, error: 'Telegram client bot token is not configured' });
-    }
-
-    const telegramUser = parseTelegramInitData(req.body?.init_data, clientBotToken);
-    if (!telegramUser?.id) {
-      return res.status(401).json({ success: false, error: 'Telegram авторизация недействительна' });
-    }
-
-    const result = await createAndLinkClientByPhone(telegramUser, req.body?.phone);
-    if (result.status === 'invalid_phone') {
-      await logClientMiniAppAuthAttempt({
-        action: 'link_phone',
-        status: 'invalid_phone',
-        telegramUser,
-        errorCode: 'invalid_phone',
-      });
-      return res.status(422).json({ success: false, error: 'Укажите корректный номер телефона' });
-    }
-
-    if (result.status === 'duplicate') {
-      await logClientMiniAppAuthAttempt({
-        action: 'link_phone',
-        status: 'duplicate',
-        telegramUser,
-        phoneNormalized: result.phone_normalized,
-        errorCode: 'client_phone_duplicate',
-      });
-      return res.status(409).json({
-        success: false,
-        error: 'В CRM найдено несколько клиентов с таким номером. Обратитесь к администратору.',
-      });
-    }
-
-    await logClientMiniAppAuthAttempt({
-      action: 'link_phone',
-      status: result.status === 'created' ? 'created' : 'linked',
-      telegramUser,
-      phoneNormalized: result.phone_normalized,
-      matchedClientId: result.matched_client_id,
-    });
-
-    return res.json({ success: true, data: result.data });
-  } catch (error) {
-    return sendInternalError(res, error, { route: 'telegram.client_miniapp_link_phone' });
-  }
+  return res.status(403).json({
+    success: false,
+    error: 'Привязка клиента доступна только через кнопку «Поделиться телефоном» в боте HardZone.',
+  });
 });
 
 router.post('/client-miniapp-book', async (req, res) => {

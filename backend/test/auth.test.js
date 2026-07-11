@@ -440,7 +440,7 @@ test('telegram mini app login accepts signed init data for linked active staff',
   }
 });
 
-test('telegram mini app phone link signs in active staff by phone', async () => {
+test('telegram mini app blocks manual staff linking by a known phone', async () => {
   const previousToken = process.env.TELEGRAM_BOT_TOKEN;
   process.env.TELEGRAM_BOT_TOKEN = 'test-telegram-bot-token';
 
@@ -459,19 +459,18 @@ test('telegram mini app phone link signs in active staff by phone', async () => 
       }),
     });
 
-    assert.equal(result.response.status, 200);
-    assert.equal(result.body.success, true);
-    assert.equal(result.body.data.user.id, Number(staffUser.id));
-    assert.equal(result.body.data.user.username, staffUser.username);
+    assert.equal(result.response.status, 403);
+    assert.equal(result.body.success, false);
+    assert.match(result.body.error, /Поделиться телефоном/);
 
     const { rows } = await query('SELECT telegram_id FROM users WHERE id = $1', [staffUser.id]);
-    assert.equal(rows[0].telegram_id, '444555666');
+    assert.equal(rows[0].telegram_id, null);
   } finally {
     process.env.TELEGRAM_BOT_TOKEN = previousToken;
   }
 });
 
-test('telegram mini app phone link rejects unknown and duplicate phones', async () => {
+test('telegram mini app does not reveal whether a staff phone exists', async () => {
   const previousToken = process.env.TELEGRAM_BOT_TOKEN;
   process.env.TELEGRAM_BOT_TOKEN = 'test-telegram-bot-token';
 
@@ -485,7 +484,7 @@ test('telegram mini app phone link rejects unknown and duplicate phones', async 
       }),
     });
 
-    assert.equal(unknown.response.status, 404);
+    assert.equal(unknown.response.status, 403);
 
     await createUser({
       phone: '+7 (999) 666-77-88',
@@ -505,9 +504,48 @@ test('telegram mini app phone link rejects unknown and duplicate phones', async 
       }),
     });
 
-    assert.equal(duplicate.response.status, 409);
+    assert.equal(duplicate.response.status, 403);
   } finally {
     process.env.TELEGRAM_BOT_TOKEN = previousToken;
+  }
+});
+
+test('telegram client mini app blocks manual linking by a known client phone', async () => {
+  const previousToken = process.env.TELEGRAM_CLIENT_BOT_TOKEN;
+  process.env.TELEGRAM_CLIENT_BOT_TOKEN = 'test-telegram-client-bot-token';
+  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  try {
+    const { rows } = await query(
+      `INSERT INTO clients (first_name, last_name, phone, phone_normalized, barcode)
+       VALUES ('CI', 'Client', '+7 (999) 111-22-33', '79991112233', $1)
+       RETURNING id`,
+      [`ci-client-link-${suffix}`]
+    );
+    const clientId = rows[0].id;
+
+    const result = await request('/api/telegram/client-miniapp-link-phone', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        init_data: createTelegramInitData(
+          { id: 222333444, first_name: 'Attacker' },
+          'test-telegram-client-bot-token'
+        ),
+        phone: '+7 (999) 111-22-33',
+      }),
+    });
+
+    assert.equal(result.response.status, 403);
+    assert.equal(result.body.success, false);
+    assert.match(result.body.error, /Поделиться телефоном/);
+
+    const clientRows = await query('SELECT telegram_id FROM clients WHERE id = $1', [clientId]);
+    assert.equal(clientRows.rows[0].telegram_id, null);
+    await query('DELETE FROM clients WHERE id = $1', [clientId]);
+  } finally {
+    await query("DELETE FROM clients WHERE barcode LIKE 'ci-client-link-%'");
+    process.env.TELEGRAM_CLIENT_BOT_TOKEN = previousToken;
   }
 });
 

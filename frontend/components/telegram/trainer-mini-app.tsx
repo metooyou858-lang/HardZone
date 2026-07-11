@@ -822,8 +822,8 @@ export function TrainerMiniApp() {
 
     const data = (await response.json().catch(() => null)) as { error?: string } | null;
     if (response.status === 403) {
-      setAuthMode("phone");
-      setAuthError("");
+      setAuthMode("telegram");
+      setAuthError("Вернитесь в чат HardZone, отправьте /start и нажмите «Поделиться телефоном».");
       return false;
     }
 
