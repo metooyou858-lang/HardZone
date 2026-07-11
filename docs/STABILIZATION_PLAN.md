@@ -48,6 +48,12 @@ Before production work:
 7. Continue client card work from a clean product branch, not from older hotfix branches. Current direction: `feature/client-photo` adds CRM client photo storage/display first, then client-side upload and legacy subscription import in separate follow-up branches.
 8. Legacy subscription import is tracked in `feature/legacy-subscription-import`; rules and CSV format live in `docs/LEGACY_SUBSCRIPTION_IMPORT.md`.
 9. Manual legacy subscriptions are controlled by `clients_legacy_subscriptions`; only users with this permission can add old subscriptions from a client card. Manual entry must select an existing configured service; the service supplies type, validity, total visits, family flag, and training links.
+10. Fix legacy client identity normalization and Telegram duplicate prevention.
+    - Backfill `clients.phone_normalized` for imported clients that have `phone` but no normalized value.
+    - Make Telegram client linking find legacy phone records before creating a new CRM client.
+    - Extend the CRM `Дубли` query so legacy records with missing `phone_normalized` are still detected by phone.
+    - Add regression coverage for an imported client with a formatted phone and empty `phone_normalized`.
+    - Before production migration, create a backup, verify restore, and review the known Ksenia Nevskaya duplicate without merging or deleting records automatically.
 
 ## Next Product Work: Athlete Diary
 
