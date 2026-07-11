@@ -69,11 +69,7 @@ async function configureClientMenuButton() {
   });
 
   return telegramClientRequest('setChatMenuButton', {
-    menu_button: {
-      type: 'web_app',
-      text: 'Личный кабинет',
-      web_app: { url: getClientMiniAppUrl() },
-    },
+    menu_button: { type: 'commands' },
   });
 }
 
