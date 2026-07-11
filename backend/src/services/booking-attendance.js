@@ -4,6 +4,7 @@ const {
   getSlotAccessContext,
   refundSubscriptionVisit,
 } = require('./subscription-access');
+const { clubDateTimeToDate } = require('../utils/club-time');
 
 function createHttpError(statusCode, message, code = null) {
   const error = new Error(message);
@@ -12,10 +13,6 @@ function createHttpError(statusCode, message, code = null) {
     error.code = code;
   }
   return error;
-}
-
-function combineSlotDateTime(dateValue, timeValue) {
-  return new Date(`${dateValue}T${timeValue}`);
 }
 
 function mapCoverageReason(error) {
@@ -65,7 +62,7 @@ async function createTrainingBooking(executor, {
   const slot = await loadActiveSlot(executor, slotId);
 
   if (slot.block_if_empty_hours && Number(slot.booked_count || 0) === 0) {
-    const slotDateTime = combineSlotDateTime(slot.date, slot.start_time);
+    const slotDateTime = clubDateTimeToDate(slot.date, slot.start_time);
     const hoursUntil = (slotDateTime.getTime() - Date.now()) / 3600000;
     if (hoursUntil <= slot.block_if_empty_hours) {
       throw createHttpError(

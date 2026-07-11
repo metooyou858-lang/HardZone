@@ -9,13 +9,10 @@ const {
   unmarkTrainingBookingArrived,
 } = require('../services/booking-attendance');
 const { getPublicErrorMessage } = require('../utils/http-response');
+const { clubDateTimeToDate } = require('../utils/club-time');
 
 const router = express.Router();
 const requireModule = authMiddleware.requireModule;
-
-function combineSlotDateTime(dateValue, timeValue) {
-  return new Date(`${dateValue}T${timeValue}`);
-}
 
 router.post('/', requireModule('schedule_clients'), async (req, res) => {
   try {
@@ -85,7 +82,7 @@ router.post('/:id/cancel', requireModule('schedule_clients'), async (req, res) =
       );
       const slot = slotRows[0];
 
-      const slotDateTime = combineSlotDateTime(slot.date, slot.start_time);
+      const slotDateTime = clubDateTimeToDate(slot.date, slot.start_time);
       if (slotDateTime <= new Date()) {
         await client.query('ROLLBACK');
         return res.status(409).json({ success: false, error: 'Нельзя отменить запись после начала занятия' });

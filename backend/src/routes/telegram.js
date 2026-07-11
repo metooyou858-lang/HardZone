@@ -13,6 +13,7 @@ const { createTrainingBooking } = require('../services/booking-attendance');
 const { assertSubscriptionAccess } = require('../services/subscription-access');
 const { sendInternalError } = require('../utils/http-response');
 const { normalizePhone } = require('../utils/phones');
+const { clubDateTimeToDate } = require('../utils/club-time');
 
 const router = express.Router();
 const CLIENT_PHOTO_DIR = path.join(__dirname, '..', '..', 'uploads', 'clients');
@@ -992,10 +993,6 @@ async function createAndLinkClientByPhone(telegramUser, phone) {
   };
 }
 
-function combineSlotDateTime(dateValue, timeValue) {
-  return new Date(`${String(dateValue).slice(0, 10)}T${String(timeValue).slice(0, 8)}`);
-}
-
 async function bookClientSlot(telegramId, slotId) {
   const clientId = await findClientIdByTelegramId(telegramId);
   if (!clientId) {
@@ -1025,7 +1022,7 @@ async function bookClientSlot(telegramId, slotId) {
       return { status: 'slot_not_found' };
     }
 
-    const slotDateTime = combineSlotDateTime(slot.date, slot.start_time);
+    const slotDateTime = clubDateTimeToDate(slot.date, slot.start_time);
     if (slotDateTime <= new Date()) {
       await dbClient.query('ROLLBACK');
       return { status: 'slot_started' };
@@ -1173,7 +1170,7 @@ async function cancelClientBooking(telegramId, bookingId) {
       return { status: 'already_cancelled' };
     }
 
-    if (combineSlotDateTime(booking.date, booking.start_time) <= new Date()) {
+    if (clubDateTimeToDate(booking.date, booking.start_time) <= new Date()) {
       await dbClient.query('ROLLBACK');
       return { status: 'slot_started' };
     }
