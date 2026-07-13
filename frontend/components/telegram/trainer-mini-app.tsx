@@ -99,8 +99,9 @@ function formatShortDate(value: string | null | undefined) {
 }
 
 function formatDateLabel(value: string) {
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
+  const dateKey = String(value || "").slice(0, 10);
+  const date = new Date(`${dateKey}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return dateKey;
   return longDateFormatter.format(date);
 }
 
