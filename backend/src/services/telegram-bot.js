@@ -100,6 +100,15 @@ function sendMessage(chatId, text, replyMarkup = null) {
   });
 }
 
+function sendReplyPrompt(chatId, text) {
+  return telegramRequest('sendMessage', {
+    chat_id: chatId,
+    text,
+    parse_mode: 'HTML',
+    reply_markup: { force_reply: true, selective: true },
+  });
+}
+
 function buildContactKeyboard() {
   return {
     keyboard: [[{ text: 'Поделиться телефоном', request_contact: true }]],
@@ -234,8 +243,9 @@ async function getTodaySlots(staff) {
         (
           SELECT COUNT(*)::INT
           FROM bookings b
-          WHERE b.slot_id = s.id AND b.status = 'confirmed'
-        ) AS confirmed_count,
+          WHERE b.slot_id = s.id
+            AND b.status IN ('confirmed', 'attended')
+        ) AS booked_clients_count,
         (
           SELECT COUNT(*)::INT
           FROM bookings b
@@ -433,7 +443,7 @@ function renderToday(date, slots) {
     text: `Занятия на ${escapeHtml(date)}:`,
     keyboard: buildKeyboard(
       slots.map((slot) => [{
-        text: `${formatTime(slot.start_time)} ${slot.training_type_name || 'Занятие'} (${slot.confirmed_count}/${slot.capacity})`,
+        text: `${formatTime(slot.start_time)} ${slot.training_type_name || 'Занятие'} (${slot.booked_clients_count}/${slot.capacity})`,
         callback_data: `slot:${slot.id}`,
       }])
     ),
@@ -448,8 +458,7 @@ function renderSlot(data) {
     slot.trainer_name ? `Тренер: ${escapeHtml(slot.trainer_name)}` : null,
     `Записано: ${data.bookings.length}/${slot.capacity}`,
     '',
-    'Чтобы найти и записать клиента:',
-    `<code>/find ${slot.id} фамилия или телефон</code>`,
+    'Чтобы записать клиента, нажми кнопку ниже.',
   ].filter(Boolean);
 
   const rows = data.bookings.map((booking) => {
@@ -464,12 +473,19 @@ function renderSlot(data) {
     ];
   });
 
+  rows.push([{ text: 'Добавить клиента', callback_data: `find:${slot.id}` }]);
   rows.push([{ text: 'Назад', callback_data: 'today' }]);
 
   return {
     text: lines.join('\n'),
     keyboard: buildKeyboard(rows),
   };
+}
+
+function parseFindReplySlotId(message) {
+  const prompt = String(message.reply_to_message?.text || '');
+  const match = prompt.match(/Занятие №(\d+)/);
+  return match ? Number.parseInt(match[1], 10) : null;
 }
 
 function renderClientSearch(slotId, clients) {
@@ -564,6 +580,14 @@ async function handleMessage(message) {
   }
 
   const text = String(message.text || '').trim();
+  const replySlotId = parseFindReplySlotId(message);
+
+  if (Number.isInteger(replySlotId)) {
+    const clients = await searchClients(staff, text);
+    const view = renderClientSearch(replySlotId, clients);
+    await sendMessage(chatId, view.text, view.keyboard);
+    return;
+  }
 
   if (text.startsWith('/find')) {
     const [, slotIdRaw, ...searchParts] = text.split(/\s+/);
@@ -618,6 +642,16 @@ async function handleCallback(callbackQuery) {
     return;
   }
 
+  if (data.startsWith('find:')) {
+    const slotId = Number.parseInt(data.split(':')[1], 10);
+    await answerCallback(callbackQuery.id);
+    await sendReplyPrompt(
+      chatId,
+      `Занятие №${slotId}. Введи фамилию, имя или телефон клиента.`
+    );
+    return;
+  }
+
   if (data.startsWith('att:')) {
     const bookingId = Number.parseInt(data.split(':')[1], 10);
     const slotId = await markBookingAsAttended(staff, bookingId);
@@ -667,5 +701,8 @@ module.exports = {
   handleTelegramUpdate,
   findStaffByTelegramId,
   getTodaySlots,
+  parseFindReplySlotId,
+  renderToday,
+  renderSlot,
   telegramRequest,
 };
