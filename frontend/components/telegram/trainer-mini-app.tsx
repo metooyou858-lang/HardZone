@@ -462,19 +462,20 @@ function HomeScreen({
   onOpenSchedule: () => void;
   onOpenSlot: (slot: StaffSlot) => void;
 }) {
-  const totalBookings = slots.reduce(
+  const trainerId = staff?.trainer_profile?.id ? String(staff.trainer_profile.id) : null;
+  const mySlots = trainerId ? slots.filter((slot) => String(slot.trainer_id || "") === trainerId) : [];
+  const totalBookings = mySlots.reduce(
     (sum, slot) => sum + Number(slot.confirmed_count || 0) + Number(slot.attended_count || 0),
     0
   );
-  const totalAttended = slots.reduce((sum, slot) => sum + Number(slot.attended_count || 0), 0);
-  const nextSlots = slots.slice(0, 3);
+  const totalAttended = mySlots.reduce((sum, slot) => sum + Number(slot.attended_count || 0), 0);
 
   return (
     <div className="space-y-4 px-4 pb-4 pt-3">
       <TrainerCard staff={staff} />
 
       <section className="grid grid-cols-3 gap-2">
-        <Metric label="занятий" value={loading ? "..." : slots.length} />
+        <Metric label="занятий" value={loading ? "..." : mySlots.length} />
         <Metric label="записаны" value={loading ? "..." : totalBookings} />
         <Metric label="пришли" value={loading ? "..." : totalAttended} />
       </section>
@@ -482,7 +483,7 @@ function HomeScreen({
       <section className="rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.025)] p-3">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-[var(--text-main)]">Мои занятия</h2>
+            <h2 className="text-lg font-semibold text-[var(--text-main)]">Мои занятия сегодня</h2>
             <p className="text-xs text-[var(--text-muted)]">{date ? formatDateLabel(date) : "Сегодня"}</p>
           </div>
           <button type="button" onClick={onOpenSchedule} className="h-9 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 text-xs font-medium text-[var(--text-main)] active:bg-[rgba(255,255,255,0.08)]">
@@ -494,17 +495,17 @@ function HomeScreen({
           <div className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-5 text-sm text-[var(--text-muted)]">
             Загружаем занятия...
           </div>
-        ) : nextSlots.length === 0 ? (
+        ) : mySlots.length === 0 ? (
           <div className="rounded-md border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] p-5 text-center">
             <p className="font-semibold text-[var(--text-main)]">Занятий нет</p>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">На сегодня занятий не найдено</p>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">{trainerId ? "На сегодня у вас занятий не найдено" : "Карточка сотрудника не связана с тренером"}</p>
             <button type="button" onClick={onOpenSchedule} className="mt-4 h-11 rounded-md bg-[var(--accent)] px-5 text-sm font-semibold text-[var(--text-inverse)]">
               Перейти в расписание
             </button>
           </div>
         ) : (
           <div className="space-y-2">
-            {nextSlots.map((slot) => (
+            {mySlots.map((slot) => (
               <button
                 key={slot.id}
                 type="button"
@@ -1229,6 +1230,9 @@ export function TrainerMiniApp() {
 
   function changeTab(tab: AppTab) {
     setActiveTab(tab);
+    if (tab === "home") {
+      void loadSchedule(toDateInputValue(new Date()));
+    }
     if (tab !== "schedule") {
       setScheduleMode("list");
     }
