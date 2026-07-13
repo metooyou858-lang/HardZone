@@ -4,6 +4,7 @@ const {
   getSlotAccessContext,
   refundSubscriptionVisit,
 } = require('./subscription-access');
+const { CLUB_TIME_ZONE } = require('./subscription-validity');
 
 function createHttpError(statusCode, message, code = null) {
   const error = new Error(message);
