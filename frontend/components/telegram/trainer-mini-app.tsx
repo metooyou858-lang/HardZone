@@ -17,7 +17,7 @@ import {
   unattendStaffBooking,
 } from "@/lib/api/staff";
 
-import { ensureTelegramWebAppScript } from "./telegram-web-app-script";
+import { waitForTelegramInitData } from "./telegram-web-app-script";
 
 declare global {
   interface Window {
@@ -808,13 +808,12 @@ export function TrainerMiniApp() {
   const selectedSlotId = selected?.slot.id ?? null;
 
   async function authenticateTelegram() {
-    await ensureTelegramWebAppScript();
+    const initData = await waitForTelegramInitData();
 
     const webApp = window.Telegram?.WebApp;
     webApp?.ready?.();
     webApp?.expand?.();
 
-    const initData = webApp?.initData || "";
     setTelegramInitData(initData);
 
     if (!initData) {

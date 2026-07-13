@@ -39,3 +39,31 @@ export function ensureTelegramWebAppScript() {
 
   return telegramScriptPromise;
 }
+
+function readTelegramInitData() {
+  const sdkInitData = window.Telegram?.WebApp?.initData || "";
+  if (sdkInitData) return sdkInitData;
+
+  for (const source of [window.location.hash.slice(1), window.location.search.slice(1)]) {
+    const initData = new URLSearchParams(source).get("tgWebAppData") || "";
+    if (initData) return initData;
+  }
+
+  return "";
+}
+
+export async function waitForTelegramInitData(timeoutMs = 2500) {
+  if (typeof window === "undefined") return "";
+
+  await ensureTelegramWebAppScript();
+  window.Telegram?.WebApp?.ready?.();
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() <= deadline) {
+    const initData = readTelegramInitData();
+    if (initData) return initData;
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+  }
+
+  return "";
+}

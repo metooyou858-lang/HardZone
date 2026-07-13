@@ -19,7 +19,7 @@ import {
   type ClientMiniAppVisit,
 } from "@/lib/api/client-miniapp";
 
-import { ensureTelegramWebAppScript } from "./telegram-web-app-script";
+import { waitForTelegramInitData } from "./telegram-web-app-script";
 
 declare global {
   interface Window {
@@ -1661,13 +1661,12 @@ export function ClientMiniApp() {
   }, [activeTab]);
 
   async function authenticate() {
-    await ensureTelegramWebAppScript();
+    const telegramInitData = await waitForTelegramInitData();
 
     const webApp = window.Telegram?.WebApp;
     webApp?.ready?.();
     webApp?.expand?.();
 
-    const telegramInitData = webApp?.initData || "";
     setInitData(telegramInitData);
 
     if (!telegramInitData) {
