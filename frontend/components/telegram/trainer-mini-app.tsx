@@ -5,17 +5,22 @@ import { useEffect, useMemo, useState } from "react";
 import {
   attendStaffBooking,
   cancelStaffBooking,
+  createStaffSlot,
   createStaffBooking,
   fetchStaffBookings,
   fetchStaffMe,
+  fetchStaffScheduleOptions,
   fetchStaffToday,
   searchStaffClients,
   type StaffBooking,
   type StaffClientSearchResult,
   type StaffMe,
+  type StaffScheduleOptions,
   type StaffSlot,
+  type StaffSlotInput,
   type StaffSlotBookings,
   unattendStaffBooking,
+  updateStaffSlot,
 } from "@/lib/api/staff";
 
 import { waitForTelegramInitData } from "./telegram-web-app-script";
@@ -37,8 +42,15 @@ declare global {
 }
 
 type AppTab = "home" | "schedule" | "clients" | "profile";
-type ScheduleMode = "list" | "detail";
+type ScheduleMode = "list" | "detail" | "editor";
 type AuthMode = "checking" | "linked" | "telegram";
+type SlotEditorMode = "create" | "edit";
+
+type SlotEditorState = {
+  mode: SlotEditorMode;
+  slotId: string | null;
+  draft: StaffSlotInput;
+};
 
 const tabLabels: Record<AppTab, string> = {
   home: "Главная",
@@ -109,6 +121,34 @@ function formatMonth(value: string) {
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return "";
   return monthFormatter.format(date);
+}
+
+function slotToEditorDraft(slot: StaffSlot): StaffSlotInput {
+  return {
+    slot_type: slot.slot_type || "group",
+    training_type_id: slot.training_type_id ? String(slot.training_type_id) : null,
+    trainer_id: slot.trainer_id ? String(slot.trainer_id) : null,
+    date: String(slot.date || "").slice(0, 10),
+    start_time: formatTime(slot.start_time),
+    duration_minutes: Number(slot.duration_minutes || 60),
+    capacity: Number(slot.capacity || 20),
+    is_free: Boolean(slot.is_free),
+    comment: slot.comment || null,
+  };
+}
+
+function createEmptySlotDraft(date: string, slotType = "group"): StaffSlotInput {
+  return {
+    slot_type: slotType,
+    training_type_id: null,
+    trainer_id: null,
+    date,
+    start_time: "09:00",
+    duration_minutes: 60,
+    capacity: slotType === "personal" ? 1 : 20,
+    is_free: false,
+    comment: null,
+  };
 }
 
 function normalizeColor(value: string | null | undefined) {
@@ -491,17 +531,26 @@ function ScheduleScreen({
   loading,
   onDateChange,
   onOpenSlot,
+  canCreate,
+  onCreate,
 }: {
   date: string;
   slots: StaffSlot[];
   loading: boolean;
   onDateChange: (date: string) => void;
   onOpenSlot: (slot: StaffSlot) => void;
+  canCreate: boolean;
+  onCreate: () => void;
 }) {
   return (
     <div className="pb-4">
       <DateStrip selectedDate={date} onSelect={onDateChange} />
       <section className="mx-auto max-w-md px-4">
+        {canCreate ? (
+          <button type="button" onClick={onCreate} className="mt-4 h-12 w-full rounded-lg bg-[var(--accent)] text-sm font-semibold text-[var(--text-inverse)]">
+            + Добавить тренировку
+          </button>
+        ) : null}
         {loading ? (
           <div className="py-12 text-center text-sm text-[var(--text-muted)]">Загружаем расписание...</div>
         ) : slots.length === 0 ? (
@@ -513,6 +562,100 @@ function ScheduleScreen({
           slots.map((slot) => <SlotListItem key={slot.id} slot={slot} onOpen={() => onOpenSlot(slot)} />)
         )}
       </section>
+    </div>
+  );
+}
+
+function SlotEditor({
+  editor,
+  options,
+  saving,
+  canEditGroups,
+  canEditPersonal,
+  onChange,
+  onCancel,
+  onSave,
+}: {
+  editor: SlotEditorState;
+  options: StaffScheduleOptions;
+  saving: boolean;
+  canEditGroups: boolean;
+  canEditPersonal: boolean;
+  onChange: (draft: StaffSlotInput) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  const { draft } = editor;
+  const trainingTypes = options.training_types.filter((item) => item.slot_type === draft.slot_type);
+  const fieldClass = "mt-1 h-12 w-full rounded-lg border border-[var(--line-soft)] bg-[rgba(255,255,255,0.04)] px-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]";
+
+  function patch(next: Partial<StaffSlotInput>) {
+    onChange({ ...draft, ...next });
+  }
+
+  return (
+    <div className="space-y-4 px-4 pb-6 pt-4">
+      <div className="flex items-center justify-between gap-3">
+        <button type="button" onClick={onCancel} className="h-10 rounded-lg border border-[var(--line-soft)] px-4 text-sm text-[var(--text-main)]">
+          Назад
+        </button>
+        <h2 className="text-lg font-semibold text-[var(--text-main)]">{editor.mode === "create" ? "Новая тренировка" : "Редактирование"}</h2>
+      </div>
+
+      <section className="space-y-4 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] p-4">
+        <label className="block text-xs text-[var(--text-muted)]">
+          Формат
+          <select
+            value={draft.slot_type}
+            onChange={(event) => {
+              const slotType = event.target.value;
+              patch({ slot_type: slotType, training_type_id: null, capacity: slotType === "personal" ? 1 : draft.capacity });
+            }}
+            className={fieldClass}
+          >
+            {canEditGroups ? <option value="group">Групповая</option> : null}
+            {canEditPersonal ? <option value="personal">Персональная</option> : null}
+            {canEditGroups ? <option value="rental">Аренда зала</option> : null}
+          </select>
+        </label>
+
+        <label className="block text-xs text-[var(--text-muted)]">
+          Вид тренировки
+          <select value={draft.training_type_id || ""} onChange={(event) => patch({ training_type_id: event.target.value || null })} className={fieldClass}>
+            <option value="">Не выбран</option>
+            {trainingTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </label>
+
+        <label className="block text-xs text-[var(--text-muted)]">
+          Тренер
+          <select value={draft.trainer_id || ""} onChange={(event) => patch({ trainer_id: event.target.value || null })} className={fieldClass}>
+            <option value="">Не назначен</option>
+            {options.trainers.map((trainer) => <option key={trainer.id} value={trainer.id}>{trainer.last_name} {trainer.first_name}</option>)}
+          </select>
+        </label>
+
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block text-xs text-[var(--text-muted)]">Дата<input type="date" value={draft.date} onChange={(event) => patch({ date: event.target.value })} className={fieldClass} /></label>
+          <label className="block text-xs text-[var(--text-muted)]">Время<input type="time" value={draft.start_time} onChange={(event) => patch({ start_time: event.target.value })} className={fieldClass} /></label>
+          <label className="block text-xs text-[var(--text-muted)]">Длительность, мин<input type="number" min="15" max="480" step="5" value={draft.duration_minutes} onChange={(event) => patch({ duration_minutes: Number(event.target.value) })} className={fieldClass} /></label>
+          <label className="block text-xs text-[var(--text-muted)]">Количество мест<input type="number" min="1" max="200" value={draft.capacity} onChange={(event) => patch({ capacity: Number(event.target.value) })} className={fieldClass} /></label>
+        </div>
+
+        <label className="flex min-h-12 items-center justify-between gap-3 rounded-lg border border-[var(--line-soft)] px-3 text-sm text-[var(--text-main)]">
+          Бесплатное занятие
+          <input type="checkbox" checked={draft.is_free} onChange={(event) => patch({ is_free: event.target.checked })} className="h-5 w-5 accent-[var(--accent)]" />
+        </label>
+
+        <label className="block text-xs text-[var(--text-muted)]">
+          Комментарий
+          <textarea value={draft.comment || ""} onChange={(event) => patch({ comment: event.target.value || null })} rows={3} className="mt-1 w-full rounded-lg border border-[var(--line-soft)] bg-[rgba(255,255,255,0.04)] p-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]" />
+        </label>
+      </section>
+
+      <button type="button" disabled={saving || !draft.date || !draft.start_time} onClick={onSave} className="h-12 w-full rounded-lg bg-[var(--accent)] text-sm font-semibold text-[var(--text-inverse)] disabled:opacity-50">
+        {saving ? "Сохраняем..." : editor.mode === "create" ? "Добавить в расписание" : "Сохранить изменения"}
+      </button>
     </div>
   );
 }
@@ -530,6 +673,8 @@ function LessonDetailsScreen({
   onBookClient,
   onToggleAttend,
   onCancelBooking,
+  canEdit,
+  onEdit,
 }: {
   selected: StaffSlotBookings;
   busyId: string | null;
@@ -543,6 +688,8 @@ function LessonDetailsScreen({
   onBookClient: (client: StaffClientSearchResult, allowUnpaid?: boolean) => void;
   onToggleAttend: (booking: StaffBooking) => void;
   onCancelBooking: (booking: StaffBooking) => void;
+  canEdit: boolean;
+  onEdit: () => void;
 }) {
   const { slot, bookings } = selected;
   const bookingClientIds = new Set(bookings.map((booking) => String(booking.client_id)));
@@ -566,6 +713,11 @@ function LessonDetailsScreen({
         <h2 className="mt-2 text-2xl font-semibold leading-tight text-[var(--text-main)]">{slotTitle(slot)}</h2>
         <p className="mt-2 text-sm text-[var(--text-muted)]">{slotKindLabel(slot)} · {slot.duration_minutes} мин</p>
         <p className="mt-1 text-sm text-[var(--text-muted)]">{slot.trainer_name || "Тренер не назначен"}</p>
+        {canEdit ? (
+          <button type="button" onClick={onEdit} className="mt-4 h-11 w-full rounded-lg border border-[var(--line-soft)] text-sm font-semibold text-[var(--text-main)]">
+            Редактировать тренировку
+          </button>
+        ) : null}
       </section>
 
       <section className="mt-3 grid grid-cols-3 gap-2">
@@ -778,6 +930,9 @@ export function TrainerMiniApp() {
   const [date, setDate] = useState(toDateInputValue(new Date()));
   const [slots, setSlots] = useState<StaffSlot[]>([]);
   const [selected, setSelected] = useState<StaffSlotBookings | null>(null);
+  const [scheduleOptions, setScheduleOptions] = useState<StaffScheduleOptions>({ training_types: [], trainers: [] });
+  const [slotEditor, setSlotEditor] = useState<SlotEditorState | null>(null);
+  const [slotSaving, setSlotSaving] = useState(false);
   const [query, setQuery] = useState("");
   const [clientQuery, setClientQuery] = useState("");
   const [results, setResults] = useState<StaffClientSearchResult[]>([]);
@@ -792,6 +947,15 @@ export function TrainerMiniApp() {
   const [authError, setAuthError] = useState("");
 
   const selectedSlotId = selected?.slot.id ?? null;
+  const modules = staff?.user.modules || [];
+  const canEditGroups = modules.includes("schedule_edit_groups");
+  const canEditPersonal = modules.includes("schedule_edit_personal");
+  const canCreateSlot = canEditGroups || canEditPersonal;
+
+  function canEditSlot(slot: StaffSlot | null | undefined) {
+    if (!slot) return false;
+    return slot.slot_type === "personal" ? canEditPersonal : canEditGroups;
+  }
 
   async function authenticateTelegram() {
     const initData = await waitForTelegramInitData();
@@ -860,6 +1024,55 @@ export function TrainerMiniApp() {
       setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить расписание");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function ensureScheduleOptions() {
+    if (scheduleOptions.training_types.length || scheduleOptions.trainers.length) return scheduleOptions;
+    const next = await fetchStaffScheduleOptions();
+    setScheduleOptions(next);
+    return next;
+  }
+
+  async function openCreateSlot() {
+    try {
+      await ensureScheduleOptions();
+      const slotType = canEditGroups ? "group" : "personal";
+      setSlotEditor({ mode: "create", slotId: null, draft: createEmptySlotDraft(date, slotType) });
+      setScheduleMode("editor");
+      setError("");
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить данные для тренировки");
+    }
+  }
+
+  async function openEditSlot() {
+    if (!selected || !canEditSlot(selected.slot)) return;
+    try {
+      await ensureScheduleOptions();
+      setSlotEditor({ mode: "edit", slotId: String(selected.slot.id), draft: slotToEditorDraft(selected.slot) });
+      setScheduleMode("editor");
+      setError("");
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить данные для тренировки");
+    }
+  }
+
+  async function saveSlot() {
+    if (!slotEditor) return;
+    setSlotSaving(true);
+    setError("");
+    try {
+      const saved = slotEditor.mode === "create"
+        ? await createStaffSlot(slotEditor.draft)
+        : await updateStaffSlot(slotEditor.slotId as string, slotEditor.draft);
+      setSlotEditor(null);
+      await loadSchedule(slotEditor.draft.date);
+      if (slotEditor.mode === "edit") await openSlot({ ...saved, id: saved.id || slotEditor.slotId } as StaffSlot);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Не удалось сохранить тренировку");
+    } finally {
+      setSlotSaving(false);
     }
   }
 
@@ -1025,6 +1238,8 @@ export function TrainerMiniApp() {
 
   const title = activeTab === "schedule" && scheduleMode === "detail"
     ? "Занятие"
+    : activeTab === "schedule" && scheduleMode === "editor"
+      ? slotEditor?.mode === "create" ? "Новая тренировка" : "Редактирование"
     : tabLabels[activeTab];
 
   if (authMode === "telegram") {
@@ -1075,6 +1290,8 @@ export function TrainerMiniApp() {
             loading={loading}
             onDateChange={(nextDate) => void loadSchedule(nextDate)}
             onOpenSlot={openSlot}
+            canCreate={canCreateSlot}
+            onCreate={() => void openCreateSlot()}
           />
         ) : null}
 
@@ -1092,6 +1309,21 @@ export function TrainerMiniApp() {
             onBookClient={(client, allowUnpaid) => void bookClient(client, allowUnpaid)}
             onToggleAttend={(booking) => void toggleAttend(booking)}
             onCancelBooking={(booking) => void cancelClientBooking(booking)}
+            canEdit={canEditSlot(selected.slot)}
+            onEdit={() => void openEditSlot()}
+          />
+        ) : null}
+
+        {activeTab === "schedule" && scheduleMode === "editor" && slotEditor ? (
+          <SlotEditor
+            editor={slotEditor}
+            options={scheduleOptions}
+            saving={slotSaving}
+            canEditGroups={canEditGroups}
+            canEditPersonal={canEditPersonal}
+            onChange={(draft) => setSlotEditor((current) => current ? { ...current, draft } : current)}
+            onCancel={() => setScheduleMode(slotEditor.mode === "edit" ? "detail" : "list")}
+            onSave={() => void saveSlot()}
           />
         ) : null}
 

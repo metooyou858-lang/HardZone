@@ -532,6 +532,11 @@ test('staff read API returns telegram-ready payloads for authorized staff', asyn
   assert.equal(today.body.data.date, '2026-06-04');
   assert.equal(Array.isArray(today.body.data.slots), true);
 
+  const scheduleOptions = await request('/api/staff/schedule/options', { headers });
+  assert.equal(scheduleOptions.response.status, 200);
+  assert.equal(Array.isArray(scheduleOptions.body.data.training_types), true);
+  assert.equal(Array.isArray(scheduleOptions.body.data.trainers), true);
+
   const clientSearch = await request('/api/staff/client-search?q=zz', { headers });
   assert.equal(clientSearch.response.status, 200);
   assert.equal(clientSearch.body.success, true);

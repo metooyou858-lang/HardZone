@@ -11,6 +11,7 @@ export type CoverageStatus = "pending" | "covered" | "unpaid" | "comped" | "not_
 export type StaffSlot = {
   id: string;
   slot_type: string;
+  training_type_id?: string | null;
   date: string;
   start_time: string;
   duration_minutes: number;
@@ -25,6 +26,23 @@ export type StaffSlot = {
   trainer_name: string | null;
   confirmed_count: number | string;
   attended_count: number | string;
+};
+
+export type StaffScheduleOptions = {
+  training_types: Array<{ id: string; name: string; slot_type: string; color: string | null }>;
+  trainers: Array<{ id: string; first_name: string; last_name: string }>;
+};
+
+export type StaffSlotInput = {
+  slot_type: string;
+  training_type_id: string | null;
+  trainer_id: string | null;
+  date: string;
+  start_time: string;
+  duration_minutes: number;
+  capacity: number;
+  is_free: boolean;
+  comment: string | null;
 };
 
 export type StaffBooking = {
@@ -96,6 +114,27 @@ export async function fetchStaffToday(date?: string): Promise<{ date: string; sl
   if (date) query.set("date", date);
   const suffix = query.toString() ? `?${query.toString()}` : "";
   const response = await apiFetch<ApiEnvelope<{ date: string; slots: StaffSlot[] }>>(`/staff/schedule/today${suffix}`);
+  return response.data;
+}
+
+export async function fetchStaffScheduleOptions(): Promise<StaffScheduleOptions> {
+  const response = await apiFetch<ApiEnvelope<StaffScheduleOptions>>("/staff/schedule/options");
+  return response.data;
+}
+
+export async function createStaffSlot(data: StaffSlotInput): Promise<StaffSlot> {
+  const response = await apiFetch<ApiEnvelope<StaffSlot>>("/schedule/slots", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function updateStaffSlot(slotId: string | number, data: StaffSlotInput): Promise<StaffSlot> {
+  const response = await apiFetch<ApiEnvelope<StaffSlot>>(`/schedule/slots/${slotId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
   return response.data;
 }
 

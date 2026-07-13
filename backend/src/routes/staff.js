@@ -49,12 +49,17 @@ async function getSlotBookings(executor, slotId) {
       SELECT
         s.id,
         s.slot_type,
+        s.training_type_id,
+        s.trainer_id,
         s.date,
         s.start_time,
         s.duration_minutes,
         s.capacity,
         s.booked_count,
         s.status,
+        s.is_free,
+        s.comment,
+        tt.color AS training_type_color,
         tt.name AS training_type_name,
         tr.first_name || ' ' || tr.last_name AS trainer_name
       FROM schedule_slots s
@@ -134,6 +139,7 @@ router.get('/schedule/today', requireModule('schedule'), async (req, res) => {
         SELECT
           s.id,
           s.slot_type,
+          s.training_type_id,
           s.date,
           s.start_time,
           s.duration_minutes,
@@ -172,6 +178,35 @@ router.get('/schedule/today', requireModule('schedule'), async (req, res) => {
   }
 });
 
+router.get('/schedule/options', requireModule('schedule'), async (_req, res) => {
+  try {
+    const [trainingTypesResult, trainersResult] = await Promise.all([
+      pool.query(`
+        SELECT id, name, slot_type, color
+        FROM training_types
+        WHERE is_active = true
+        ORDER BY slot_type, name
+      `),
+      pool.query(`
+        SELECT id, first_name, last_name
+        FROM trainers
+        WHERE is_active = true
+        ORDER BY last_name, first_name
+      `),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        training_types: trainingTypesResult.rows,
+        trainers: trainersResult.rows,
+      },
+    });
+  } catch (err) {
+    sendInternalError(res, err, { route: 'staff.schedule.options' });
+  }
+});
+
 router.get('/bookings', requireModule('schedule'), async (req, res) => {
   try {
     const slotId = Number.parseInt(String(req.query.slot_id || ''), 10);
@@ -184,12 +219,17 @@ router.get('/bookings', requireModule('schedule'), async (req, res) => {
         SELECT
           s.id,
           s.slot_type,
+          s.training_type_id,
+          s.trainer_id,
           s.date,
           s.start_time,
           s.duration_minutes,
           s.capacity,
           s.booked_count,
           s.status,
+          s.is_free,
+          s.comment,
+          tt.color AS training_type_color,
           tt.name AS training_type_name,
           tr.first_name || ' ' || tr.last_name AS trainer_name
         FROM schedule_slots s
