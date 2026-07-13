@@ -150,7 +150,7 @@ async function cancelTrainingBooking(executor, bookingId) {
       WHERE b.id = $1
         AND b.status = 'confirmed'
         AND (s.date + s.start_time) > (NOW() AT TIME ZONE $2)
-      FOR UPDATE OF b, s
+      FOR UPDATE OF b
     `,
     [bookingId, CLUB_TIME_ZONE]
   );
