@@ -5,6 +5,7 @@ const {
   formatDate,
   formatTime,
   parseFindReplySlotId,
+  rememberClientSearchPrompt,
   renderClientSearch,
   renderCancelConfirmation,
   renderMainMenu,
@@ -139,12 +140,14 @@ test('attended booking must be unmarked before cancellation', () => {
   assert.equal(JSON.stringify(slot.keyboard).includes('unatt:17'), true);
 });
 
-test('client search reply keeps the selected slot without server-side state', () => {
+test('client search reply keeps the selected slot without exposing it in text', () => {
+  rememberClientSearchPrompt(100, 500, 42);
   const slotId = parseFindReplySlotId({
+    chat: { id: 100 },
     text: 'Иванов',
-    reply_to_message: { text: 'Занятие №42. Введи фамилию, имя или телефон клиента.' },
+    reply_to_message: { message_id: 500, text: 'Введите фамилию, имя или телефон клиента.' },
   });
 
   assert.equal(slotId, 42);
-  assert.equal(parseFindReplySlotId({ text: 'Иванов' }), null);
+  assert.equal(parseFindReplySlotId({ chat: { id: 100 }, text: 'Иванов' }), null);
 });

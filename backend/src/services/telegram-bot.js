@@ -22,6 +22,8 @@ const MENU_BUTTONS = {
   account: '👤 Личный кабинет',
 };
 const WEEKDAY_LABELS = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
+const CLIENT_SEARCH_PROMPT_TTL_MS = 15 * 60 * 1000;
+const pendingClientSearchPrompts = new Map();
 
 function getClubDate(date = new Date()) {
   const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -667,10 +669,26 @@ function renderSlot(data) {
   };
 }
 
+function rememberClientSearchPrompt(chatId, messageId, slotId) {
+  if (!chatId || !messageId || !slotId) return;
+  pendingClientSearchPrompts.set(`${chatId}:${messageId}`, {
+    slotId: Number(slotId),
+    expiresAt: Date.now() + CLIENT_SEARCH_PROMPT_TTL_MS,
+  });
+}
+
 function parseFindReplySlotId(message) {
-  const prompt = String(message.reply_to_message?.text || '');
-  const match = prompt.match(/Занятие №(\d+)/);
-  return match ? Number.parseInt(match[1], 10) : null;
+  const chatId = message.chat?.id;
+  const promptMessageId = message.reply_to_message?.message_id;
+  const key = `${chatId}:${promptMessageId}`;
+  const pending = pendingClientSearchPrompts.get(key);
+  pendingClientSearchPrompts.delete(key);
+
+  if (!pending || pending.expiresAt < Date.now()) {
+    return null;
+  }
+
+  return pending.slotId;
 }
 
 function renderClientSearch(slotId, clients) {
@@ -861,10 +879,11 @@ async function handleCallback(callbackQuery) {
   if (data.startsWith('find:')) {
     const slotId = Number.parseInt(data.split(':')[1], 10);
     await answerCallback(callbackQuery.id);
-    await sendReplyPrompt(
+    const prompt = await sendReplyPrompt(
       chatId,
-      `Занятие №${slotId}. Введи фамилию, имя или телефон клиента.`
+      'Введите фамилию, имя или телефон клиента.'
     );
+    rememberClientSearchPrompt(chatId, prompt?.result?.message_id, slotId);
     return;
   }
 
@@ -969,6 +988,7 @@ module.exports = {
   getCurrentWeekScheduleOffsets,
   getTodaySlots,
   parseFindReplySlotId,
+  rememberClientSearchPrompt,
   renderClientSearch,
   renderCancelConfirmation,
   renderMainMenu,
