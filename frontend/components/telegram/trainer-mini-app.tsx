@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   attendStaffBooking,
   cancelStaffBooking,
+  cancelStaffSlot,
   createStaffSlot,
   createStaffBooking,
   fetchStaffBookings,
@@ -675,6 +676,8 @@ function LessonDetailsScreen({
   onCancelBooking,
   canEdit,
   onEdit,
+  canCancel,
+  onCancelSlot,
 }: {
   selected: StaffSlotBookings;
   busyId: string | null;
@@ -690,6 +693,8 @@ function LessonDetailsScreen({
   onCancelBooking: (booking: StaffBooking) => void;
   canEdit: boolean;
   onEdit: () => void;
+  canCancel: boolean;
+  onCancelSlot: () => void;
 }) {
   const { slot, bookings } = selected;
   const bookingClientIds = new Set(bookings.map((booking) => String(booking.client_id)));
@@ -716,6 +721,11 @@ function LessonDetailsScreen({
         {canEdit ? (
           <button type="button" onClick={onEdit} className="mt-4 h-11 w-full rounded-lg border border-[var(--line-soft)] text-sm font-semibold text-[var(--text-main)]">
             Редактировать тренировку
+          </button>
+        ) : null}
+        {canCancel ? (
+          <button type="button" onClick={onCancelSlot} className="mt-2 h-11 w-full rounded-lg border border-[rgba(255,116,57,0.38)] text-sm font-semibold text-[#ffb599]">
+            Удалить тренировку
           </button>
         ) : null}
       </section>
@@ -951,6 +961,7 @@ export function TrainerMiniApp() {
   const canEditGroups = modules.includes("schedule_edit_groups");
   const canEditPersonal = modules.includes("schedule_edit_personal");
   const canCreateSlot = canEditGroups || canEditPersonal;
+  const canCancelSlot = modules.includes("schedule_cancel");
 
   function canEditSlot(slot: StaffSlot | null | undefined) {
     if (!slot) return false;
@@ -1071,6 +1082,26 @@ export function TrainerMiniApp() {
       if (slotEditor.mode === "edit") await openSlot({ ...saved, id: saved.id || slotEditor.slotId } as StaffSlot);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Не удалось сохранить тренировку");
+    } finally {
+      setSlotSaving(false);
+    }
+  }
+
+  async function cancelTrainingSlot() {
+    if (!selected || !canCancelSlot) return;
+    const bookingCount = selected.bookings.length;
+    const warning = bookingCount > 0
+      ? `Удалить тренировку? Записи клиентов (${bookingCount}) будут отменены.`
+      : "Удалить тренировку из расписания?";
+    if (!window.confirm(warning)) return;
+
+    setSlotSaving(true);
+    setError("");
+    try {
+      await cancelStaffSlot(selected.slot.id);
+      await loadSchedule(String(selected.slot.date).slice(0, 10));
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : "Не удалось удалить тренировку");
     } finally {
       setSlotSaving(false);
     }
@@ -1311,6 +1342,8 @@ export function TrainerMiniApp() {
             onCancelBooking={(booking) => void cancelClientBooking(booking)}
             canEdit={canEditSlot(selected.slot)}
             onEdit={() => void openEditSlot()}
+            canCancel={canCancelSlot && !slotSaving}
+            onCancelSlot={() => void cancelTrainingSlot()}
           />
         ) : null}
 

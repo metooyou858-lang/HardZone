@@ -138,6 +138,13 @@ export async function updateStaffSlot(slotId: string | number, data: StaffSlotIn
   return response.data;
 }
 
+export async function cancelStaffSlot(slotId: string | number): Promise<StaffSlot> {
+  const response = await apiFetch<ApiEnvelope<StaffSlot>>(`/schedule/slots/${slotId}/cancel`, {
+    method: "POST",
+  });
+  return response.data;
+}
+
 export async function fetchStaffBookings(slotId: string | number): Promise<StaffSlotBookings> {
   const response = await apiFetch<ApiEnvelope<StaffSlotBookings>>(`/staff/bookings?slot_id=${slotId}`);
   return response.data;
