@@ -546,13 +546,17 @@ function ScheduleScreen({
 }) {
   return (
     <div className="pb-4">
-      <DateStrip selectedDate={date} onSelect={onDateChange} />
-      <section className="mx-auto max-w-md px-4">
+      <div className="sticky top-0 z-20 border-b border-[var(--line-soft)] bg-[rgba(8,11,16,0.97)] pb-3 shadow-[0_12px_24px_rgba(0,0,0,0.24)] backdrop-blur">
+        <DateStrip selectedDate={date} onSelect={onDateChange} />
         {canCreate ? (
-          <button type="button" onClick={onCreate} className="mt-4 h-12 w-full rounded-lg bg-[var(--accent)] text-sm font-semibold text-[var(--text-inverse)]">
-            + Добавить тренировку
-          </button>
+          <div className="mx-auto max-w-md px-4 pt-3">
+            <button type="button" onClick={onCreate} className="h-11 w-full rounded-lg bg-[var(--accent)] text-sm font-semibold text-[var(--text-inverse)]">
+              + Добавить тренировку
+            </button>
+          </div>
         ) : null}
+      </div>
+      <section className="mx-auto max-w-md px-4">
         {loading ? (
           <div className="py-12 text-center text-sm text-[var(--text-muted)]">Загружаем расписание...</div>
         ) : slots.length === 0 ? (
