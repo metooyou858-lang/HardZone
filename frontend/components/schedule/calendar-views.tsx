@@ -68,7 +68,6 @@ function SlotCard({
 }) {
   const color = slotColor(slot);
   const compact = height !== undefined && height < 52;
-  const showBottom = height === undefined || height >= 72;
   const cancelled = slot.status === "cancelled";
 
   return (
@@ -95,23 +94,21 @@ function SlotCard({
         style={{ backgroundColor: color, borderRadius: "0.75rem 0 0 0.75rem", opacity: hovered ? 1 : 0.8 }}
       />
       {/* категория */}
-      <p className="truncate text-[8px] font-black uppercase tracking-[0.18em]" style={{ color }}>
+      <p className="truncate pr-[48%] text-[8px] font-black uppercase tracking-[0.18em]" style={{ color }}>
         {cancelled ? "ОТМЕНЕНО · " : ""}{slot.training_type_name || slotTypeLabel(slot.slot_type)}
       </p>
       {/* время */}
       {!compact && (
-        <p className="mt-0.5 truncate text-xs font-bold text-[var(--text-main)]" style={{ fontFamily: "var(--font-heading)" }}>
+        <p className="mt-0.5 truncate pr-[48%] text-xs font-bold text-[var(--text-main)]" style={{ fontFamily: "var(--font-heading)" }}>
           {fmtTime(slot.start_time)}
           {height !== undefined && height >= 56 ? ` — ${addMin(slot.start_time, slot.duration_minutes)}` : ""}
         </p>
       )}
       {/* тренер + счётчик */}
-      {showBottom && (
-        <div className="mt-1 flex items-center justify-between gap-1">
-          <span className="truncate text-[9px] text-[var(--text-muted)]">{slot.trainer_name || "Без тренера"}</span>
-          <span className="shrink-0 text-[9px] font-bold" style={{ color }}>{slot.booked_count}/{slot.capacity}</span>
-        </div>
-      )}
+      <div className="absolute right-2 top-1 flex max-w-[45%] flex-col items-end leading-tight">
+        <span className="w-full truncate text-right text-[9px] text-[var(--text-muted)]">{slot.trainer_name || "Без тренера"}</span>
+        <span className="text-[9px] font-bold" style={{ color }}>{slot.booked_count}/{slot.capacity}</span>
+      </div>
     </button>
   );
 }
