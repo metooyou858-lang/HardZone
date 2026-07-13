@@ -1,9 +1,10 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   attendStaffBooking,
+  cancelStaffBooking,
   createStaffBooking,
   fetchStaffBookings,
   fetchStaffMe,
@@ -37,7 +38,7 @@ declare global {
 
 type AppTab = "home" | "schedule" | "clients" | "profile";
 type ScheduleMode = "list" | "detail";
-type AuthMode = "checking" | "linked" | "phone" | "telegram";
+type AuthMode = "checking" | "linked" | "telegram";
 
 const tabLabels: Record<AppTab, string> = {
   home: "Главная",
@@ -357,10 +358,12 @@ function BookingRow({
   booking,
   busy,
   onToggle,
+  onCancel,
 }: {
   booking: StaffBooking;
   busy: boolean;
   onToggle: () => void;
+  onCancel: () => void;
 }) {
   const attended = booking.status === "attended";
 
@@ -388,6 +391,16 @@ function BookingRow({
       >
         {attended ? "Снять отметку" : "Отметить пришел"}
       </button>
+      {!attended ? (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onCancel}
+          className="mt-2 h-11 w-full rounded-lg border border-[rgba(255,116,57,0.35)] text-sm font-semibold text-[#ffb599] disabled:opacity-60"
+        >
+          Отменить запись
+        </button>
+      ) : null}
     </article>
   );
 }
@@ -407,7 +420,10 @@ function HomeScreen({
   onOpenSchedule: () => void;
   onOpenSlot: (slot: StaffSlot) => void;
 }) {
-  const totalBookings = slots.reduce((sum, slot) => sum + Number(slot.confirmed_count || 0), 0);
+  const totalBookings = slots.reduce(
+    (sum, slot) => sum + Number(slot.confirmed_count || 0) + Number(slot.attended_count || 0),
+    0
+  );
   const totalAttended = slots.reduce((sum, slot) => sum + Number(slot.attended_count || 0), 0);
   const nextSlots = slots.slice(0, 3);
 
@@ -512,6 +528,7 @@ function LessonDetailsScreen({
   onSearch,
   onBookClient,
   onToggleAttend,
+  onCancelBooking,
 }: {
   selected: StaffSlotBookings;
   busyId: string | null;
@@ -522,8 +539,9 @@ function LessonDetailsScreen({
   onBack: () => void;
   onQueryChange: (value: string) => void;
   onSearch: () => void;
-  onBookClient: (client: StaffClientSearchResult) => void;
+  onBookClient: (client: StaffClientSearchResult, allowUnpaid?: boolean) => void;
   onToggleAttend: (booking: StaffBooking) => void;
+  onCancelBooking: (booking: StaffBooking) => void;
 }) {
   const { slot, bookings } = selected;
   const bookingClientIds = new Set(bookings.map((booking) => String(booking.client_id)));
@@ -576,20 +594,36 @@ function LessonDetailsScreen({
 
         {results.length > 0 ? (
           <div className="mt-3 space-y-2">
-            {results.map((client) => {
+            {results.map((client, index) => {
               const alreadyBooked = bookingClientIds.has(String(client.id));
+              const eligible = client.is_eligible !== false;
+              const showUnpaid = results.findIndex((item) => String(item.id) === String(client.id)) === index;
               return (
                 <article key={`${client.id}-${client.subscription_id || "no-sub"}`} className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] p-3">
                   <p className="font-semibold text-[var(--text-main)]">{clientName(client)}</p>
                   <p className="mt-1 text-xs text-[var(--text-muted)]">{subscriptionLabel(client)}</p>
-                  <button
-                    type="button"
-                    disabled={alreadyBooked || busyId === `client-${client.id}`}
-                    onClick={() => onBookClient(client)}
-                    className="mt-3 h-10 w-full rounded-lg bg-[var(--accent)] text-sm font-semibold text-[var(--text-inverse)] disabled:bg-[rgba(255,255,255,0.08)] disabled:text-[var(--text-muted)]"
-                  >
-                    {alreadyBooked ? "Уже записан" : "Записать"}
-                  </button>
+                  {eligible ? (
+                    <button
+                      type="button"
+                      disabled={alreadyBooked || busyId === `client-${client.id}`}
+                      onClick={() => onBookClient(client)}
+                      className="mt-3 h-10 w-full rounded-lg bg-[var(--accent)] text-sm font-semibold text-[var(--text-inverse)] disabled:bg-[rgba(255,255,255,0.08)] disabled:text-[var(--text-muted)]"
+                    >
+                      {alreadyBooked ? "Уже записан" : "Записать по абонементу"}
+                    </button>
+                  ) : (
+                    <p className="mt-2 text-xs text-[#ffb599]">Абонемент не подходит для этого занятия</p>
+                  )}
+                  {showUnpaid && !alreadyBooked ? (
+                    <button
+                      type="button"
+                      disabled={busyId === `client-${client.id}`}
+                      onClick={() => onBookClient(client, true)}
+                      className="mt-2 h-10 w-full rounded-lg border border-[var(--line-soft)] text-sm font-semibold text-[var(--text-main)] disabled:opacity-60"
+                    >
+                      Записать к оплате
+                    </button>
+                  ) : null}
                 </article>
               );
             })}
@@ -613,6 +647,7 @@ function LessonDetailsScreen({
               booking={booking}
               busy={busyId === booking.id}
               onToggle={() => onToggleAttend(booking)}
+              onCancel={() => onCancelBooking(booking)}
             />
           ))
         )}
@@ -711,23 +746,7 @@ function ProfileScreen({ staff, onRefresh }: { staff: StaffMe | null; onRefresh:
   );
 }
 
-function TelegramAuthScreen({
-  mode,
-  phone,
-  error,
-  loading,
-  onPhoneChange,
-  onSubmit,
-}: {
-  mode: AuthMode;
-  phone: string;
-  error: string;
-  loading: boolean;
-  onPhoneChange: (value: string) => void;
-  onSubmit: () => void;
-}) {
-  const canEnterPhone = mode === "phone";
-
+function TelegramAuthScreen({ error }: { error: string }) {
   return (
     <main className="flex min-h-screen items-center bg-[var(--bg-app)] px-4 py-8 text-[var(--text-main)]">
       <section className="mx-auto w-full max-w-md rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] p-5 shadow-[0_18px_42px_rgba(0,0,0,0.32)]">
@@ -737,40 +756,9 @@ function TelegramAuthScreen({
           </p>
           <h1 className="mt-2 text-2xl font-semibold leading-tight text-[var(--text-main)]">Вход тренера</h1>
           <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
-            {canEnterPhone
-              ? "Введите телефон из карточки сотрудника. Почта для Telegram-приложения не нужна."
-              : "Откройте это приложение из Telegram, чтобы мы получили защищённые данные запуска."}
+            Для безопасного входа вернитесь в чат-бот HardZone, нажмите /start и подтвердите свой номер кнопкой «Поделиться телефоном».
           </p>
         </div>
-
-        {canEnterPhone ? (
-          <form
-            className="space-y-3"
-            onSubmit={(event: FormEvent<HTMLFormElement>) => {
-              event.preventDefault();
-              onSubmit();
-            }}
-          >
-            <label className="block">
-              <span className="mb-2 block text-sm font-medium text-[var(--text-main)]">Телефон сотрудника</span>
-              <input
-                value={phone}
-                onChange={(event) => onPhoneChange(event.target.value)}
-                inputMode="tel"
-                autoComplete="tel"
-                placeholder="+7 999 000-00-00"
-                className="h-12 w-full rounded-lg border border-[var(--line-soft)] bg-[rgba(255,255,255,0.04)] px-3 text-base text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={loading}
-              className="h-12 w-full rounded-lg bg-[var(--accent)] text-sm font-semibold text-[var(--text-inverse)] disabled:opacity-60"
-            >
-              {loading ? "Проверяем..." : "Продолжить"}
-            </button>
-          </form>
-        ) : null}
 
         {error ? (
           <div className="mt-4 rounded-lg border border-[rgba(255,116,57,0.32)] bg-[rgba(255,116,57,0.10)] p-3 text-sm text-[#ffb599]">
@@ -800,9 +788,6 @@ export function TrainerMiniApp() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [authMode, setAuthMode] = useState<AuthMode>("checking");
-  const [telegramInitData, setTelegramInitData] = useState("");
-  const [phone, setPhone] = useState("");
-  const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
 
   const selectedSlotId = selected?.slot.id ?? null;
@@ -813,8 +798,6 @@ export function TrainerMiniApp() {
     const webApp = window.Telegram?.WebApp;
     webApp?.ready?.();
     webApp?.expand?.();
-
-    setTelegramInitData(initData);
 
     if (!initData) {
       const sessionResponse = await fetch("/auth-api/me", {
@@ -847,42 +830,14 @@ export function TrainerMiniApp() {
 
     const data = (await response.json().catch(() => null)) as { error?: string } | null;
     if (response.status === 403) {
-      setAuthMode("phone");
-      setAuthError("");
+      setAuthMode("telegram");
+      setAuthError("Telegram ещё не привязан к сотруднику HardZone.");
       return false;
     }
 
     setAuthMode("telegram");
     setAuthError(data?.error || "Не удалось войти через Telegram");
     return false;
-  }
-
-  async function linkPhoneAndEnter() {
-    setAuthLoading(true);
-    setAuthError("");
-
-    try {
-      const response = await fetch("/auth-api/telegram-miniapp-link-phone", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ init_data: telegramInitData, phone }),
-      });
-
-      const data = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) {
-        setAuthError(data?.error || "Не удалось привязать Telegram по телефону");
-        return;
-      }
-
-      setAuthMode("linked");
-      setPhone("");
-      await Promise.all([loadStaff(), loadSchedule(date)]);
-    } catch (linkError) {
-      setAuthError(linkError instanceof Error ? linkError.message : "Не удалось привязать Telegram по телефону");
-    } finally {
-      setAuthLoading(false);
-    }
   }
 
   async function loadStaff() {
@@ -957,7 +912,7 @@ export function TrainerMiniApp() {
     setSearching(true);
     setError("");
     try {
-      setResults(await searchStaffClients(query.trim()));
+      setResults(await searchStaffClients(query.trim(), selectedSlotId || undefined));
     } catch (searchError) {
       setError(searchError instanceof Error ? searchError.message : "Не удалось найти клиента");
     } finally {
@@ -982,7 +937,7 @@ export function TrainerMiniApp() {
     }
   }
 
-  async function bookClient(client: StaffClientSearchResult) {
+  async function bookClient(client: StaffClientSearchResult, allowUnpaid = false) {
     if (!selectedSlotId) return;
     setBusyId(`client-${client.id}`);
     setError("");
@@ -990,7 +945,9 @@ export function TrainerMiniApp() {
       const nextSelected = await createStaffBooking({
         slot_id: selectedSlotId,
         client_id: client.id,
-        subscription_id: client.subscription_id || null,
+        subscription_id: allowUnpaid ? null : client.subscription_id || null,
+        allow_unpaid: allowUnpaid,
+        unpaid_reason: allowUnpaid ? "manual_without_subscription" : undefined,
       });
       setSelected(nextSelected);
       setQuery("");
@@ -1000,6 +957,25 @@ export function TrainerMiniApp() {
       setSelected(nextSelected);
     } catch (bookError) {
       setError(bookError instanceof Error ? bookError.message : "Не удалось записать клиента");
+      await refreshSelected();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function cancelClientBooking(booking: StaffBooking) {
+    if (!window.confirm(`Отменить запись клиента ${booking.client_name}?`)) return;
+
+    setBusyId(booking.id);
+    setError("");
+    try {
+      const nextSelected = await cancelStaffBooking(booking.id);
+      setSelected(nextSelected);
+      await loadSchedule(date);
+      setScheduleMode("detail");
+      setSelected(nextSelected);
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : "Не удалось отменить запись");
       await refreshSelected();
     } finally {
       setBusyId(null);
@@ -1050,17 +1026,8 @@ export function TrainerMiniApp() {
     ? "Занятие"
     : tabLabels[activeTab];
 
-  if (authMode === "phone" || authMode === "telegram") {
-    return (
-      <TelegramAuthScreen
-        mode={authMode}
-        phone={phone}
-        error={authError}
-        loading={authLoading}
-        onPhoneChange={setPhone}
-        onSubmit={() => void linkPhoneAndEnter()}
-      />
-    );
+  if (authMode === "telegram") {
+    return <TelegramAuthScreen error={authError} />;
   }
 
   return (
@@ -1121,8 +1088,9 @@ export function TrainerMiniApp() {
             onBack={() => setScheduleMode("list")}
             onQueryChange={setQuery}
             onSearch={() => void runSearch()}
-            onBookClient={(client) => void bookClient(client)}
+            onBookClient={(client, allowUnpaid) => void bookClient(client, allowUnpaid)}
             onToggleAttend={(booking) => void toggleAttend(booking)}
+            onCancelBooking={(booking) => void cancelClientBooking(booking)}
           />
         ) : null}
 

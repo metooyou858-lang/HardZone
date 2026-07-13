@@ -64,6 +64,7 @@ export type StaffClientSearchResult = {
   subscription_status: string | null;
   visits_left: number | null;
   expires_at: string | null;
+  is_eligible?: boolean;
 };
 
 export type StaffMe = {
@@ -124,8 +125,16 @@ export async function unattendStaffBooking(bookingId: string | number): Promise<
   return response.data;
 }
 
-export async function searchStaffClients(query: string): Promise<StaffClientSearchResult[]> {
+export async function cancelStaffBooking(bookingId: string | number): Promise<StaffSlotBookings> {
+  const response = await apiFetch<ApiEnvelope<StaffSlotBookings>>(`/staff/bookings/${bookingId}/cancel`, {
+    method: "POST",
+  });
+  return response.data;
+}
+
+export async function searchStaffClients(query: string, slotId?: string | number): Promise<StaffClientSearchResult[]> {
   const params = new URLSearchParams({ q: query, limit: "12" });
+  if (slotId) params.set("slot_id", String(slotId));
   const response = await apiFetch<ApiEnvelope<StaffClientSearchResult[]>>(`/staff/client-search?${params.toString()}`);
   return response.data;
 }

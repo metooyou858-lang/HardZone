@@ -3,10 +3,12 @@ const express = require('express');
 const authMiddleware = require('../middleware/auth');
 const { pool } = require('../db');
 const {
+  cancelTrainingBooking,
   createTrainingBooking,
   markTrainingBookingArrived,
   unmarkTrainingBookingArrived,
 } = require('../services/booking-attendance');
+const { assertSubscriptionAccess, getSlotAccessContext } = require('../services/subscription-access');
 const { addClientSearchConditions } = require('../services/client-search');
 const { expireActiveSubscriptions } = require('../services/subscription-validity');
 const { getPublicErrorMessage, sendInternalError } = require('../utils/http-response');
@@ -302,10 +304,10 @@ router.post('/bookings/:id/attend', requireModule('schedule_attendance'), async 
   } catch (err) {
     await client.query('ROLLBACK');
     const statusCode = err.statusCode || 500;
-    if (statusCode === 404) {
-      return res.status(404).json({ success: false, error: err.message });
+    if (statusCode < 500) {
+      return res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });
     }
-    sendInternalError(res, err, { route: 'staff.bookings.attend' });
+    return sendInternalError(res, err, { route: 'staff.bookings.attend' });
   } finally {
     client.release();
   }
@@ -324,7 +326,32 @@ router.post('/bookings/:id/unattend', requireModule('schedule_attendance'), asyn
     res.json({ success: true, data: { booking_id: Number(req.params.id), ...slotBookings } });
   } catch (err) {
     await client.query('ROLLBACK');
-    sendInternalError(res, err, { route: 'staff.bookings.unattend' });
+    const statusCode = err.statusCode || 500;
+    if (statusCode < 500) {
+      return res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });
+    }
+    return sendInternalError(res, err, { route: 'staff.bookings.unattend' });
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/bookings/:id/cancel', requireModule('schedule_clients'), async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+    const booking = await cancelTrainingBooking(client, req.params.id);
+    const slotBookings = await getSlotBookings(client, booking.slot_id);
+    await client.query('COMMIT');
+    res.json({ success: true, data: { booking_id: Number(req.params.id), ...slotBookings } });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    const statusCode = err.statusCode || 500;
+    if (statusCode < 500) {
+      return res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });
+    }
+    return sendInternalError(res, err, { route: 'staff.bookings.cancel' });
   } finally {
     client.release();
   }
@@ -336,6 +363,7 @@ router.get('/client-search', requireModule('clients'), async (req, res) => {
 
     const search = String(req.query.search || req.query.q || '').trim();
     const limit = parseLimit(req.query.limit, 10, 25);
+    const slotId = Number.parseInt(String(req.query.slot_id || ''), 10);
 
     if (search.length < 2) {
       return res.status(422).json({ success: false, error: 'Введите минимум 2 символа' });
@@ -377,7 +405,33 @@ router.get('/client-search', requireModule('clients'), async (req, res) => {
       params
     );
 
-    res.json({ success: true, data: rows });
+    if (!Number.isInteger(slotId) || slotId <= 0) {
+      return res.json({ success: true, data: rows });
+    }
+
+    const context = await getSlotAccessContext(pool, slotId);
+    const checkedRows = [];
+    for (const row of rows) {
+      if (!row.subscription_id) {
+        checkedRows.push({ ...row, is_eligible: false });
+        continue;
+      }
+
+      try {
+        await assertSubscriptionAccess(pool, {
+          subscriptionId: row.subscription_id,
+          clientId: row.id,
+          context,
+          activate: false,
+        });
+        checkedRows.push({ ...row, is_eligible: true });
+      } catch (error) {
+        if (![404, 409].includes(error.statusCode)) throw error;
+        checkedRows.push({ ...row, is_eligible: false });
+      }
+    }
+
+    return res.json({ success: true, data: checkedRows });
   } catch (err) {
     sendInternalError(res, err, { route: 'staff.client_search' });
   }

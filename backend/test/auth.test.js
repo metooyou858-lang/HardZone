@@ -440,7 +440,7 @@ test('telegram mini app login accepts signed init data for linked active staff',
   }
 });
 
-test('telegram mini app phone link signs in active staff by phone', async () => {
+test('telegram mini app phone link is disabled in favor of verified bot contact', async () => {
   const previousToken = process.env.TELEGRAM_BOT_TOKEN;
   process.env.TELEGRAM_BOT_TOKEN = 'test-telegram-bot-token';
 
@@ -459,19 +459,17 @@ test('telegram mini app phone link signs in active staff by phone', async () => 
       }),
     });
 
-    assert.equal(result.response.status, 200);
-    assert.equal(result.body.success, true);
-    assert.equal(result.body.data.user.id, Number(staffUser.id));
-    assert.equal(result.body.data.user.username, staffUser.username);
+    assert.equal(result.response.status, 410);
+    assert.equal(result.body.success, false);
 
     const { rows } = await query('SELECT telegram_id FROM users WHERE id = $1', [staffUser.id]);
-    assert.equal(rows[0].telegram_id, '444555666');
+    assert.equal(rows[0].telegram_id, null);
   } finally {
     process.env.TELEGRAM_BOT_TOKEN = previousToken;
   }
 });
 
-test('telegram mini app phone link rejects unknown and duplicate phones', async () => {
+test('disabled telegram mini app phone link does not disclose phone matches', async () => {
   const previousToken = process.env.TELEGRAM_BOT_TOKEN;
   process.env.TELEGRAM_BOT_TOKEN = 'test-telegram-bot-token';
 
@@ -485,7 +483,7 @@ test('telegram mini app phone link rejects unknown and duplicate phones', async 
       }),
     });
 
-    assert.equal(unknown.response.status, 404);
+    assert.equal(unknown.response.status, 410);
 
     await createUser({
       phone: '+7 (999) 666-77-88',
@@ -505,7 +503,7 @@ test('telegram mini app phone link rejects unknown and duplicate phones', async 
       }),
     });
 
-    assert.equal(duplicate.response.status, 409);
+    assert.equal(duplicate.response.status, 410);
   } finally {
     process.env.TELEGRAM_BOT_TOKEN = previousToken;
   }
@@ -569,7 +567,7 @@ test('staff booking API creates bookings and toggles attendance for authorized s
   const { rows: slotRows } = await query(
     `
       INSERT INTO schedule_slots (date, start_time, capacity)
-      VALUES ('2026-06-04', '10:00', 2)
+      VALUES ('2099-06-04', '10:00', 2)
       RETURNING id
     `
   );
@@ -584,6 +582,12 @@ test('staff booking API creates bookings and toggles attendance for authorized s
     'content-type': 'application/json',
     'x-hardzone-session': createSessionToken(sessionUser),
   };
+
+  const eligibleSearch = await request(`/api/staff/client-search?q=Telegram&slot_id=${slotRows[0].id}`, {
+    headers,
+  });
+  assert.equal(eligibleSearch.response.status, 200);
+  assert.equal(eligibleSearch.body.data.some((item) => item.is_eligible === true), true);
 
   const create = await request('/api/staff/bookings', {
     method: 'POST',
@@ -629,6 +633,19 @@ test('staff booking API creates bookings and toggles attendance for authorized s
 
   const afterUnattend = await query('SELECT visits_left FROM client_subscriptions WHERE id = $1', [subscriptionRows[0].id]);
   assert.equal(afterUnattend.rows[0].visits_left, 2);
+
+  const cancel = await request(`/api/staff/bookings/${bookingId}/cancel`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({}),
+  });
+
+  assert.equal(cancel.response.status, 200);
+  assert.equal(cancel.body.success, true);
+  assert.equal(cancel.body.data.bookings.length, 0);
+
+  const afterCancel = await query('SELECT booked_count FROM schedule_slots WHERE id = $1', [slotRows[0].id]);
+  assert.equal(afterCancel.rows[0].booked_count, 0);
 });
 
 test('booking attendance charges an eligible subscription added to an unpaid booking', async () => {
@@ -856,6 +873,16 @@ test('staff without staff booking permissions cannot mutate staff bookings by di
     body: JSON.stringify({ slot_id: 1, client_id: 1 }),
   });
   assert.equal(create.response.status, 403);
+
+  const cancel = await request('/api/staff/bookings/1/cancel', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-hardzone-session': createSession(withoutClients),
+    },
+    body: JSON.stringify({}),
+  });
+  assert.equal(cancel.response.status, 403);
 
   const attend = await request('/api/staff/bookings/1/attend', {
     method: 'POST',

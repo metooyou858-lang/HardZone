@@ -109,51 +109,6 @@ async function findSessionUserByTelegramId(telegramId) {
   return toSessionUser(user);
 }
 
-async function linkSessionUserByPhone(telegramId, phone) {
-  const phoneNormalized = normalizePhone(phone);
-
-  if (!phoneNormalized) {
-    return { status: 'invalid_phone' };
-  }
-
-  const { rows } = await query(
-    `
-      SELECT id, name, role, role_title, username, is_active, module_grants, module_revokes
-      FROM users
-      WHERE phone_normalized = $1
-        AND is_active = true
-      ORDER BY id
-    `,
-    [phoneNormalized]
-  );
-
-  if (rows.length === 0) {
-    return { status: 'not_found', phone_normalized: phoneNormalized };
-  }
-
-  if (rows.length > 1) {
-    return { status: 'duplicate', phone_normalized: phoneNormalized };
-  }
-
-  const user = rows[0];
-  await query(
-    `
-      UPDATE users
-      SET telegram_id = $1,
-          phone = COALESCE(NULLIF(phone, ''), $2),
-          phone_normalized = $3,
-          updated_at = NOW()
-      WHERE id = $4
-    `,
-    [String(telegramId), phone, phoneNormalized, user.id]
-  );
-
-  return {
-    status: 'linked',
-    user: toSessionUser(user),
-  };
-}
-
 function toClientIdentity(client) {
   return {
     id: Number(client.id),
@@ -1257,36 +1212,10 @@ router.post('/miniapp-login', async (req, res) => {
 });
 
 router.post('/miniapp-link-phone', async (req, res) => {
-  try {
-    if (!getBotToken()) {
-      return res.status(503).json({ success: false, error: 'Telegram bot token is not configured' });
-    }
-
-    const telegramUser = parseTelegramInitData(req.body?.init_data);
-    if (!telegramUser?.id) {
-      return res.status(401).json({ success: false, error: 'Telegram авторизация недействительна' });
-    }
-
-    const result = await linkSessionUserByPhone(telegramUser.id, req.body?.phone);
-    if (result.status === 'invalid_phone') {
-      return res.status(422).json({ success: false, error: 'Укажите корректный номер телефона' });
-    }
-
-    if (result.status === 'not_found') {
-      return res.status(404).json({ success: false, error: 'Номер не найден среди активных сотрудников HardZone' });
-    }
-
-    if (result.status === 'duplicate') {
-      return res.status(409).json({
-        success: false,
-        error: 'В CRM найдено несколько сотрудников с таким номером. Обратитесь к администратору.',
-      });
-    }
-
-    return res.json({ success: true, data: { user: result.user } });
-  } catch (error) {
-    return sendInternalError(res, error, { route: 'telegram.miniapp_link_phone' });
-  }
+  return res.status(410).json({
+    success: false,
+    error: 'Привязка по ручному вводу телефона отключена. Подтвердите свой номер кнопкой в чат-боте HardZone.',
+  });
 });
 
 router.post('/client-miniapp-login', async (req, res) => {

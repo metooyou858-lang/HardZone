@@ -141,6 +141,7 @@ async function assertSubscriptionAccess(executor, {
   subscriptionId,
   clientId = null,
   context,
+  activate = true,
 }) {
   let subscription = await loadSubscriptionForAccess(executor, subscriptionId, clientId);
 
@@ -148,7 +149,9 @@ async function assertSubscriptionAccess(executor, {
     throw createHttpError(404, 'Абонемент не найден', 'subscription_not_found');
   }
 
-  subscription = await activateOnFirstVisitIfNeeded(executor, subscription);
+  if (activate) {
+    subscription = await activateOnFirstVisitIfNeeded(executor, subscription);
+  }
 
   if (subscription.status !== 'active') {
     throw createHttpError(409, 'Абонемент истёк или неактивен', 'subscription_inactive');

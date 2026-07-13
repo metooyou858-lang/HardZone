@@ -141,6 +141,38 @@ async function createTrainingBooking(executor, {
   return rows[0];
 }
 
+async function cancelTrainingBooking(executor, bookingId) {
+  const { rows } = await executor.query(
+    `
+      SELECT b.id, b.slot_id, b.places_count
+      FROM bookings b
+      JOIN schedule_slots s ON s.id = b.slot_id
+      WHERE b.id = $1
+        AND b.status = 'confirmed'
+        AND (s.date + s.start_time) > (NOW() AT TIME ZONE $2)
+      FOR UPDATE OF b, s
+    `,
+    [bookingId, CLUB_TIME_ZONE]
+  );
+  const booking = rows[0];
+
+  if (!booking) {
+    throw createHttpError(
+      409,
+      'Запись не найдена, уже отменена или занятие началось',
+      'booking_not_cancellable'
+    );
+  }
+
+  await executor.query('DELETE FROM bookings WHERE id = $1', [booking.id]);
+  await executor.query(
+    'UPDATE schedule_slots SET booked_count = GREATEST(booked_count - $1, 0), updated_at = NOW() WHERE id = $2',
+    [booking.places_count, booking.slot_id]
+  );
+
+  return booking;
+}
+
 async function findEligibleSubscriptionForBooking(executor, booking, context) {
   const { rows: candidateRows } = await executor.query(
     `
@@ -517,6 +549,7 @@ async function markOpenGymVisit(executor, {
 }
 
 module.exports = {
+  cancelTrainingBooking,
   createHttpError,
   attachEligibleSubscriptionToBooking,
   createTrainingBooking,

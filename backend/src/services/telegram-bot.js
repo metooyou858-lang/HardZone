@@ -8,6 +8,7 @@ const {
   expireActiveSubscriptions,
 } = require('./subscription-validity');
 const {
+  cancelTrainingBooking,
   createTrainingBooking,
   markTrainingBookingArrived,
   unmarkTrainingBookingArrived,
@@ -273,7 +274,7 @@ async function linkStaffByPhone(telegramId, phone) {
 
   const { rows } = await pool.query(
     `
-      SELECT id, name, role, username, is_active, module_grants, module_revokes
+      SELECT id, name, role, username, is_active, telegram_id, module_grants, module_revokes
       FROM users
       WHERE phone_normalized = $1
         AND is_active = true
@@ -291,6 +292,18 @@ async function linkStaffByPhone(telegramId, phone) {
   }
 
   const user = rows[0];
+  if (user.telegram_id && String(user.telegram_id) !== String(telegramId)) {
+    return { status: 'already_linked', phone_normalized: phoneNormalized };
+  }
+
+  const { rows: telegramRows } = await pool.query(
+    'SELECT id FROM users WHERE telegram_id = $1 AND id != $2 LIMIT 1',
+    [String(telegramId), user.id]
+  );
+  if (telegramRows[0]) {
+    return { status: 'telegram_in_use', phone_normalized: phoneNormalized };
+  }
+
   await pool.query(
     `
       UPDATE users
@@ -481,6 +494,7 @@ async function searchClients(staff, search, limit = 5, slotId = null) {
         subscriptionId: row.subscription_id,
         clientId: row.id,
         context,
+        activate: false,
       });
       checkedRows.push({ ...row, is_eligible: true });
     } catch (error) {
@@ -559,31 +573,7 @@ async function cancelBooking(staff, bookingId) {
 
   try {
     await client.query('BEGIN');
-    const { rows } = await client.query(
-      `
-        SELECT b.id, b.slot_id, b.places_count
-        FROM bookings b
-        JOIN schedule_slots s ON s.id = b.slot_id
-        WHERE b.id = $1
-          AND b.status = 'confirmed'
-          AND (s.date + s.start_time) > (NOW() AT TIME ZONE $2)
-        FOR UPDATE OF b, s
-      `,
-      [bookingId, CLUB_TIME_ZONE]
-    );
-    const booking = rows[0];
-
-    if (!booking) {
-      const error = new Error('Запись не найдена, уже отменена или занятие началось');
-      error.statusCode = 409;
-      throw error;
-    }
-
-    await client.query('DELETE FROM bookings WHERE id = $1', [booking.id]);
-    await client.query(
-      'UPDATE schedule_slots SET booked_count = GREATEST(booked_count - $1, 0), updated_at = NOW() WHERE id = $2',
-      [booking.places_count, booking.slot_id]
-    );
+    const booking = await cancelTrainingBooking(client, bookingId);
     await client.query('COMMIT');
     return Number(booking.slot_id);
   } catch (error) {
@@ -671,9 +661,13 @@ function renderSlot(data) {
 
 function rememberClientSearchPrompt(chatId, messageId, slotId) {
   if (!chatId || !messageId || !slotId) return;
+  const now = Date.now();
+  for (const [key, pending] of pendingClientSearchPrompts.entries()) {
+    if (pending.expiresAt < now) pendingClientSearchPrompts.delete(key);
+  }
   pendingClientSearchPrompts.set(`${chatId}:${messageId}`, {
     slotId: Number(slotId),
-    expiresAt: Date.now() + CLIENT_SEARCH_PROMPT_TTL_MS,
+    expiresAt: now + CLIENT_SEARCH_PROMPT_TTL_MS,
   });
 }
 
@@ -772,6 +766,16 @@ async function handleContactMessage(message) {
 
   if (result.status === 'duplicate') {
     await sendMessage(chatId, 'В CRM найдено несколько активных сотрудников с таким телефоном. Автоматическая привязка остановлена, обратитесь к администратору.');
+    return;
+  }
+
+  if (result.status === 'already_linked') {
+    await sendMessage(chatId, 'Этот сотрудник уже привязан к другому Telegram. Для смены привязки обратитесь к администратору.');
+    return;
+  }
+
+  if (result.status === 'telegram_in_use') {
+    await sendMessage(chatId, 'Этот Telegram уже привязан к другому сотруднику. Обратитесь к администратору.');
     return;
   }
 
@@ -918,10 +922,14 @@ async function handleCallback(callbackQuery) {
 
   if (data.startsWith('att:')) {
     const bookingId = Number.parseInt(data.split(':')[1], 10);
-    const slotId = await markBookingAsAttended(staff, bookingId);
-    const view = await renderSlotForStaff(staff, slotId);
-    await editMessage(chatId, messageId, view.text, view.keyboard);
-    await answerCallback(callbackQuery.id, 'Посещение отмечено');
+    try {
+      const slotId = await markBookingAsAttended(staff, bookingId);
+      const view = await renderSlotForStaff(staff, slotId);
+      await editMessage(chatId, messageId, view.text, view.keyboard);
+      await answerCallback(callbackQuery.id, 'Посещение отмечено');
+    } catch (error) {
+      await answerCallback(callbackQuery.id, String(error.message || 'Не удалось отметить посещение').slice(0, 200), { showAlert: true });
+    }
     return;
   }
 
@@ -958,10 +966,14 @@ async function handleCallback(callbackQuery) {
 
   if (data.startsWith('unatt:')) {
     const bookingId = Number.parseInt(data.split(':')[1], 10);
-    const slotId = await markBookingAsUnattended(staff, bookingId);
-    const view = await renderSlotForStaff(staff, slotId);
-    await editMessage(chatId, messageId, view.text, view.keyboard);
-    await answerCallback(callbackQuery.id, 'Посещение снято');
+    try {
+      const slotId = await markBookingAsUnattended(staff, bookingId);
+      const view = await renderSlotForStaff(staff, slotId);
+      await editMessage(chatId, messageId, view.text, view.keyboard);
+      await answerCallback(callbackQuery.id, 'Посещение снято');
+    } catch (error) {
+      await answerCallback(callbackQuery.id, String(error.message || 'Не удалось снять посещение').slice(0, 200), { showAlert: true });
+    }
     return;
   }
 
