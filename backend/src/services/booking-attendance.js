@@ -98,9 +98,6 @@ async function createTrainingBooking(executor, {
       context: await getSlotAccessContext(executor, slotId),
     });
 
-    if (subscription.is_family) {
-      placesCount = 2;
-    }
   }
 
   if (!coveredByBookingId && Number(slot.booked_count || 0) + placesCount > Number(slot.capacity || 0)) {
@@ -178,7 +175,7 @@ async function findEligibleSubscriptionForBooking(executor, booking, context) {
 }
 
 async function ensureBookingCapacityForSubscription(executor, booking, subscription) {
-  const placesCount = subscription.is_family ? 2 : 1;
+  const placesCount = 1;
   const placeDelta = placesCount - Number(booking.places_count || 1);
 
   if (placeDelta > 0) {
@@ -188,7 +185,7 @@ async function ensureBookingCapacityForSubscription(executor, booking, subscript
     );
     const slot = slotRows[0];
     if (!slot || Number(slot.booked_count || 0) + placeDelta > Number(slot.capacity || 0)) {
-      throw createHttpError(409, 'Нет свободных мест для семейного абонемента', 'no_places');
+      throw createHttpError(409, 'Нет свободных мест', 'no_places');
     }
   }
 
@@ -245,7 +242,7 @@ async function markTrainingBookingArrived(executor, {
           await ensureBookingCapacityForSubscription(executor, booking, matchedSubscription);
           subscriptionId = matchedSubscription.id;
           resolvedSubscriptionId = matchedSubscription.id;
-          resolvedPlacesCount = matchedSubscription.is_family ? 2 : 1;
+          resolvedPlacesCount = 1;
         }
       }
 

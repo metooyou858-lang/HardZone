@@ -85,8 +85,7 @@ async function getSlotBookings(executor, slotId) {
         cs.type AS subscription_type,
         cs.status AS subscription_status,
         cs.visits_left,
-        cs.expires_at,
-        cs.is_family
+        cs.expires_at
       FROM bookings b
       JOIN clients c ON c.id = b.client_id
       LEFT JOIN client_subscriptions cs ON cs.id = b.subscription_id
@@ -221,8 +220,7 @@ router.get('/bookings', requireModule('schedule'), async (req, res) => {
           cs.type AS subscription_type,
           cs.status AS subscription_status,
           cs.visits_left,
-          cs.expires_at,
-          cs.is_family
+          cs.expires_at
         FROM bookings b
         JOIN clients c ON c.id = b.client_id
         LEFT JOIN client_subscriptions cs ON cs.id = b.subscription_id
@@ -367,8 +365,7 @@ router.get('/client-search', requireModule('clients'), async (req, res) => {
           cs.type AS subscription_type,
           cs.status AS subscription_status,
           cs.visits_left,
-          cs.expires_at,
-          cs.is_family
+          cs.expires_at
         FROM clients c
         LEFT JOIN client_subscriptions cs
           ON cs.client_id = c.id

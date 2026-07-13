@@ -31,7 +31,6 @@ type ServiceParamsForm = {
   freeze_days_allowed: string;
   freeze_min_days: string;
   freeze_max_count: string;
-  is_family: boolean;
   allow_free_visit: boolean;
   allow_group_training: boolean;
   allow_personal_training: boolean;
@@ -54,7 +53,6 @@ function defaultServiceParams(): ServiceParamsForm {
     freeze_days_allowed: "0",
     freeze_min_days: "1",
     freeze_max_count: "",
-    is_family: false,
     allow_free_visit: false,
     allow_group_training: true,
     allow_personal_training: false,
@@ -81,7 +79,6 @@ function mapServiceParams(
     freeze_days_allowed: String(params.freeze_days_allowed ?? 0),
     freeze_min_days: String(params.freeze_min_days ?? 1),
     freeze_max_count: params.freeze_max_count !== null ? String(params.freeze_max_count) : "",
-    is_family: params.is_family,
     allow_free_visit: params.allow_free_visit,
     allow_group_training: params.allow_group_training,
     allow_personal_training: params.allow_personal_training,
@@ -324,7 +321,6 @@ export function InlineEditForm({
           freeze_days_allowed: parseInteger(serviceForm.freeze_days_allowed, 0) ?? 0,
           freeze_min_days: parseInteger(serviceForm.freeze_min_days, 1) ?? 1,
           freeze_max_count: parseInteger(serviceForm.freeze_max_count, null),
-          is_family: serviceForm.is_family,
           allow_free_visit: serviceForm.allow_free_visit,
           allow_group_training: serviceForm.allow_group_training,
           allow_personal_training: serviceForm.allow_personal_training,
@@ -707,18 +703,6 @@ export function InlineEditForm({
                   </div>
                 </div>
               </div>
-
-              <label className="flex items-center gap-3 text-sm text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={serviceForm.is_family}
-                  onChange={(event) =>
-                    setServiceForm((previous) => ({ ...previous, is_family: event.target.checked }))
-                  }
-                  className="h-4 w-4 rounded border-slate-600"
-                />
-                Семейный абонемент
-              </label>
 
               <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
                 <p className={labelCls}>Права доступа</p>

@@ -92,8 +92,7 @@ async function activateOrderServices(client, order) {
        psp.subscription_type,
        psp.visits_total,
        psp.validity_days,
-       psp.activation_type,
-       psp.is_family
+       psp.activation_type
      FROM order_items oi
      LEFT JOIN product_subscription_params psp ON psp.product_id = oi.product_id
      WHERE oi.order_id = $1
@@ -103,8 +102,7 @@ async function activateOrderServices(client, order) {
        psp.subscription_type,
        psp.visits_total,
        psp.validity_days,
-       psp.activation_type,
-       psp.is_family`,
+       psp.activation_type`,
     [order.id]
   );
 
@@ -136,8 +134,8 @@ async function activateOrderServices(client, order) {
     await client.query(
       `INSERT INTO client_subscriptions
         (client_id, product_id, type, visits_total, visits_left,
-         started_at, expires_at, is_family, order_id, status)
-       VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8, 'active')`,
+         started_at, expires_at, order_id, status)
+       VALUES ($1, $2, $3, $4, $4, $5, $6, $7, 'active')`,
       [
         order.client_id,
         item.product_id,
@@ -145,7 +143,6 @@ async function activateOrderServices(client, order) {
         totalVisits,
         startedAt,
         expiresAt,
-        item.is_family === true,
         order.id,
       ]
     );

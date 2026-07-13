@@ -3,7 +3,7 @@
 Purpose: move active/remaining subscriptions from the old CRM into HardZone without creating orders, payments, receipts, or AQSI operations.
 
 For one client at a time, use the client card action `Старый абонемент`. It requires the separate permission `clients_legacy_subscriptions`.
-Manual entry must select an existing non-archived service with subscription parameters. The service defines subscription type, validity period, total visit limit, family flag, and allowed training types. The operator only enters the start date, remaining visits for visit-based services, and an optional note.
+Manual entry must select an existing non-archived service with subscription parameters. The service defines subscription type, validity period, total visit limit, and allowed training types. The operator only enters the start date, remaining visits for visit-based services, and an optional note.
 
 ## Safety Rules
 
@@ -15,7 +15,7 @@ Manual entry must select an existing non-archived service with subscription para
   - `legacy_note`
 - Manually created legacy subscriptions are marked with `legacy_source = manual_legacy`.
 - Manual legacy creation does not create orders, payments, receipts, or AQSI operations.
-- Manual legacy creation does not allow arbitrary subscription type, status, total visits, expiry date, or family flag. These fields come from the selected service and current date rules.
+- Manual legacy creation does not allow arbitrary subscription type, status, total visits, or expiry date. These fields come from the selected service and current date rules.
 - The import UI must run preview first. Preview does not mutate data.
 - Confirm imports only rows without errors.
 - If a client already has an actually valid active subscription, an active legacy row is blocked as a conflict.
@@ -42,7 +42,6 @@ Supported subscription columns:
 - `status` / `Статус`
   - supported values: `active`, `frozen`, `expired`, `exhausted`
   - if omitted, status is inferred from date and remaining visits
-- `is_family` / `Семейный`
 - `product_id` / `ID услуги`
 - `product_name` / `Услуга` / `Название абонемента`
 - `note` / `Комментарий` / `Примечание`

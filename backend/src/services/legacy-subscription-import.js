@@ -26,11 +26,6 @@ function parseInteger(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function parseBoolean(value) {
-  const normalized = String(value || '').trim().toLowerCase();
-  return ['1', 'true', 'yes', 'y', 'да', 'семейный'].includes(normalized);
-}
-
 function parseDate(value) {
   const raw = String(value || '').trim();
   if (!raw) {
@@ -145,7 +140,6 @@ function mapLegacyRow(row, rowNumber, today) {
     visits_left: visitsLeft ?? visitsTotal,
     started_at: startedAt,
     expires_at: expiresAt,
-    is_family: parseBoolean(getCell(row, ['is_family', 'Семейный', 'family'])),
     status,
     note: getCell(row, ['note', 'Комментарий', 'comment', 'Примечание']),
   };
@@ -305,10 +299,10 @@ async function importLegacySubscriptions(executor, buffer, importedBy) {
       `
         INSERT INTO client_subscriptions (
           client_id, product_id, type, visits_total, visits_left,
-          started_at, expires_at, is_family, status,
+          started_at, expires_at, status,
           legacy_import_batch_id, legacy_source, legacy_note
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
         RETURNING *
       `,
       [
@@ -319,7 +313,6 @@ async function importLegacySubscriptions(executor, buffer, importedBy) {
         item.visits_left,
         item.started_at,
         item.expires_at,
-        item.is_family,
         item.status,
         batchId,
         'legacy_crm',

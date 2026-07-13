@@ -77,8 +77,7 @@ async function assertSubscriptionProduct(executor, productId) {
         psp.subscription_type,
         psp.visits_total,
         psp.validity_days,
-        psp.activation_type,
-        psp.is_family
+        psp.activation_type
       FROM products p
       JOIN product_types pt ON pt.id = p.product_type_id
       JOIN product_subscription_params psp ON psp.product_id = p.id
@@ -236,7 +235,6 @@ router.get('/legacy-services', authMiddleware.requireModule('clients_legacy_subs
         psp.visits_total,
         psp.validity_days,
         psp.activation_type,
-        psp.is_family,
         psp.allow_free_visit,
         psp.allow_group_training,
         psp.allow_personal_training,
@@ -294,8 +292,7 @@ router.post('/legacy-manual', requireLegacySubscriptions, async (req, res) => {
           p.id,
           psp.subscription_type,
           psp.visits_total,
-          psp.validity_days,
-          psp.is_family
+          psp.validity_days
         FROM products p
         JOIN product_types pt ON pt.id = p.product_type_id
         JOIN product_subscription_params psp ON psp.product_id = p.id
@@ -342,7 +339,7 @@ router.post('/legacy-manual', requireLegacySubscriptions, async (req, res) => {
       `
         INSERT INTO client_subscriptions (
           client_id, product_id, type, visits_total, visits_left,
-          started_at, expires_at, is_family, status,
+          started_at, expires_at, status,
           legacy_source, legacy_note
         )
         VALUES (
@@ -353,14 +350,13 @@ router.post('/legacy-manual', requireLegacySubscriptions, async (req, res) => {
           $5,
           $6,
           CASE WHEN $7::INT IS NULL THEN NULL ELSE $6::DATE + $7::INT END,
-          $8,
           CASE
             WHEN $3::subscription_type IN ('single'::subscription_type, 'visits'::subscription_type) AND COALESCE($5::INT, 0) <= 0 THEN 'exhausted'::subscription_status
-            WHEN $7::INT IS NOT NULL AND ($6::DATE + $7::INT) < (NOW() AT TIME ZONE $11)::date THEN 'expired'::subscription_status
+            WHEN $7::INT IS NOT NULL AND ($6::DATE + $7::INT) < (NOW() AT TIME ZONE $10)::date THEN 'expired'::subscription_status
             ELSE 'active'::subscription_status
           END,
-          $9,
-          $10
+          $8,
+          $9
         )
         RETURNING *
       `,
@@ -372,7 +368,6 @@ router.post('/legacy-manual', requireLegacySubscriptions, async (req, res) => {
         Number.isFinite(visitsLeft) ? visitsLeft : null,
         started_at,
         validityDays,
-        service.is_family === true,
         'manual_legacy',
         [note || null, req.user?.username ? `created_by=${req.user.username}` : null].filter(Boolean).join(' | ') || null,
         CLUB_TIME_ZONE,
@@ -391,7 +386,7 @@ router.post('/legacy-manual', requireLegacySubscriptions, async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { client_id, type, visits_total, started_at, expires_at, is_family, order_id } = req.body;
+    const { client_id, type, visits_total, started_at, expires_at, order_id } = req.body;
 
     if (!client_id || !type) {
       return res.status(422).json({ success: false, error: 'Укажите клиента и тип абонемента' });
@@ -418,10 +413,9 @@ router.post('/', async (req, res) => {
           visits_left,
           started_at,
           expires_at,
-          is_family,
           order_id
         )
-        VALUES ($1,$2,$3,$3,$4,$5,$6,$7)
+        VALUES ($1,$2,$3,$3,$4,$5,$6)
         RETURNING *
       `,
       [
@@ -430,7 +424,6 @@ router.post('/', async (req, res) => {
         visitsTotal,
         started_at || null,
         expires_at || null,
-        is_family || false,
         order_id || null,
       ]
     );
@@ -520,8 +513,6 @@ router.patch('/:id', requireClientsUpdate, async (req, res) => {
       return res.status(422).json({ success: false, error: 'Активный абонемент должен быть привязан к услуге' });
     }
 
-    const nextIsFamily = before.is_family === true;
-
     const { rows } = await client.query(
       `
         UPDATE client_subscriptions
@@ -532,7 +523,6 @@ router.patch('/:id', requireClientsUpdate, async (req, res) => {
             started_at = $6,
             expires_at = $7,
             status = $8::subscription_status,
-            is_family = $9,
             updated_at = NOW()
         WHERE id = $1
         RETURNING *
@@ -546,7 +536,6 @@ router.patch('/:id', requireClientsUpdate, async (req, res) => {
         nextStartedAt,
         nextExpiresAt,
         nextStatus,
-        nextIsFamily,
       ]
     );
 
@@ -627,7 +616,6 @@ router.post('/:id/sync-product-params', requireClientsUpdate, async (req, res) =
             started_at = $5,
             expires_at = $6,
             status = $7::subscription_status,
-            is_family = $8,
             updated_at = NOW()
         WHERE id = $1
         RETURNING *
@@ -640,7 +628,6 @@ router.post('/:id/sync-product-params', requireClientsUpdate, async (req, res) =
         nextStartedAt,
         nextExpiresAt,
         nextStatus,
-        product.is_family === true,
       ]
     );
 

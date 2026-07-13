@@ -9,17 +9,16 @@ import type { SlotType } from "@/lib/api/schedule";
 
 function formatSubLabel(sub: ClientSubscription): string {
   const name = sub.product_name || sub.type;
-  const family = sub.is_family ? " • семейный" : "";
 
-  if (sub.type === "single") return `${name}${family}`;
-  if (sub.type === "visits") return `${name} — ${sub.visits_left ?? 0} из ${sub.visits_total ?? "?"} занятий${family}`;
+  if (sub.type === "single") return name;
+  if (sub.type === "visits") return `${name} — ${sub.visits_left ?? 0} из ${sub.visits_total ?? "?"} занятий`;
 
   if (sub.expires_at) {
     const date = new Date(sub.expires_at).toLocaleDateString("ru", { day: "numeric", month: "short" });
-    return `${name} — до ${date}${family}`;
+    return `${name} — до ${date}`;
   }
 
-  return `${name}${family}`;
+  return name;
 }
 
 function getTrainingTypeIds(sub: ClientSubscription): number[] {

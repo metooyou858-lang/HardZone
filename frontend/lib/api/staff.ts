@@ -44,7 +44,6 @@ export type StaffBooking = {
   subscription_status: string | null;
   visits_left: number | null;
   expires_at: string | null;
-  is_family: boolean | null;
 };
 
 export type StaffSlotBookings = {
@@ -65,7 +64,6 @@ export type StaffClientSearchResult = {
   subscription_status: string | null;
   visits_left: number | null;
   expires_at: string | null;
-  is_family: boolean | null;
 };
 
 export type StaffMe = {

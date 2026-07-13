@@ -342,21 +342,19 @@ export function getBookingStatusMeta(status: ScheduleBooking["status"]) {
 }
 
 export function getSubscriptionOptionLabel(subscription: ClientDetail["subscriptions"][number]) {
-  const family = subscription.is_family ? " • семейный" : "";
-
   if (subscription.type === "single") {
-    return `Разовое${family}`;
+    return "Разовое";
   }
 
   if (subscription.type === "visits") {
-    return `${subscription.visits_left ?? 0} занятий осталось${family}`;
+    return `${subscription.visits_left ?? 0} занятий осталось`;
   }
 
   if (subscription.expires_at) {
-    return `До ${new Date(subscription.expires_at).toLocaleDateString("ru")}${family}`;
+    return `До ${new Date(subscription.expires_at).toLocaleDateString("ru")}`;
   }
 
-  return `Активный абонемент${family}`;
+  return "Активный абонемент";
 }
 
 export function groupSlotsByDate(slots: ScheduleSlot[]) {
@@ -371,4 +369,3 @@ export function groupSlotsByDate(slots: ScheduleSlot[]) {
 
   return grouped;
 }
-

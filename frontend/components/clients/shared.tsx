@@ -112,8 +112,8 @@ export function getVisitTypeLabel(type: VisitType) {
 
 export function describeSubscription(
   subscription:
-    | Pick<ClientSubscription, "type" | "visits_left" | "expires_at" | "is_family">
-    | Pick<ClientListItem, "subscription_type" | "visits_left" | "expires_at" | "is_family">
+    | Pick<ClientSubscription, "type" | "visits_left" | "expires_at">
+    | Pick<ClientListItem, "subscription_type" | "visits_left" | "expires_at">
     | null
     | undefined
 ) {

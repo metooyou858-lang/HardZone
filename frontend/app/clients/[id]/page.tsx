@@ -221,7 +221,7 @@ function ManualLegacySubscriptionPanel({
             <div className="sm:col-span-2 rounded-[18px] border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[var(--text-muted)]">
               <p className="text-[var(--text-main)]">{getSubscriptionTypeLabel(selectedService.subscription_type)}</p>
               <p className="mt-1">
-                Лимит: {selectedService.visits_total ?? "без лимита"} · срок: {selectedService.validity_days ? `${selectedService.validity_days} дн.` : "без срока"} · {selectedService.is_family ? "семейный" : "обычный"}
+                Лимит: {selectedService.visits_total ?? "без лимита"} · срок: {selectedService.validity_days ? `${selectedService.validity_days} дн.` : "без срока"}
               </p>
               <p className="mt-1">
                 Занятия: {describeServiceAccess(selectedService, selectedService.training_types, { lowercase: true })}

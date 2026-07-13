@@ -574,7 +574,6 @@ async function getSubscriptionProducts() {
         psp.subscription_type,
         psp.visits_total,
         psp.validity_days,
-        psp.is_family,
         psp.allow_free_visit,
         psp.allow_group_training,
         psp.allow_personal_training

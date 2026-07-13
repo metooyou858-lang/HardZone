@@ -336,7 +336,6 @@ function subscriptionMergeKey(subscription) {
     subscription.visits_total ?? '',
     subscription.started_at ? subscription.started_at.toISOString?.().slice(0, 10) || String(subscription.started_at).slice(0, 10) : '',
     subscription.expires_at ? subscription.expires_at.toISOString?.().slice(0, 10) || String(subscription.expires_at).slice(0, 10) : '',
-    subscription.is_family ? 'family' : 'single',
   ].join('|');
 }
 
@@ -895,8 +894,7 @@ router.get('/', requireClientsRead, async (req, res) => {
           cs.type AS subscription_type,
           cs.status AS subscription_status,
           cs.visits_left,
-          cs.expires_at,
-          cs.is_family
+          cs.expires_at
         FROM clients c
         LEFT JOIN LATERAL (
           SELECT *
@@ -1272,8 +1270,7 @@ router.get('/barcode/:barcode', requireClientsRead, async (req, res) => {
           cs.type AS subscription_type,
           cs.status AS subscription_status,
           cs.visits_left,
-          cs.expires_at,
-          cs.is_family
+          cs.expires_at
         FROM clients c
         LEFT JOIN LATERAL (
           SELECT *

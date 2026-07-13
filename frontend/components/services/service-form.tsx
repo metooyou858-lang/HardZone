@@ -29,7 +29,6 @@ type ServiceParamsForm = {
   freeze_days_allowed: string;
   freeze_min_days: string;
   freeze_max_count: string;
-  is_family: boolean;
   allow_free_visit: boolean;
   allow_group_training: boolean;
   allow_personal_training: boolean;
@@ -52,7 +51,6 @@ function defaultServiceParams(): ServiceParamsForm {
     freeze_days_allowed: "0",
     freeze_min_days: "1",
     freeze_max_count: "",
-    is_family: false,
     allow_free_visit: false,
     allow_group_training: true,
     allow_personal_training: false,
@@ -79,7 +77,6 @@ function mapServiceParams(
     freeze_days_allowed: String(params.freeze_days_allowed ?? 0),
     freeze_min_days: String(params.freeze_min_days ?? 1),
     freeze_max_count: params.freeze_max_count !== null ? String(params.freeze_max_count) : "",
-    is_family: params.is_family,
     allow_free_visit: params.allow_free_visit,
     allow_group_training: params.allow_group_training,
     allow_personal_training: params.allow_personal_training,
@@ -318,7 +315,6 @@ export function ServiceForm({
         freeze_days_allowed: parseInteger(paramsForm.freeze_days_allowed, 0) ?? 0,
         freeze_min_days: parseInteger(paramsForm.freeze_min_days, 1) ?? 1,
         freeze_max_count: parseInteger(paramsForm.freeze_max_count, null),
-        is_family: paramsForm.is_family,
         allow_free_visit: paramsForm.allow_free_visit,
         allow_group_training: paramsForm.allow_group_training,
         allow_personal_training: paramsForm.allow_personal_training,
@@ -560,18 +556,6 @@ export function ServiceForm({
               />
             </div>
           </div>
-
-          <label className="flex items-center gap-3 text-sm text-[var(--text-main)]">
-            <input
-              type="checkbox"
-              checked={paramsForm.is_family}
-              onChange={(event) =>
-                setParamsForm((previous) => ({ ...previous, is_family: event.target.checked }))
-              }
-              className="h-4 w-4"
-            />
-            Семейный абонемент
-          </label>
 
           <div>
             <label className={labelCls}>Права доступа</label>

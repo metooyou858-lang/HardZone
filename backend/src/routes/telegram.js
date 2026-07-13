@@ -574,7 +574,6 @@ async function buildClientMiniAppPayload(clientId) {
         cs.visits_left,
         cs.started_at,
         cs.expires_at,
-        cs.is_family,
         p.name AS product_name
       FROM client_subscriptions cs
       LEFT JOIN products p ON p.id = cs.product_id
@@ -1074,7 +1073,7 @@ async function bookClientSlot(telegramId, slotId) {
       }
     }
 
-    const placesCount = subscription?.is_family ? 2 : 1;
+    const placesCount = 1;
 
     const { rows: countRows } = await dbClient.query(
       `

@@ -41,7 +41,6 @@ export type ClientSubscription = {
   visits_left: number | null;
   started_at: string | null;
   expires_at: string | null;
-  is_family: boolean;
   status: SubscriptionStatus;
   order_id: string | null;
   created_at: string;
@@ -101,7 +100,6 @@ export type ClientListItem = Client & {
   subscription_status: SubscriptionStatus | null;
   visits_left: number | null;
   expires_at: string | null;
-  is_family: boolean | null;
 };
 
 export type ClientDetail = Client & {
@@ -124,7 +122,6 @@ export type LegacySubscriptionImportRow = {
   visits_left: number | null;
   started_at: string | null;
   expires_at: string | null;
-  is_family: boolean;
   status: SubscriptionStatus | null;
   note: string;
   client: Pick<Client, "id" | "first_name" | "last_name" | "phone" | "email"> | null;
@@ -154,7 +151,6 @@ export type LegacySubscriptionService = {
   visits_total: number | null;
   validity_days: number | null;
   activation_type: "purchase" | "first_visit";
-  is_family: boolean;
   allow_free_visit: boolean;
   allow_group_training: boolean;
   allow_personal_training: boolean;
@@ -533,7 +529,6 @@ export async function createSubscription(data: {
   visits_total?: number | null;
   started_at?: string | null;
   expires_at?: string | null;
-  is_family?: boolean;
   order_id?: string | null;
 }): Promise<ClientSubscription> {
   const response = await apiFetch<ApiEnvelope<ClientSubscription>>("/subscriptions", {

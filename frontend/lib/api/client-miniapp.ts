@@ -28,7 +28,6 @@ export type ClientMiniAppSubscription = {
   visits_left: number | null;
   started_at: string | null;
   expires_at: string | null;
-  is_family: boolean;
   product_name: string | null;
 };
 
