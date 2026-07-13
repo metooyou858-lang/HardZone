@@ -25,6 +25,7 @@ import {
 } from "@/lib/api/staff";
 
 import { waitForTelegramInitData } from "./telegram-web-app-script";
+import type { IScannerControls } from "@zxing/browser";
 
 declare global {
   interface Window {
@@ -913,12 +914,14 @@ function ClientsScreen({
   searching,
   onQueryChange,
   onSearch,
+  onScan,
 }: {
   query: string;
   results: StaffClientSearchResult[];
   searching: boolean;
   onQueryChange: (value: string) => void;
   onSearch: () => void;
+  onScan: () => void;
 }) {
   return (
     <div className="space-y-4 px-4 pb-4 pt-4">
@@ -940,6 +943,17 @@ function ClientsScreen({
         >
           {searching ? "Ищем..." : "Найти"}
         </button>
+        <button
+          type="button"
+          onClick={onScan}
+          disabled={searching}
+          className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-[var(--line-soft)] text-sm font-semibold text-[var(--text-main)] disabled:opacity-60"
+        >
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+            <path d="M4 7V4h3M17 4h3v3M20 17v3h-3M7 20H4v-3M7 9v6M10 9v6M14 9v6M17 9v6" />
+          </svg>
+          Сканировать штрихкод
+        </button>
       </section>
 
       <section className="space-y-2">
@@ -957,6 +971,76 @@ function ClientsScreen({
           ))
         )}
       </section>
+    </div>
+  );
+}
+
+function BarcodeScanner({ onDetected, onClose }: { onDetected: (value: string) => void; onClose: () => void }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const onDetectedRef = useRef(onDetected);
+  const onCloseRef = useRef(onClose);
+  const [scannerError, setScannerError] = useState("");
+
+  useEffect(() => {
+    onDetectedRef.current = onDetected;
+    onCloseRef.current = onClose;
+  }, [onClose, onDetected]);
+
+  useEffect(() => {
+    let controls: IScannerControls | null = null;
+    let cancelled = false;
+
+    async function startScanner() {
+      try {
+        const { BrowserMultiFormatReader } = await import("@zxing/browser");
+        if (cancelled || !videoRef.current) return;
+        const reader = new BrowserMultiFormatReader();
+        controls = await reader.decodeFromConstraints(
+          { video: { facingMode: { ideal: "environment" } }, audio: false },
+          videoRef.current,
+          (result, _error, activeControls) => {
+            const value = result?.getText().trim();
+            if (!value) return;
+            activeControls.stop();
+            onDetectedRef.current(value);
+          }
+        );
+      } catch (error) {
+        if (!cancelled) {
+          setScannerError(error instanceof Error ? error.message : "Не удалось открыть камеру");
+        }
+      }
+    }
+
+    void startScanner();
+    return () => {
+      cancelled = true;
+      controls?.stop();
+    };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-black text-white">
+      <div className="flex items-center justify-between px-4 pb-3 pt-[max(16px,env(safe-area-inset-top))]">
+        <div>
+          <h2 className="text-lg font-semibold">Сканирование штрихкода</h2>
+          <p className="mt-1 text-xs text-white/65">Наведите камеру на штрихкод карты</p>
+        </div>
+        <button type="button" onClick={() => onCloseRef.current()} className="h-10 rounded-lg border border-white/20 px-4 text-sm font-semibold">
+          Закрыть
+        </button>
+      </div>
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
+        <video ref={videoRef} className="h-full w-full object-cover" muted playsInline />
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-[linear-gradient(to_bottom,rgba(0,0,0,.42),transparent_25%,transparent_75%,rgba(0,0,0,.42))]">
+          <div className="h-36 w-[84%] rounded-xl border-2 border-[var(--accent)] shadow-[0_0_0_999px_rgba(0,0,0,0.18)]" />
+        </div>
+        {scannerError ? (
+          <div className="absolute inset-x-4 bottom-6 rounded-lg bg-[#2a1111] p-4 text-sm text-[#ffb599]">
+            Не удалось запустить камеру. Разрешите Telegram доступ к камере и попробуйте снова.
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -1037,6 +1121,7 @@ export function TrainerMiniApp() {
   const [clientQuery, setClientQuery] = useState("");
   const [results, setResults] = useState<StaffClientSearchResult[]>([]);
   const [clientResults, setClientResults] = useState<StaffClientSearchResult[]>([]);
+  const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [slotLoading, setSlotLoading] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -1259,8 +1344,9 @@ export function TrainerMiniApp() {
     }
   }
 
-  async function runClientSearch() {
-    if (clientQuery.trim().length < 2) {
+  async function runClientSearch(searchValue = clientQuery) {
+    const normalizedQuery = searchValue.trim();
+    if (normalizedQuery.length < 2) {
       setClientResults([]);
       return;
     }
@@ -1268,7 +1354,8 @@ export function TrainerMiniApp() {
     setClientSearching(true);
     setError("");
     try {
-      setClientResults(await searchStaffClients(clientQuery.trim()));
+      setClientQuery(normalizedQuery);
+      setClientResults(await searchStaffClients(normalizedQuery));
     } catch (searchError) {
       setError(searchError instanceof Error ? searchError.message : "Не удалось найти клиента");
     } finally {
@@ -1467,6 +1554,7 @@ export function TrainerMiniApp() {
             searching={clientSearching}
             onQueryChange={setClientQuery}
             onSearch={() => void runClientSearch()}
+            onScan={() => setBarcodeScannerOpen(true)}
           />
         ) : null}
 
@@ -1476,6 +1564,15 @@ export function TrainerMiniApp() {
       </div>
 
       <BottomNav active={activeTab} onChange={changeTab} />
+      {barcodeScannerOpen ? (
+        <BarcodeScanner
+          onClose={() => setBarcodeScannerOpen(false)}
+          onDetected={(value) => {
+            setBarcodeScannerOpen(false);
+            void runClientSearch(value);
+          }}
+        />
+      ) : null}
     </main>
   );
 }

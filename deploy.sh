@@ -126,6 +126,8 @@ if [ "$DO_BUILD_FRONTEND" = true ]; then
     --exclude="frontend/node_modules" \
     --exclude="frontend/.env*"
   ssh_cmd "chown -R app:app '$REMOTE_BASE/frontend'"
+  echo "=== Установка зависимостей фронтенда ==="
+  ssh_cmd "su - app -c 'cd $REMOTE_BASE/frontend && npm install'"
   echo "=== Сборка фронтенда ==="
   ssh_cmd "su - app -c 'cd $REMOTE_BASE/frontend && npm run build'"
 fi
