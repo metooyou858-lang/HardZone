@@ -373,8 +373,8 @@ function BottomNav({ active, onChange }: { active: ClientTab; onChange: (tab: Cl
   const tabs: ClientTab[] = ["home", "schedule", "trainers", "profile"];
 
   return (
-    <nav className="z-30 shrink-0 px-3 pb-[max(8px,env(safe-area-inset-bottom))] pt-1.5">
-      <div className="mx-auto grid max-w-md grid-cols-4 gap-1 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(12,15,21,0.94)] p-1 shadow-[0_14px_30px_rgba(0,0,0,0.34)] backdrop-blur">
+    <nav className="z-30 shrink-0 border-t border-[rgba(255,255,255,0.08)] bg-[rgba(8,11,16,0.96)] px-2 pb-[max(8px,env(safe-area-inset-bottom))] pt-2 backdrop-blur">
+      <div className="mx-auto grid max-w-md grid-cols-4 gap-1">
         {tabs.map((tab) => {
           const activeTab = active === tab;
           return (
@@ -382,14 +382,14 @@ function BottomNav({ active, onChange }: { active: ClientTab; onChange: (tab: Cl
               key={tab}
               type="button"
               onClick={() => onChange(tab)}
-              className={`flex min-h-[44px] min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-md px-1 text-[10px] transition [&_svg]:h-5 [&_svg]:w-5 ${
+              className={`flex min-h-[56px] min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1 text-xs font-medium transition [&_svg]:h-[22px] [&_svg]:w-[22px] ${
                 activeTab
                   ? "bg-[rgba(94,244,216,0.12)] text-[var(--text-main)]"
                   : "text-[var(--text-muted)] active:bg-[rgba(255,255,255,0.04)]"
               }`}
             >
               {tabIcon(tab, activeTab)}
-              <span className="block w-[150%] max-w-none origin-center scale-[0.68] truncate text-center leading-none">{tabLabels[tab]}</span>
+              <span className="block whitespace-nowrap text-center leading-none">{tabLabels[tab]}</span>
             </button>
           );
         })}
