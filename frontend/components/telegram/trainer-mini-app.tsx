@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   attendStaffBooking,
@@ -35,6 +35,7 @@ declare global {
         viewportStableHeight?: number;
         ready?: () => void;
         expand?: () => void;
+        disableVerticalSwipes?: () => void;
         onEvent?: (eventType: "viewportChanged", eventHandler: (eventData: { isStateStable?: boolean }) => void) => void;
         offEvent?: (eventType: "viewportChanged", eventHandler: (eventData: { isStateStable?: boolean }) => void) => void;
       };
@@ -52,6 +53,92 @@ type SlotEditorState = {
   slotId: string | null;
   draft: StaffSlotInput;
 };
+
+function getTelegramStableViewportHeight() {
+  if (typeof window === "undefined") return null;
+  const webApp = window.Telegram?.WebApp;
+  return webApp?.viewportStableHeight || webApp?.viewportHeight || window.innerHeight;
+}
+
+function useTelegramStableViewportHeight() {
+  const [height, setHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    const webApp = window.Telegram?.WebApp;
+    const applyHeight = () => setHeight(getTelegramStableViewportHeight());
+    const handleViewportChange = (eventData: { isStateStable?: boolean }) => {
+      if (eventData.isStateStable) applyHeight();
+    };
+
+    applyHeight();
+    webApp?.onEvent?.("viewportChanged", handleViewportChange);
+    return () => webApp?.offEvent?.("viewportChanged", handleViewportChange);
+  }, []);
+
+  return height;
+}
+
+function useLockedMiniAppBody() {
+  useEffect(() => {
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousBodyOverscroll = document.body.style.overscrollBehavior;
+    const previousHtmlOverscroll = document.documentElement.style.overscrollBehavior;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overscrollBehavior = "none";
+    document.documentElement.style.overscrollBehavior = "none";
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.body.style.overscrollBehavior = previousBodyOverscroll;
+      document.documentElement.style.overscrollBehavior = previousHtmlOverscroll;
+    };
+  }, []);
+}
+
+function usePreventMiniAppRubberBand(scrollRef: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const scrollRoot = scrollRef.current;
+    if (!scrollRoot) return;
+    const root = scrollRoot;
+    let startY = 0;
+
+    function findScrollableElement(target: EventTarget | null) {
+      let element = target instanceof HTMLElement ? target : null;
+      while (element && root.contains(element)) {
+        const style = window.getComputedStyle(element);
+        if (/(auto|scroll)/.test(style.overflowY) && element.scrollHeight > element.clientHeight) return element;
+        element = element.parentElement;
+      }
+      return root;
+    }
+
+    function handleTouchStart(event: TouchEvent) {
+      startY = event.touches[0]?.clientY || 0;
+    }
+
+    function handleTouchMove(event: TouchEvent) {
+      if (event.touches.length !== 1) return;
+      const deltaY = (event.touches[0]?.clientY || 0) - startY;
+      const scrollable = findScrollableElement(event.target);
+      if (scrollable.scrollHeight <= scrollable.clientHeight) {
+        event.preventDefault();
+        return;
+      }
+      const atTop = scrollable.scrollTop <= 0;
+      const atBottom = Math.ceil(scrollable.scrollTop + scrollable.clientHeight) >= scrollable.scrollHeight;
+      if ((atTop && deltaY > 0) || (atBottom && deltaY < 0)) event.preventDefault();
+    }
+
+    root.addEventListener("touchstart", handleTouchStart, { passive: true });
+    root.addEventListener("touchmove", handleTouchMove, { passive: false });
+    return () => {
+      root.removeEventListener("touchstart", handleTouchStart);
+      root.removeEventListener("touchmove", handleTouchMove);
+    };
+  });
+}
 
 const tabLabels: Record<AppTab, string> = {
   home: "Главная",
@@ -318,7 +405,7 @@ function TrainerCard({ staff }: { staff: StaffMe | null }) {
 }
 
 function SlotListItem({ slot, onOpen }: { slot: StaffSlot; onOpen: () => void }) {
-  const confirmed = Number(slot.confirmed_count || 0);
+  const occupied = Number(slot.occupied_count ?? slot.booked_count ?? 0);
   const attended = Number(slot.attended_count || 0);
   const capacity = Number(slot.capacity || 0);
   const color = normalizeColor(slot.training_type_color);
@@ -342,7 +429,7 @@ function SlotListItem({ slot, onOpen }: { slot: StaffSlot; onOpen: () => void })
         <p className="mt-0.5 truncate text-sm text-[var(--text-muted)]">{slot.trainer_name || "Тренер не назначен"}</p>
         <div className="mt-2 flex items-center gap-2">
           <span className="rounded-full bg-[rgba(255,255,255,0.06)] px-2 py-0.5 text-xs text-[var(--text-muted)]">
-            {confirmed}/{capacity}
+            {occupied}/{capacity}
           </span>
           <span className="rounded-full bg-[rgba(63,185,80,0.12)] px-2 py-0.5 text-xs text-[#9be7aa]">
             {attended} пришли
@@ -546,17 +633,13 @@ function ScheduleScreen({
 }) {
   return (
     <div className="pb-4">
-      <div className="sticky top-0 z-20 border-b border-[var(--line-soft)] bg-[rgba(8,11,16,0.97)] pb-3 shadow-[0_12px_24px_rgba(0,0,0,0.24)] backdrop-blur">
-        <DateStrip selectedDate={date} onSelect={onDateChange} />
-        {canCreate ? (
-          <div className="mx-auto max-w-md px-4 pt-3">
-            <button type="button" onClick={onCreate} className="h-11 w-full rounded-lg bg-[var(--accent)] text-sm font-semibold text-[var(--text-inverse)]">
-              + Добавить тренировку
-            </button>
-          </div>
-        ) : null}
-      </div>
+      <DateStrip selectedDate={date} onSelect={onDateChange} />
       <section className="mx-auto max-w-md px-4">
+        {canCreate ? (
+          <button type="button" onClick={onCreate} className="mt-4 h-12 w-full rounded-lg bg-[var(--accent)] text-sm font-semibold text-[var(--text-inverse)]">
+            + Добавить тренировку
+          </button>
+        ) : null}
         {loading ? (
           <div className="py-12 text-center text-sm text-[var(--text-muted)]">Загружаем расписание...</div>
         ) : slots.length === 0 ? (
@@ -939,6 +1022,8 @@ function TelegramAuthScreen({ error }: { error: string }) {
 }
 
 export function TrainerMiniApp() {
+  const viewportHeight = useTelegramStableViewportHeight();
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const [activeTab, setActiveTab] = useState<AppTab>("home");
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("list");
   const [staff, setStaff] = useState<StaffMe | null>(null);
@@ -968,6 +1053,9 @@ export function TrainerMiniApp() {
   const canCreateSlot = canEditGroups || canEditPersonal;
   const canCancelSlot = modules.includes("schedule_cancel");
 
+  useLockedMiniAppBody();
+  usePreventMiniAppRubberBand(scrollRef);
+
   function canEditSlot(slot: StaffSlot | null | undefined) {
     if (!slot) return false;
     return slot.slot_type === "personal" ? canEditPersonal : canEditGroups;
@@ -979,6 +1067,7 @@ export function TrainerMiniApp() {
     const webApp = window.Telegram?.WebApp;
     webApp?.ready?.();
     webApp?.expand?.();
+    webApp?.disableVerticalSwipes?.();
 
     if (!initData) {
       const sessionResponse = await fetch("/auth-api/me", {
@@ -1286,7 +1375,10 @@ export function TrainerMiniApp() {
   }
 
   return (
-    <main className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[var(--bg-app)] text-[var(--text-main)]">
+    <main
+      className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[var(--bg-app)] text-[var(--text-main)]"
+      style={viewportHeight ? { height: `${viewportHeight}px` } : undefined}
+    >
       <AppHeader
         title={title}
         action={
@@ -1304,7 +1396,7 @@ export function TrainerMiniApp() {
         }
       />
 
-      <div className="mx-auto min-h-0 w-full max-w-md flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="mx-auto min-h-0 w-full max-w-md flex-1 overflow-y-auto">
         {error ? (
           <div className="mx-4 mt-4 rounded-lg border border-[rgba(255,116,57,0.32)] bg-[rgba(255,116,57,0.10)] p-3 text-sm text-[#ffb599]">
             {error}

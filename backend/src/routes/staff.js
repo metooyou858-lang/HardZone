@@ -153,12 +153,17 @@ router.get('/schedule/today', requireModule('schedule'), async (req, res) => {
           tr.id AS trainer_id,
           tr.first_name || ' ' || tr.last_name AS trainer_name,
           (
-            SELECT COUNT(*)::INT
+            SELECT COALESCE(SUM(b.places_count), 0)::INT
+            FROM bookings b
+            WHERE b.slot_id = s.id AND b.status IN ('confirmed', 'attended')
+          ) AS occupied_count,
+          (
+            SELECT COALESCE(SUM(b.places_count), 0)::INT
             FROM bookings b
             WHERE b.slot_id = s.id AND b.status = 'confirmed'
           ) AS confirmed_count,
           (
-            SELECT COUNT(*)::INT
+            SELECT COALESCE(SUM(b.places_count), 0)::INT
             FROM bookings b
             WHERE b.slot_id = s.id AND b.status = 'attended'
           ) AS attended_count

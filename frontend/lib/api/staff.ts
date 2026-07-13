@@ -17,6 +17,7 @@ export type StaffSlot = {
   duration_minutes: number;
   capacity: number;
   booked_count: number;
+  occupied_count?: number | string;
   status: string;
   is_free?: boolean;
   comment?: string | null;

@@ -30,6 +30,7 @@ declare global {
         viewportStableHeight?: number;
         ready?: () => void;
         expand?: () => void;
+        disableVerticalSwipes?: () => void;
         onEvent?: (eventType: "viewportChanged", eventHandler: (eventData: { isStateStable?: boolean }) => void) => void;
         offEvent?: (eventType: "viewportChanged", eventHandler: (eventData: { isStateStable?: boolean }) => void) => void;
       };
@@ -1666,6 +1667,7 @@ export function ClientMiniApp() {
     const webApp = window.Telegram?.WebApp;
     webApp?.ready?.();
     webApp?.expand?.();
+    webApp?.disableVerticalSwipes?.();
 
     setInitData(telegramInitData);
 
