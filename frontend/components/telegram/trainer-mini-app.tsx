@@ -760,6 +760,7 @@ function LessonDetailsScreen({
   onBack,
   onQueryChange,
   onSearch,
+  onScan,
   onBookClient,
   onToggleAttend,
   onCancelBooking,
@@ -777,6 +778,7 @@ function LessonDetailsScreen({
   onBack: () => void;
   onQueryChange: (value: string) => void;
   onSearch: () => void;
+  onScan: () => void;
   onBookClient: (client: StaffClientSearchResult, allowUnpaid?: boolean) => void;
   onToggleAttend: (booking: StaffBooking) => void;
   onCancelBooking: (booking: StaffBooking) => void;
@@ -842,6 +844,17 @@ function LessonDetailsScreen({
           className="mt-2 h-11 w-full rounded-lg bg-[var(--accent)] text-sm font-semibold text-[var(--text-inverse)] disabled:opacity-60"
         >
           {searching ? "Ищем..." : "Найти клиента"}
+        </button>
+        <button
+          type="button"
+          onClick={onScan}
+          disabled={searching}
+          className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-[var(--line-soft)] text-sm font-semibold text-[var(--text-main)] disabled:opacity-60"
+        >
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+            <path d="M4 7V4h3M17 4h3v3M20 17v3h-3M7 20H4v-3M7 9v6M10 9v6M14 9v6M17 9v6" />
+          </svg>
+          Сканировать штрихкод
         </button>
 
         {results.length > 0 ? (
@@ -1121,7 +1134,7 @@ export function TrainerMiniApp() {
   const [clientQuery, setClientQuery] = useState("");
   const [results, setResults] = useState<StaffClientSearchResult[]>([]);
   const [clientResults, setClientResults] = useState<StaffClientSearchResult[]>([]);
-  const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
+  const [barcodeScannerTarget, setBarcodeScannerTarget] = useState<"clients" | "booking" | null>(null);
   const [loading, setLoading] = useState(true);
   const [slotLoading, setSlotLoading] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -1327,8 +1340,9 @@ export function TrainerMiniApp() {
     }
   }
 
-  async function runSearch() {
-    if (query.trim().length < 2) {
+  async function runSearch(searchValue = query) {
+    const normalizedQuery = searchValue.trim();
+    if (normalizedQuery.length < 2) {
       setResults([]);
       return;
     }
@@ -1336,7 +1350,8 @@ export function TrainerMiniApp() {
     setSearching(true);
     setError("");
     try {
-      setResults(await searchStaffClients(query.trim(), selectedSlotId || undefined));
+      setQuery(normalizedQuery);
+      setResults(await searchStaffClients(normalizedQuery, selectedSlotId || undefined));
     } catch (searchError) {
       setError(searchError instanceof Error ? searchError.message : "Не удалось найти клиента");
     } finally {
@@ -1524,6 +1539,7 @@ export function TrainerMiniApp() {
             onBack={() => setScheduleMode("list")}
             onQueryChange={setQuery}
             onSearch={() => void runSearch()}
+            onScan={() => setBarcodeScannerTarget("booking")}
             onBookClient={(client, allowUnpaid) => void bookClient(client, allowUnpaid)}
             onToggleAttend={(booking) => void toggleAttend(booking)}
             onCancelBooking={(booking) => void cancelClientBooking(booking)}
@@ -1554,7 +1570,7 @@ export function TrainerMiniApp() {
             searching={clientSearching}
             onQueryChange={setClientQuery}
             onSearch={() => void runClientSearch()}
-            onScan={() => setBarcodeScannerOpen(true)}
+            onScan={() => setBarcodeScannerTarget("clients")}
           />
         ) : null}
 
@@ -1564,12 +1580,17 @@ export function TrainerMiniApp() {
       </div>
 
       <BottomNav active={activeTab} onChange={changeTab} />
-      {barcodeScannerOpen ? (
+      {barcodeScannerTarget ? (
         <BarcodeScanner
-          onClose={() => setBarcodeScannerOpen(false)}
+          onClose={() => setBarcodeScannerTarget(null)}
           onDetected={(value) => {
-            setBarcodeScannerOpen(false);
-            void runClientSearch(value);
+            const target = barcodeScannerTarget;
+            setBarcodeScannerTarget(null);
+            if (target === "booking") {
+              void runSearch(value);
+            } else {
+              void runClientSearch(value);
+            }
           }}
         />
       ) : null}
