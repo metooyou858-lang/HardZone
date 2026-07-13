@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   parseFindReplySlotId,
+  renderClientSearch,
   renderToday,
   renderSlot,
 } = require('../src/services/telegram-bot');
@@ -17,6 +18,21 @@ test('today counter includes all clients returned by the schedule query', () => 
   }]);
 
   assert.equal(view.keyboard.inline_keyboard[0][0].text, '18:00 CrossFit (3/20)');
+});
+
+test('client search hides incompatible subscriptions and offers unpaid booking', () => {
+  const view = renderClientSearch(42, [{
+    id: 7,
+    first_name: 'Иван',
+    last_name: 'Иванов',
+    subscription_id: 11,
+    subscription_type: 'open_gym',
+    visits_left: 4,
+    is_eligible: false,
+  }]);
+
+  assert.equal(view.keyboard.inline_keyboard.some((row) => row[0].callback_data === 'book:42:7:11'), false);
+  assert.equal(view.keyboard.inline_keyboard[0][0].callback_data, 'bookunpaid:42:7');
 });
 
 test('slot view offers button-driven client search', () => {

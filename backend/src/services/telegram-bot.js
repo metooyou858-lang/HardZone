@@ -1,6 +1,10 @@
 const { resolveModules, hasModuleAccess } = require('../authz');
 const { pool } = require('../db');
 const {
+  assertSubscriptionAccess,
+  getSlotAccessContext,
+} = require('./subscription-access');
+const {
   expireActiveSubscriptions,
 } = require('./subscription-validity');
 const {
@@ -133,10 +137,11 @@ function editMessage(chatId, messageId, text, replyMarkup = null) {
   });
 }
 
-function answerCallback(callbackQueryId, text = null) {
+function answerCallback(callbackQueryId, text = null, options = {}) {
   return telegramRequest('answerCallbackQuery', {
     callback_query_id: callbackQueryId,
     ...(text ? { text } : {}),
+    ...(options.showAlert ? { show_alert: true } : {}),
   });
 }
 
@@ -317,7 +322,7 @@ async function getSlotBookings(staff, slotId) {
   return { slot: slotRows[0], bookings };
 }
 
-async function searchClients(staff, search, limit = 5) {
+async function searchClients(staff, search, limit = 5, slotId = null) {
   requireStaffModule(staff, 'clients');
   const tokens = String(search || '').trim().split(/\s+/).filter(Boolean);
   if (tokens.join('').length < 2) {
@@ -359,10 +364,38 @@ async function searchClients(staff, search, limit = 5) {
     params
   );
 
-  return rows;
+  if (!slotId) {
+    return rows;
+  }
+
+  const context = await getSlotAccessContext(pool, slotId);
+  const checkedRows = [];
+
+  for (const row of rows) {
+    if (!row.subscription_id) {
+      checkedRows.push({ ...row, is_eligible: false });
+      continue;
+    }
+
+    try {
+      await assertSubscriptionAccess(pool, {
+        subscriptionId: row.subscription_id,
+        clientId: row.id,
+        context,
+      });
+      checkedRows.push({ ...row, is_eligible: true });
+    } catch (error) {
+      if (![404, 409].includes(error.statusCode)) {
+        throw error;
+      }
+      checkedRows.push({ ...row, is_eligible: false });
+    }
+  }
+
+  return checkedRows;
 }
 
-async function createBooking(staff, slotId, clientId, subscriptionId = null) {
+async function createBooking(staff, slotId, clientId, subscriptionId = null, allowUnpaid = false) {
   requireStaffModule(staff, 'schedule_clients');
   const client = await pool.connect();
 
@@ -373,7 +406,7 @@ async function createBooking(staff, slotId, clientId, subscriptionId = null) {
       clientId,
       subscriptionId: subscriptionId || null,
       bookedBy: `telegram:${staff.username || staff.id}`,
-      allowUnpaid: false,
+      allowUnpaid,
     });
     await client.query('COMMIT');
   } catch (error) {
@@ -497,16 +530,20 @@ function renderClientSearch(slotId, clients) {
   }
 
   return {
-    text: 'Выбери клиента для записи:',
+    text: 'Выбери подходящий абонемент или запиши клиента к оплате:',
     keyboard: buildKeyboard([
-      ...clients.map((client) => {
+      ...clients.filter((client) => client.is_eligible !== false).map((client) => {
         const sub = client.subscription_id || 0;
         const visits = client.visits_left === null || client.visits_left === undefined ? '' : `, ${client.visits_left} виз.`;
         return [{
-          text: `${client.last_name} ${client.first_name}${visits}`,
+          text: `${client.last_name} ${client.first_name} · ${client.subscription_type || 'абонемент'}${visits}`,
           callback_data: `book:${slotId}:${client.id}:${sub}`,
         }];
       }),
+      ...Array.from(new Map(clients.map((client) => [String(client.id), client])).values()).map((client) => [{
+        text: `К оплате · ${client.last_name} ${client.first_name}`,
+        callback_data: `bookunpaid:${slotId}:${client.id}`,
+      }]),
       [{ text: 'К занятию', callback_data: `slot:${slotId}` }],
     ]),
   };
@@ -583,7 +620,7 @@ async function handleMessage(message) {
   const replySlotId = parseFindReplySlotId(message);
 
   if (Number.isInteger(replySlotId)) {
-    const clients = await searchClients(staff, text);
+    const clients = await searchClients(staff, text, 5, replySlotId);
     const view = renderClientSearch(replySlotId, clients);
     await sendMessage(chatId, view.text, view.keyboard);
     return;
@@ -666,10 +703,29 @@ async function handleCallback(callbackQuery) {
     const slotId = Number.parseInt(slotIdRaw, 10);
     const clientId = Number.parseInt(clientIdRaw, 10);
     const subscriptionId = Number.parseInt(subscriptionIdRaw, 10);
-    await createBooking(staff, slotId, clientId, subscriptionId > 0 ? subscriptionId : null);
-    const view = await renderSlotForStaff(staff, slotId);
-    await editMessage(chatId, messageId, view.text, view.keyboard);
-    await answerCallback(callbackQuery.id, 'Клиент записан');
+    try {
+      await createBooking(staff, slotId, clientId, subscriptionId > 0 ? subscriptionId : null);
+      const view = await renderSlotForStaff(staff, slotId);
+      await editMessage(chatId, messageId, view.text, view.keyboard);
+      await answerCallback(callbackQuery.id, 'Клиент записан');
+    } catch (error) {
+      await answerCallback(callbackQuery.id, String(error.message || 'Не удалось записать клиента').slice(0, 200), { showAlert: true });
+    }
+    return;
+  }
+
+  if (data.startsWith('bookunpaid:')) {
+    const [, slotIdRaw, clientIdRaw] = data.split(':');
+    const slotId = Number.parseInt(slotIdRaw, 10);
+    const clientId = Number.parseInt(clientIdRaw, 10);
+    try {
+      await createBooking(staff, slotId, clientId, null, true);
+      const view = await renderSlotForStaff(staff, slotId);
+      await editMessage(chatId, messageId, view.text, view.keyboard);
+      await answerCallback(callbackQuery.id, 'Клиент записан к оплате');
+    } catch (error) {
+      await answerCallback(callbackQuery.id, String(error.message || 'Не удалось записать клиента').slice(0, 200), { showAlert: true });
+    }
     return;
   }
 
@@ -702,6 +758,7 @@ module.exports = {
   findStaffByTelegramId,
   getTodaySlots,
   parseFindReplySlotId,
+  renderClientSearch,
   renderToday,
   renderSlot,
   telegramRequest,
