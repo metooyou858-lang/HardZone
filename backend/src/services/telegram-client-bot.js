@@ -4,6 +4,12 @@ const telegramRoute = require('../routes/telegram');
 const { getClubContacts } = require('./club-settings');
 const fs = require('node:fs');
 const path = require('node:path');
+const {
+  TELEGRAM_UI_BUTTONS,
+  buildScheduleHeading,
+  formatTelegramDate,
+  formatTelegramTime,
+} = require('./telegram-ui');
 
 const TELEGRAM_API_BASE = process.env.TELEGRAM_API_BASE || 'https://api.telegram.org/bot';
 const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads');
@@ -304,16 +310,11 @@ function normalizeScheduleOffset(offset = 0) {
 }
 
 function formatDateLabel(dateKey) {
-  const [year, month, day] = String(dateKey).split('-').map(Number);
-  if (!year || !month || !day) return String(dateKey || '');
-  return new Intl.DateTimeFormat('ru-RU', {
-    day: 'numeric',
-    month: 'long',
-  }).format(new Date(year, month - 1, day));
+  return formatTelegramDate(dateKey);
 }
 
 function formatTime(timeValue) {
-  return String(timeValue || '').slice(0, 5);
+  return formatTelegramTime(timeValue);
 }
 
 function getClientName(payload, telegramUser = null) {
@@ -334,7 +335,7 @@ function buildMainReplyKeyboard() {
   };
 }
 
-function buildClientMiniAppKeyboard(text = 'Открыть личный кабинет') {
+function buildClientMiniAppKeyboard(text = TELEGRAM_UI_BUTTONS.openAccount) {
   return {
     inline_keyboard: [[
       {
@@ -348,8 +349,8 @@ function buildClientMiniAppKeyboard(text = 'Открыть личный каби
 function buildClientPhoneKeyboard() {
   return {
     keyboard: [
-      [{ text: 'Поделиться телефоном', request_contact: true }],
-      [{ text: 'Открыть личный кабинет', web_app: { url: getClientMiniAppUrl() } }],
+      [{ text: TELEGRAM_UI_BUTTONS.sharePhone, request_contact: true }],
+      [{ text: TELEGRAM_UI_BUTTONS.openAccount, web_app: { url: getClientMiniAppUrl() } }],
     ],
     resize_keyboard: true,
     one_time_keyboard: true,
@@ -412,9 +413,10 @@ function buildScheduleKeyboard(slots, dayOffset) {
 function buildScheduleText(slots, dayOffset = 0, title = 'Расписание') {
   dayOffset = normalizeScheduleOffset(dayOffset);
   const dateKey = getDateKeyByOffset(dayOffset);
-  const date = addDays(new Date(), Number(dayOffset || 0));
-  const dayLabel = WEEKDAY_LABELS[date.getDay()] || '';
-  const lines = [`<b>${escapeHtml(title)}: ${escapeHtml(dayLabel)}, ${escapeHtml(formatDateLabel(dateKey))}</b>`, ''];
+  const heading = title === 'Расписание'
+    ? buildScheduleHeading(dateKey, escapeHtml)
+    : `<b>${escapeHtml(title)}</b>\n${escapeHtml(formatDateLabel(dateKey))}`;
+  const lines = [heading, ''];
 
   if (slots.length === 0) {
     lines.push('На этот день доступных групповых тренировок для записи нет.');
@@ -427,7 +429,7 @@ function buildScheduleText(slots, dayOffset = 0, title = 'Расписание')
 
 function buildSlotKeyboard(slot, dayOffset = 0) {
   const rows = [[{ text: 'Записаться', callback_data: `book:${slot.id}` }]];
-  rows.push([{ text: 'Назад к расписанию', callback_data: `schedule:${dayOffset}` }]);
+  rows.push([{ text: TELEGRAM_UI_BUTTONS.backToSchedule, callback_data: `schedule:${dayOffset}` }]);
   return { inline_keyboard: rows };
 }
 
@@ -437,7 +439,7 @@ function buildSlotText(slot) {
   const freePlaces = Number(slot.free_places ?? Math.max(0, Number(slot.capacity || 0) - Number(slot.booked_count || 0)));
   const lines = [
     `<b>${escapeHtml(title)}</b>`,
-    `${escapeHtml(dateLabel)}, ${escapeHtml(formatTime(slot.start_time))}`,
+    `📅 ${escapeHtml(dateLabel)} · ${escapeHtml(formatTime(slot.start_time))}`,
     '',
     `Тренер: ${escapeHtml(compact(slot.trainer_name))}`,
     `Свободно: ${freePlaces} из ${Number(slot.capacity || 0)} мест`,
@@ -978,7 +980,7 @@ async function handleClientCallback(callbackQuery) {
 
     if (!slot) {
       await editClientMessage(chatId, messageId, 'Занятие не найдено или уже недоступно.', {
-        inline_keyboard: [[{ text: 'Назад к расписанию', callback_data: `schedule:${dayOffset}` }]],
+        inline_keyboard: [[{ text: TELEGRAM_UI_BUTTONS.backToSchedule, callback_data: `schedule:${dayOffset}` }]],
       });
       return;
     }
@@ -1078,6 +1080,10 @@ async function handleTelegramClientUpdate(update) {
 }
 
 module.exports = {
+  buildScheduleKeyboard,
+  buildScheduleText,
+  buildSlotKeyboard,
+  buildSlotText,
   configureClientMenuButton,
   handleTelegramClientUpdate,
   telegramClientRequest,

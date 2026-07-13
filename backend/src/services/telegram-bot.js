@@ -15,6 +15,12 @@ const {
 } = require('./booking-attendance');
 const { addClientSearchConditions } = require('./client-search');
 const { normalizePhone } = require('../utils/phones');
+const {
+  TELEGRAM_UI_BUTTONS,
+  buildScheduleHeading,
+  formatTelegramDate,
+  formatTelegramTime,
+} = require('./telegram-ui');
 
 const CLUB_TIME_ZONE = process.env.APP_TIMEZONE || 'Asia/Vladivostok';
 const TELEGRAM_API_BASE = process.env.TELEGRAM_API_BASE || 'https://api.telegram.org/bot';
@@ -79,6 +85,8 @@ function getScheduleOffset(dateValue) {
 }
 
 function formatTime(value) {
+  const normalized = formatTelegramTime(value);
+  if (normalized !== String(value || '')) return normalized;
   const raw = String(value || '').trim();
   const timeOnlyMatch = raw.match(/^(\d{2}):(\d{2})/);
   if (timeOnlyMatch) {
@@ -102,20 +110,14 @@ function formatDate(value) {
   const raw = String(value || '').trim();
   const dateOnlyMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (dateOnlyMatch) {
-    return `${dateOnlyMatch[3]}.${dateOnlyMatch[2]}.${dateOnlyMatch[1]}`;
+    return formatTelegramDate(raw);
   }
 
   const date = value instanceof Date ? value : new Date(raw);
   if (Number.isNaN(date.getTime())) {
     return raw;
   }
-
-  return new Intl.DateTimeFormat('ru-RU', {
-    timeZone: CLUB_TIME_ZONE,
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(date);
+  return formatTelegramDate(getClubDate(date));
 }
 
 function escapeHtml(value) {
@@ -143,7 +145,7 @@ function buildMainReplyKeyboard() {
 
 function buildMiniAppKeyboard() {
   return buildKeyboard([[
-    { text: 'Открыть личный кабинет', web_app: { url: getMiniAppUrl() } },
+    { text: TELEGRAM_UI_BUTTONS.openAccount, web_app: { url: getMiniAppUrl() } },
   ]]);
 }
 
@@ -613,8 +615,8 @@ function renderScheduleDay(date, slots, dayOffset = 0) {
 
   return {
     text: slots.length
-      ? `<b>Расписание: ${escapeHtml(getWeekdayLabel(date))}, ${escapeHtml(formatDate(date))}</b>\n\nВыберите занятие:`
-      : `<b>Расписание: ${escapeHtml(getWeekdayLabel(date))}, ${escapeHtml(formatDate(date))}</b>\n\nНа этот день занятий нет.`,
+      ? `${buildScheduleHeading(date, escapeHtml)}\n\nВыберите занятие:`
+      : `${buildScheduleHeading(date, escapeHtml)}\n\nНа этот день занятий нет.`,
     keyboard: buildKeyboard(rows),
   };
 }
@@ -628,7 +630,7 @@ function renderSlot(data) {
   const scheduleOffset = getScheduleOffset(slot.date);
   const lines = [
     `<b>${escapeHtml(slot.training_type_name || 'Занятие')}</b>`,
-    `${escapeHtml(formatDate(slot.date))}, ${formatTime(slot.start_time)}`,
+    `📅 ${escapeHtml(formatDate(slot.date))} · ${formatTime(slot.start_time)}`,
     slot.trainer_name ? `Тренер: ${escapeHtml(slot.trainer_name)}` : null,
     `Записано: ${data.bookings.length}/${slot.capacity}`,
     '',
@@ -651,7 +653,7 @@ function renderSlot(data) {
   });
 
   rows.push([{ text: 'Добавить клиента', callback_data: `find:${slot.id}` }]);
-  rows.push([{ text: 'Назад к расписанию', callback_data: `schedule:${scheduleOffset}` }]);
+  rows.push([{ text: TELEGRAM_UI_BUTTONS.backToSchedule, callback_data: `schedule:${scheduleOffset}` }]);
 
   return {
     text: lines.join('\n'),
@@ -689,7 +691,7 @@ function renderClientSearch(slotId, clients) {
   if (clients.length === 0) {
     return {
       text: 'Клиенты не найдены.',
-      keyboard: buildKeyboard([[{ text: 'К занятию', callback_data: `slot:${slotId}` }]]),
+      keyboard: buildKeyboard([[{ text: TELEGRAM_UI_BUTTONS.backToTraining, callback_data: `slot:${slotId}` }]]),
     };
   }
 
@@ -708,7 +710,7 @@ function renderClientSearch(slotId, clients) {
         text: `К оплате · ${client.last_name} ${client.first_name}`,
         callback_data: `bookunpaid:${slotId}:${client.id}`,
       }]),
-      [{ text: 'К занятию', callback_data: `slot:${slotId}` }],
+      [{ text: TELEGRAM_UI_BUTTONS.backToTraining, callback_data: `slot:${slotId}` }],
     ]),
   };
 }
@@ -728,7 +730,7 @@ async function renderSlotForStaff(staff, slotId) {
   if (!data) {
     return {
       text: 'Занятие не найдено.',
-      keyboard: buildKeyboard([[{ text: 'К расписанию', callback_data: 'schedule:0' }]]),
+      keyboard: buildKeyboard([[{ text: TELEGRAM_UI_BUTTONS.backToSchedule, callback_data: 'schedule:0' }]]),
     };
   }
   return renderSlot(data);

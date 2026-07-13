@@ -15,8 +15,8 @@ const {
 } = require('../src/services/telegram-bot');
 
 test('telegram dates and times use compact human-readable format', () => {
-  assert.equal(formatDate('2026-07-13'), '13.07.2026');
-  assert.equal(formatDate('2026-07-12T16:00:00.000Z'), '13.07.2026');
+  assert.equal(formatDate('2026-07-13'), '13 июля');
+  assert.equal(formatDate('2026-07-12T16:00:00.000Z'), '13 июля');
   assert.equal(formatTime('09:00:00'), '09:00');
   assert.equal(formatTime('2026-07-13T08:30:00.000Z'), '18:30');
 });
@@ -66,7 +66,7 @@ test('slot view never exposes a raw database date', () => {
     bookings: [],
   });
 
-  assert.match(view.text, /13\.07\.2026, 18:00/);
+  assert.match(view.text, /📅 13 июля · 18:00/);
   assert.equal(view.text.includes('GMT'), false);
 });
 
