@@ -62,6 +62,16 @@ function parseClientId(value) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : Number.NaN;
 }
 
+function parsePositiveInteger(value) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseNonNegativeInteger(value) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
 const GS1_GROUP_SEPARATOR = String.fromCharCode(29);
 const SCANNER_LAYOUT_MAP = {
   ё: '`',
@@ -674,7 +684,12 @@ async function getOpenOrder(client, orderId) {
 
 async function validateProductAvailability(client, productId, quantity) {
   const { rows: productRows } = await client.query(
-    `SELECT p.*, pt.has_stock, pt.has_marking
+    `SELECT p.*, pt.has_stock, pt.has_marking,
+            EXISTS (
+              SELECT 1
+              FROM product_subscription_params psp
+              WHERE psp.product_id = p.id
+            ) AS has_subscription_params
      FROM products p
      JOIN product_types pt ON pt.id = p.product_type_id
      WHERE p.id = $1 AND p.is_archived = false`,
@@ -698,6 +713,19 @@ async function validateProductAvailability(client, productId, quantity) {
 router.get('/', async (req, res) => {
   try {
     const { status, paid, limit = 20, offset = 0 } = req.query;
+    const parsedLimit = parsePositiveInteger(limit);
+    const parsedOffset = parseNonNegativeInteger(offset);
+    const allowedStatuses = new Set(['open', 'confirmed', 'cancelled', 'partially_refunded', 'refunded']);
+
+    if (status && !allowedStatuses.has(status)) {
+      return res.status(422).json({ success: false, error: 'Некорректный статус заказа' });
+    }
+    if (parsedLimit === null || parsedLimit > 100) {
+      return res.status(422).json({ success: false, error: 'limit должен быть целым числом от 1 до 100' });
+    }
+    if (parsedOffset === null) {
+      return res.status(422).json({ success: false, error: 'offset должен быть целым неотрицательным числом' });
+    }
 
     let sql = `
       SELECT o.*, COUNT(oi.id)::int AS items_count_actual
@@ -723,7 +751,7 @@ router.get('/', async (req, res) => {
     }
 
     sql += ` GROUP BY o.id ORDER BY o.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-    params.push(Number(limit), Number(offset));
+    params.push(parsedLimit, parsedOffset);
 
     const { rows } = await pool.query(sql, params);
     res.json({ success: true, data: rows });
@@ -848,7 +876,7 @@ router.patch('/:id', requireSalesCreate, async (req, res) => {
     } catch (rollbackError) {
       console.error('Order patch rollback failed', rollbackError);
     }
-    return sendInternalError(res, err, { route: 'orders.add_item' });
+    return sendInternalError(res, err, { route: 'orders.update' });
   } finally {
     client.release();
   }
@@ -859,19 +887,14 @@ router.post('/:id/items', requireSalesCreate, async (req, res) => {
 
   try {
     const {
-      kind = 'product',
       product_id,
-      name,
-      sku,
-      sale_price,
-      cost_price,
       quantity,
       discount_percent,
       discount_money,
       marking_code,
     } = req.body;
 
-    const qty = parseInt(quantity, 10);
+    const qty = parsePositiveInteger(quantity);
     const parsedDiscountPercent = discount_percent === undefined ? 0 : parseDiscountPercent(discount_percent);
     const parsedDiscountMoney = discount_money === undefined ? 0 : parseDiscountMoney(discount_money);
     const parsedMarkingCode = parseMarkingCode(marking_code);
@@ -880,7 +903,7 @@ router.post('/:id/items', requireSalesCreate, async (req, res) => {
     if (result.error) {
       return res.status(result.error.code).json({ success: false, error: result.error.message });
     }
-    if (!qty || qty <= 0) {
+    if (qty === null) {
       return res.status(422).json({
         success: false,
         error: 'Количество должно быть больше нуля',
@@ -895,27 +918,28 @@ router.post('/:id/items', requireSalesCreate, async (req, res) => {
 
     const normalizedDiscounts = normalizeDiscounts(parsedDiscountPercent, parsedDiscountMoney);
 
-    let resolvedName = name;
-    let resolvedSalePrice = sale_price;
-    let resolvedCostPrice = cost_price;
-    let resolvedSku = sku;
-    let markingRequired = false;
-
-    if (kind === 'product' && product_id) {
-      const productResult = await validateProductAvailability(client, product_id, qty);
-      if (productResult.error) {
-        return res
-          .status(productResult.error.code)
-          .json({ success: false, error: productResult.error.message });
-      }
-
-      const product = productResult.product;
-      resolvedName = resolvedName || product.name;
-      resolvedSku = resolvedSku || product.sku;
-      resolvedSalePrice = resolvedSalePrice || Number(product.sale_price);
-      resolvedCostPrice = resolvedCostPrice || Number(product.cost_price);
-      markingRequired = Boolean(product.is_marked);
+    if (!product_id) {
+      return res.status(422).json({ success: false, error: 'Выберите позицию из каталога' });
     }
+
+    const productResult = await validateProductAvailability(client, product_id, qty);
+    if (productResult.error) {
+      return res
+        .status(productResult.error.code)
+        .json({ success: false, error: productResult.error.message });
+    }
+
+    const product = productResult.product;
+    const kind = product.has_stock
+      ? 'product'
+      : product.has_subscription_params
+        ? 'subscription'
+        : 'service';
+    const resolvedName = product.name;
+    const resolvedSku = product.sku;
+    const resolvedSalePrice = Number(product.sale_price);
+    const resolvedCostPrice = product.cost_price == null ? null : Number(product.cost_price);
+    const markingRequired = Boolean(product.is_marked);
 
     if (markingRequired && qty !== 1) {
       return res.status(422).json({
@@ -924,11 +948,8 @@ router.post('/:id/items', requireSalesCreate, async (req, res) => {
       });
     }
 
-    if (!resolvedName) {
-      return res.status(422).json({ success: false, error: 'Укажите название позиции' });
-    }
-    if (!resolvedSalePrice) {
-      return res.status(422).json({ success: false, error: 'Укажите цену' });
+    if (!Number.isFinite(resolvedSalePrice) || resolvedSalePrice <= 0) {
+      return res.status(422).json({ success: false, error: 'Для позиции не задана корректная цена продажи' });
     }
 
     await client.query('BEGIN');
@@ -976,7 +997,7 @@ router.post('/:id/items', requireSalesCreate, async (req, res) => {
         resolvedName,
         resolvedSku || null,
         resolvedSalePrice,
-        resolvedCostPrice || null,
+        resolvedCostPrice,
         qty,
         normalizedDiscounts.discountPercent,
         normalizedDiscounts.discountMoney,
@@ -998,7 +1019,7 @@ router.post('/:id/items', requireSalesCreate, async (req, res) => {
     } catch (rollbackError) {
       console.error('Order item create rollback failed', rollbackError);
     }
-    return sendInternalError(res, err, { route: 'orders.remove_item' });
+    return sendInternalError(res, err, { route: 'orders.add_item' });
   } finally {
     client.release();
   }
@@ -1023,7 +1044,9 @@ router.patch('/:id/items/:itemId', requireSalesCreate, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Позиция не найдена' });
     }
 
-    const nextQuantity = req.body.quantity !== undefined ? parseInt(req.body.quantity, 10) : item.quantity;
+    const nextQuantity = req.body.quantity !== undefined
+      ? parsePositiveInteger(req.body.quantity)
+      : Number(item.quantity);
     if (req.body.marking_code !== undefined && req.body.marking_code !== null) {
       const raw = req.body.marking_code;
       logger.info('marking_raw', {
@@ -1034,7 +1057,7 @@ router.patch('/:id/items/:itemId', requireSalesCreate, async (req, res) => {
     }
     const nextMarkingCode =
       req.body.marking_code !== undefined ? parseMarkingCode(req.body.marking_code) : item.marking_code;
-    if (!nextQuantity || nextQuantity <= 0) {
+    if (nextQuantity === null) {
       return res.status(422).json({
         success: false,
         error: 'Количество должно быть больше нуля',
@@ -1172,7 +1195,7 @@ router.delete('/:id/items/:itemId', requireSalesCreate, async (req, res) => {
     } catch (rollbackError) {
       console.error('Order item delete rollback failed', rollbackError);
     }
-    return sendInternalError(res, err, { route: 'orders.confirm' });
+    return sendInternalError(res, err, { route: 'orders.remove_item' });
   } finally {
     client.release();
   }
@@ -1424,38 +1447,11 @@ router.post('/:id/sync-aqsi', requireSalesAqsiRecovery, async (req, res) => {
   }
 });
 
-router.post('/:id/confirm', requireSalesPay, async (req, res) => {
-  try {
-    const { payment_type } = req.body;
-
-    if (!payment_type || !['cash', 'card'].includes(payment_type)) {
-      return res.status(422).json({
-        success: false,
-        error: 'Укажите способ оплаты: cash или card',
-      });
-    }
-
-    const { rows: orderRows } = await pool.query('SELECT * FROM orders WHERE id = $1', [req.params.id]);
-    const order = orderRows[0];
-
-    if (!order) {
-      return res.status(404).json({ success: false, error: 'Заказ не найден' });
-    }
-    if (order.status !== 'open') {
-      return res.status(409).json({ success: false, error: 'Заказ уже закрыт' });
-    }
-    if (order.aqsi_sent_at) {
-      return res.status(409).json({ success: false, error: "Заказ передан на кассу, подтверждение придёт автоматически" });
-    }
-    if (order.items_count === 0) {
-      return res.status(422).json({ success: false, error: 'Нельзя подтвердить пустой заказ' });
-    }
-
-    const finalized = await confirmOpenOrderPayment(req.params.id, payment_type);
-    return res.json({ success: true, data: finalized.order });
-  } catch (err) {
-    return sendInternalError(res, err, { route: 'orders.cancel' });
-  }
+router.post('/:id/confirm', requireSalesPay, (_req, res) => {
+  return res.status(409).json({
+    success: false,
+    error: 'Прямое подтверждение отключено: используйте штатную оплату через AQSI',
+  });
 });
 
 router.post('/:id/refund', requireSalesRefund, async (req, res) => {

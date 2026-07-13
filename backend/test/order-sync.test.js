@@ -171,6 +171,54 @@ test('v4 background sync ignores pending receipt status without operation traces
   assert.equal(processed, 0);
 });
 
+test('orders API rejects direct payment confirmation outside the AQSI flow', async () => {
+  const user = await createUser();
+  const sessionUser = {
+    id: Number(user.id),
+    name: user.name,
+    username: user.username,
+    role: user.role,
+  };
+  const order = await createOpenOrder({ items_count: 1 });
+
+  const result = await request(`/api/orders/${order.id}/confirm`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-hardzone-session': createSessionToken(sessionUser),
+    },
+    body: JSON.stringify({ payment_type: 'card' }),
+  });
+
+  assert.equal(result.response.status, 409);
+  assert.equal(result.body.success, false);
+  assert.match(result.body.error, /AQSI/);
+
+  const { rows } = await query('SELECT status, payment_type FROM orders WHERE id = $1', [order.id]);
+  assert.equal(rows[0].status, 'open');
+  assert.equal(rows[0].payment_type, null);
+});
+
+test('orders API validates history pagination parameters', async () => {
+  const user = await createUser();
+  const sessionUser = {
+    id: Number(user.id),
+    name: user.name,
+    username: user.username,
+    role: user.role,
+  };
+  const headers = { 'x-hardzone-session': createSessionToken(sessionUser) };
+
+  const excessiveLimit = await request('/api/orders?limit=101', { headers });
+  assert.equal(excessiveLimit.response.status, 422);
+
+  const negativeOffset = await request('/api/orders?offset=-1', { headers });
+  assert.equal(negativeOffset.response.status, 422);
+
+  const invalidStatus = await request('/api/orders?status=unknown', { headers });
+  assert.equal(invalidStatus.response.status, 422);
+});
+
 test('card sync-slip sends receipt when AQSI payment is Finishing with approved slip result', async () => {
   const user = await createUser();
   const sessionUser = {

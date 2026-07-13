@@ -149,14 +149,6 @@ export async function removeOrderItem(orderId: string, itemId: string): Promise<
   return response.data;
 }
 
-export async function confirmOrder(orderId: string, payment_type: PaymentType): Promise<Order> {
-  const response = await apiFetch<ApiEnvelope<Order>>(`/orders/${orderId}/confirm`, {
-    method: "POST",
-    body: JSON.stringify({ payment_type }),
-  });
-  return response.data;
-}
-
 export async function sendOrderToAqsi(
   orderId: string,
   client_id?: string | number | null
