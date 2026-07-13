@@ -37,7 +37,43 @@ function getClubDate(date = new Date()) {
 }
 
 function formatTime(value) {
-  return String(value || '').slice(0, 5);
+  const raw = String(value || '').trim();
+  const timeOnlyMatch = raw.match(/^(\d{2}):(\d{2})/);
+  if (timeOnlyMatch) {
+    return `${timeOnlyMatch[1]}:${timeOnlyMatch[2]}`;
+  }
+
+  const date = value instanceof Date ? value : new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    return raw;
+  }
+
+  return new Intl.DateTimeFormat('ru-RU', {
+    timeZone: CLUB_TIME_ZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
+}
+
+function formatDate(value) {
+  const raw = String(value || '').trim();
+  const dateOnlyMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnlyMatch) {
+    return `${dateOnlyMatch[3]}.${dateOnlyMatch[2]}.${dateOnlyMatch[1]}`;
+  }
+
+  const date = value instanceof Date ? value : new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    return raw;
+  }
+
+  return new Intl.DateTimeFormat('ru-RU', {
+    timeZone: CLUB_TIME_ZONE,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date);
 }
 
 function escapeHtml(value) {
@@ -467,13 +503,13 @@ function renderMainMenu(staff) {
 function renderToday(date, slots) {
   if (slots.length === 0) {
     return {
-      text: `На ${escapeHtml(date)} занятий нет.`,
+      text: `На ${escapeHtml(formatDate(date))} занятий нет.`,
       keyboard: buildKeyboard([[{ text: 'Обновить', callback_data: 'today' }]]),
     };
   }
 
   return {
-    text: `Занятия на ${escapeHtml(date)}:`,
+    text: `Занятия на ${escapeHtml(formatDate(date))}:`,
     keyboard: buildKeyboard(
       slots.map((slot) => [{
         text: `${formatTime(slot.start_time)} ${slot.training_type_name || 'Занятие'} (${slot.booked_clients_count}/${slot.capacity})`,
@@ -487,7 +523,7 @@ function renderSlot(data) {
   const slot = data.slot;
   const lines = [
     `<b>${escapeHtml(slot.training_type_name || 'Занятие')}</b>`,
-    `${escapeHtml(slot.date)} ${formatTime(slot.start_time)}`,
+    `${escapeHtml(formatDate(slot.date))}, ${formatTime(slot.start_time)}`,
     slot.trainer_name ? `Тренер: ${escapeHtml(slot.trainer_name)}` : null,
     `Записано: ${data.bookings.length}/${slot.capacity}`,
     '',
@@ -756,6 +792,8 @@ module.exports = {
   configureMenuButton,
   handleTelegramUpdate,
   findStaffByTelegramId,
+  formatDate,
+  formatTime,
   getTodaySlots,
   parseFindReplySlotId,
   renderClientSearch,

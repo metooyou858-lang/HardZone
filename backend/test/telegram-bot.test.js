@@ -2,11 +2,20 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  formatDate,
+  formatTime,
   parseFindReplySlotId,
   renderClientSearch,
   renderToday,
   renderSlot,
 } = require('../src/services/telegram-bot');
+
+test('telegram dates and times use compact human-readable format', () => {
+  assert.equal(formatDate('2026-07-13'), '13.07.2026');
+  assert.equal(formatDate('2026-07-12T16:00:00.000Z'), '13.07.2026');
+  assert.equal(formatTime('09:00:00'), '09:00');
+  assert.equal(formatTime('2026-07-13T08:30:00.000Z'), '18:30');
+});
 
 test('today counter includes all clients returned by the schedule query', () => {
   const view = renderToday('2026-07-13', [{
@@ -18,6 +27,22 @@ test('today counter includes all clients returned by the schedule query', () => 
   }]);
 
   assert.equal(view.keyboard.inline_keyboard[0][0].text, '18:00 CrossFit (3/20)');
+});
+
+test('slot view never exposes a raw database date', () => {
+  const view = renderSlot({
+    slot: {
+      id: 42,
+      date: new Date('2026-07-13T00:00:00.000Z'),
+      start_time: '18:00:00',
+      capacity: 20,
+      training_type_name: 'CrossFit',
+    },
+    bookings: [],
+  });
+
+  assert.match(view.text, /13\.07\.2026, 18:00/);
+  assert.equal(view.text.includes('GMT'), false);
 });
 
 test('client search hides incompatible subscriptions and offers unpaid booking', () => {

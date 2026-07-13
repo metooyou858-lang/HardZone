@@ -68,7 +68,33 @@ function addDays(date: Date, days: number) {
 }
 
 function formatTime(value: string | null | undefined) {
-  return String(value || "").slice(0, 5);
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d{2}):(\d{2})/);
+  if (match) return `${match[1]}:${match[2]}`;
+
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Asia/Vladivostok",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+function formatShortDate(value: string | null | undefined) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) return `${match[3]}.${match[2]}.${match[1]}`;
+
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Asia/Vladivostok",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
 }
 
 function formatDateLabel(value: string) {
@@ -96,7 +122,7 @@ function subscriptionLabel(
 ) {
   if (!item.subscription_type) return "Абонемент не выбран";
   if (item.subscription_type === "unlimited") {
-    return item.expires_at ? `Безлимит до ${item.expires_at}` : "Безлимит";
+    return item.expires_at ? `Безлимит до ${formatShortDate(item.expires_at)}` : "Безлимит";
   }
   if (item.visits_left !== null && item.visits_left !== undefined) return `Осталось ${item.visits_left}`;
   return item.subscription_status || "Абонемент";
