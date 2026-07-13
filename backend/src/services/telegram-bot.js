@@ -17,6 +17,11 @@ const { normalizePhone } = require('../utils/phones');
 
 const CLUB_TIME_ZONE = process.env.APP_TIMEZONE || 'Asia/Vladivostok';
 const TELEGRAM_API_BASE = process.env.TELEGRAM_API_BASE || 'https://api.telegram.org/bot';
+const MENU_BUTTONS = {
+  schedule: '📅 Расписание',
+  account: '👤 Личный кабинет',
+};
+const WEEKDAY_LABELS = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
 
 function getClubDate(date = new Date()) {
   const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -34,6 +39,40 @@ function getClubDate(date = new Date()) {
   );
 
   return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function addDateKeyDays(dateKey, days) {
+  const [year, month, day] = String(dateKey).split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + Number(days || 0), 12));
+  return date.toISOString().slice(0, 10);
+}
+
+function getCurrentWeekScheduleOffsets(dateKey = getClubDate()) {
+  const [year, month, day] = String(dateKey).split('-').map(Number);
+  const weekday = new Date(Date.UTC(year, month - 1, day, 12)).getUTCDay();
+  const daysUntilSunday = weekday === 0 ? 0 : 7 - weekday;
+  return Array.from({ length: daysUntilSunday + 1 }, (_, offset) => offset);
+}
+
+function normalizeScheduleOffset(offset = 0) {
+  const parsed = Number.parseInt(String(offset || '0'), 10) || 0;
+  const offsets = getCurrentWeekScheduleOffsets();
+  return offsets.includes(parsed) ? parsed : 0;
+}
+
+function getWeekdayLabel(dateKey) {
+  const [year, month, day] = String(dateKey).split('-').map(Number);
+  const weekday = new Date(Date.UTC(year, month - 1, day, 12)).getUTCDay();
+  return WEEKDAY_LABELS[weekday] || '';
+}
+
+function getScheduleOffset(dateValue) {
+  const target = String(dateValue instanceof Date ? getClubDate(dateValue) : dateValue || '').slice(0, 10);
+  const today = getClubDate();
+  const targetMs = Date.parse(`${target}T12:00:00.000Z`);
+  const todayMs = Date.parse(`${today}T12:00:00.000Z`);
+  const offset = Math.round((targetMs - todayMs) / 86400000);
+  return getCurrentWeekScheduleOffsets().includes(offset) ? offset : 0;
 }
 
 function formatTime(value) {
@@ -88,18 +127,35 @@ function buildKeyboard(rows) {
   return { inline_keyboard: rows };
 }
 
+function buildMainReplyKeyboard() {
+  return {
+    keyboard: [[
+      { text: MENU_BUTTONS.schedule },
+      { text: MENU_BUTTONS.account },
+    ]],
+    resize_keyboard: true,
+    is_persistent: true,
+  };
+}
+
+function buildMiniAppKeyboard() {
+  return buildKeyboard([[
+    { text: 'Открыть личный кабинет', web_app: { url: getMiniAppUrl() } },
+  ]]);
+}
+
 function getMiniAppUrl() {
   const baseUrl = process.env.FRONTEND_BASE_URL || process.env.APP_BASE_URL || 'https://hardzone.space';
   return `${String(baseUrl).replace(/\/+$/, '')}/telegram/trainer`;
 }
 
-function configureMenuButton() {
+async function configureMenuButton() {
+  await telegramRequest('setMyCommands', {
+    commands: [{ command: 'start', description: 'Открыть главное меню' }],
+  });
+
   return telegramRequest('setChatMenuButton', {
-    menu_button: {
-      type: 'web_app',
-      text: 'Открыть HardZone',
-      web_app: { url: getMiniAppUrl() },
-    },
+    menu_button: { type: 'commands' },
   });
 }
 
@@ -265,9 +321,10 @@ function requireStaffModule(staff, permission) {
   }
 }
 
-async function getTodaySlots(staff) {
+async function getScheduleDaySlots(staff, dayOffset = 0) {
   requireStaffModule(staff, 'schedule');
-  const date = getClubDate();
+  const offset = normalizeScheduleOffset(dayOffset);
+  const date = addDateKeyDays(getClubDate(), offset);
 
   const { rows } = await pool.query(
     `
@@ -302,7 +359,11 @@ async function getTodaySlots(staff) {
     [date]
   );
 
-  return { date, slots: rows };
+  return { date, offset, slots: rows };
+}
+
+function getTodaySlots(staff) {
+  return getScheduleDaySlots(staff, 0);
 }
 
 async function getSlotBookings(staff, slotId) {
@@ -492,35 +553,46 @@ async function markBookingAsUnattended(staff, bookingId) {
 
 function renderMainMenu(staff) {
   return {
-    text: `Привет, ${escapeHtml(staff.name)}.\n\nВыбери действие:`,
-    keyboard: buildKeyboard([
-      [{ text: 'Открыть HardZone', web_app: { url: getMiniAppUrl() } }],
-      [{ text: 'Сегодня', callback_data: 'today' }],
-    ]),
+    text: [
+      `👋 Привет, ${escapeHtml(staff.name)}!`,
+      '',
+      'Это бот сотрудников HardZone.',
+      'Здесь можно работать с расписанием и записями клиентов или открыть личный кабинет.',
+      '',
+      'Выберите нужный раздел на клавиатуре ниже.',
+    ].join('\n'),
+    keyboard: buildMainReplyKeyboard(),
+  };
+}
+
+function renderScheduleDay(date, slots, dayOffset = 0) {
+  const rows = slots.map((slot) => [{
+    text: `${formatTime(slot.start_time)} ${slot.training_type_name || 'Занятие'} (${slot.booked_clients_count}/${slot.capacity})`,
+    callback_data: `slot:${slot.id}`,
+  }]);
+  const dayButtons = getCurrentWeekScheduleOffsets().map((offset) => ({
+    text: `${Number(offset) === Number(dayOffset) ? '● ' : ''}${getWeekdayLabel(addDateKeyDays(getClubDate(), offset))}`,
+    callback_data: `schedule:${offset}`,
+  }));
+  for (let index = 0; index < dayButtons.length; index += 2) {
+    rows.push(dayButtons.slice(index, index + 2));
+  }
+
+  return {
+    text: slots.length
+      ? `<b>Расписание: ${escapeHtml(getWeekdayLabel(date))}, ${escapeHtml(formatDate(date))}</b>\n\nВыберите занятие:`
+      : `<b>Расписание: ${escapeHtml(getWeekdayLabel(date))}, ${escapeHtml(formatDate(date))}</b>\n\nНа этот день занятий нет.`,
+    keyboard: buildKeyboard(rows),
   };
 }
 
 function renderToday(date, slots) {
-  if (slots.length === 0) {
-    return {
-      text: `На ${escapeHtml(formatDate(date))} занятий нет.`,
-      keyboard: buildKeyboard([[{ text: 'Обновить', callback_data: 'today' }]]),
-    };
-  }
-
-  return {
-    text: `Занятия на ${escapeHtml(formatDate(date))}:`,
-    keyboard: buildKeyboard(
-      slots.map((slot) => [{
-        text: `${formatTime(slot.start_time)} ${slot.training_type_name || 'Занятие'} (${slot.booked_clients_count}/${slot.capacity})`,
-        callback_data: `slot:${slot.id}`,
-      }])
-    ),
-  };
+  return renderScheduleDay(date, slots, 0);
 }
 
 function renderSlot(data) {
   const slot = data.slot;
+  const scheduleOffset = getScheduleOffset(slot.date);
   const lines = [
     `<b>${escapeHtml(slot.training_type_name || 'Занятие')}</b>`,
     `${escapeHtml(formatDate(slot.date))}, ${formatTime(slot.start_time)}`,
@@ -543,7 +615,7 @@ function renderSlot(data) {
   });
 
   rows.push([{ text: 'Добавить клиента', callback_data: `find:${slot.id}` }]);
-  rows.push([{ text: 'Назад', callback_data: 'today' }]);
+  rows.push([{ text: 'Назад к расписанию', callback_data: `schedule:${scheduleOffset}` }]);
 
   return {
     text: lines.join('\n'),
@@ -590,7 +662,7 @@ async function renderSlotForStaff(staff, slotId) {
   if (!data) {
     return {
       text: 'Занятие не найдено.',
-      keyboard: buildKeyboard([[{ text: 'Сегодня', callback_data: 'today' }]]),
+      keyboard: buildKeyboard([[{ text: 'К расписанию', callback_data: 'schedule:0' }]]),
     };
   }
   return renderSlot(data);
@@ -678,6 +750,22 @@ async function handleMessage(message) {
     return;
   }
 
+  if (text === MENU_BUTTONS.schedule) {
+    const schedule = await getScheduleDaySlots(staff, 0);
+    const view = renderScheduleDay(schedule.date, schedule.slots, schedule.offset);
+    await sendMessage(chatId, view.text, view.keyboard);
+    return;
+  }
+
+  if (text === MENU_BUTTONS.account) {
+    await sendMessage(
+      chatId,
+      'Откройте личный кабинет сотрудника для работы в приложении HardZone.',
+      buildMiniAppKeyboard()
+    );
+    return;
+  }
+
   const menu = renderMainMenu(staff);
   await sendMessage(chatId, menu.text, menu.keyboard);
 }
@@ -699,9 +787,10 @@ async function handleCallback(callbackQuery) {
     return;
   }
 
-  if (data === 'today') {
-    const today = await getTodaySlots(staff);
-    const view = renderToday(today.date, today.slots);
+  if (data === 'today' || data.startsWith('schedule:')) {
+    const offset = data === 'today' ? 0 : normalizeScheduleOffset(data.split(':')[1]);
+    const schedule = await getScheduleDaySlots(staff, offset);
+    const view = renderScheduleDay(schedule.date, schedule.slots, schedule.offset);
     await editMessage(chatId, messageId, view.text, view.keyboard);
     await answerCallback(callbackQuery.id);
     return;
@@ -794,9 +883,12 @@ module.exports = {
   findStaffByTelegramId,
   formatDate,
   formatTime,
+  getCurrentWeekScheduleOffsets,
   getTodaySlots,
   parseFindReplySlotId,
   renderClientSearch,
+  renderMainMenu,
+  renderScheduleDay,
   renderToday,
   renderSlot,
   telegramRequest,

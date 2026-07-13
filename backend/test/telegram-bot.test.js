@@ -6,6 +6,8 @@ const {
   formatTime,
   parseFindReplySlotId,
   renderClientSearch,
+  renderMainMenu,
+  renderScheduleDay,
   renderToday,
   renderSlot,
 } = require('../src/services/telegram-bot');
@@ -27,6 +29,27 @@ test('today counter includes all clients returned by the schedule query', () => 
   }]);
 
   assert.equal(view.keyboard.inline_keyboard[0][0].text, '18:00 CrossFit (3/20)');
+});
+
+test('start menu uses a compact persistent reply keyboard', () => {
+  const view = renderMainMenu({ name: 'Анна' });
+
+  assert.match(view.text, /Привет, Анна/);
+  assert.equal(view.keyboard.is_persistent, true);
+  assert.deepEqual(view.keyboard.keyboard[0].map((button) => button.text), [
+    '📅 Расписание',
+    '👤 Личный кабинет',
+  ]);
+  assert.equal(JSON.stringify(view.keyboard).includes('web_app'), false);
+});
+
+test('schedule view includes navigation for the remaining week', () => {
+  const view = renderScheduleDay('2026-07-13', [], 0);
+  const callbacks = view.keyboard.inline_keyboard.flat().map((button) => button.callback_data);
+
+  assert.equal(callbacks.includes('schedule:0'), true);
+  assert.equal(callbacks.some((callback) => callback.startsWith('schedule:')), true);
+  assert.match(view.text, /Расписание/);
 });
 
 test('slot view never exposes a raw database date', () => {
