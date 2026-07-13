@@ -6,6 +6,7 @@ const {
   formatTime,
   parseFindReplySlotId,
   renderClientSearch,
+  renderCancelConfirmation,
   renderMainMenu,
   renderScheduleDay,
   renderToday,
@@ -100,6 +101,42 @@ test('slot view offers button-driven client search', () => {
     text: 'Добавить клиента',
     callback_data: 'find:42',
   }]);
+});
+
+test('confirmed booking can be cancelled only after confirmation', () => {
+  const slot = renderSlot({
+    slot: {
+      id: 42,
+      date: '2026-07-13',
+      start_time: '18:00:00',
+      capacity: 20,
+      training_type_name: 'CrossFit',
+    },
+    bookings: [{ id: 17, client_name: 'Иван Иванов', status: 'confirmed' }],
+  });
+  const cancelButton = slot.keyboard.inline_keyboard[0].find((button) => button.callback_data.startsWith('cancelask:'));
+
+  assert.equal(cancelButton.callback_data, 'cancelask:17:42');
+
+  const confirmation = renderCancelConfirmation(17, 42);
+  assert.equal(confirmation.keyboard.inline_keyboard[0][0].callback_data, 'cancel:17:42');
+  assert.equal(confirmation.keyboard.inline_keyboard[0][1].callback_data, 'slot:42');
+});
+
+test('attended booking must be unmarked before cancellation', () => {
+  const slot = renderSlot({
+    slot: {
+      id: 42,
+      date: '2026-07-13',
+      start_time: '18:00:00',
+      capacity: 20,
+      training_type_name: 'CrossFit',
+    },
+    bookings: [{ id: 17, client_name: 'Иван Иванов', status: 'attended' }],
+  });
+
+  assert.equal(JSON.stringify(slot.keyboard).includes('cancelask:'), false);
+  assert.equal(JSON.stringify(slot.keyboard).includes('unatt:17'), true);
 });
 
 test('client search reply keeps the selected slot without server-side state', () => {

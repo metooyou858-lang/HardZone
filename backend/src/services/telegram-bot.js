@@ -551,6 +551,47 @@ async function markBookingAsUnattended(staff, bookingId) {
   }
 }
 
+async function cancelBooking(staff, bookingId) {
+  requireStaffModule(staff, 'schedule_clients');
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `
+        SELECT b.id, b.slot_id, b.places_count
+        FROM bookings b
+        JOIN schedule_slots s ON s.id = b.slot_id
+        WHERE b.id = $1
+          AND b.status = 'confirmed'
+          AND (s.date + s.start_time) > (NOW() AT TIME ZONE $2)
+        FOR UPDATE OF b, s
+      `,
+      [bookingId, CLUB_TIME_ZONE]
+    );
+    const booking = rows[0];
+
+    if (!booking) {
+      const error = new Error('Запись не найдена, уже отменена или занятие началось');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    await client.query('DELETE FROM bookings WHERE id = $1', [booking.id]);
+    await client.query(
+      'UPDATE schedule_slots SET booked_count = GREATEST(booked_count - $1, 0), updated_at = NOW() WHERE id = $2',
+      [booking.places_count, booking.slot_id]
+    );
+    await client.query('COMMIT');
+    return Number(booking.slot_id);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 function renderMainMenu(staff) {
   return {
     text: [
@@ -611,6 +652,9 @@ function renderSlot(data) {
     return [
       { text: `${icon} ${booking.client_name}`, callback_data: `noop:${booking.id}` },
       action,
+      ...(booking.status === 'confirmed'
+        ? [{ text: 'Отменить', callback_data: `cancelask:${booking.id}:${slot.id}` }]
+        : []),
     ];
   });
 
@@ -654,6 +698,16 @@ function renderClientSearch(slotId, clients) {
       }]),
       [{ text: 'К занятию', callback_data: `slot:${slotId}` }],
     ]),
+  };
+}
+
+function renderCancelConfirmation(bookingId, slotId) {
+  return {
+    text: '<b>Отменить запись клиента?</b>\n\nМесто на занятии освободится. Это действие нельзя отменить.',
+    keyboard: buildKeyboard([[
+      { text: 'Да, отменить', callback_data: `cancel:${bookingId}:${slotId}` },
+      { text: 'Нет', callback_data: `slot:${slotId}` },
+    ]]),
   };
 }
 
@@ -814,6 +868,35 @@ async function handleCallback(callbackQuery) {
     return;
   }
 
+  if (data.startsWith('cancelask:')) {
+    const [, bookingIdRaw, slotIdRaw] = data.split(':');
+    const bookingId = Number.parseInt(bookingIdRaw, 10);
+    const slotId = Number.parseInt(slotIdRaw, 10);
+    const view = renderCancelConfirmation(bookingId, slotId);
+    await editMessage(chatId, messageId, view.text, view.keyboard);
+    await answerCallback(callbackQuery.id);
+    return;
+  }
+
+  if (data.startsWith('cancel:')) {
+    const [, bookingIdRaw, slotIdRaw] = data.split(':');
+    const bookingId = Number.parseInt(bookingIdRaw, 10);
+    const fallbackSlotId = Number.parseInt(slotIdRaw, 10);
+    try {
+      const slotId = await cancelBooking(staff, bookingId);
+      const view = await renderSlotForStaff(staff, slotId || fallbackSlotId);
+      await editMessage(chatId, messageId, view.text, view.keyboard);
+      await answerCallback(callbackQuery.id, 'Запись отменена');
+    } catch (error) {
+      await answerCallback(
+        callbackQuery.id,
+        String(error.message || 'Не удалось отменить запись').slice(0, 200),
+        { showAlert: true }
+      );
+    }
+    return;
+  }
+
   if (data.startsWith('att:')) {
     const bookingId = Number.parseInt(data.split(':')[1], 10);
     const slotId = await markBookingAsAttended(staff, bookingId);
@@ -887,6 +970,7 @@ module.exports = {
   getTodaySlots,
   parseFindReplySlotId,
   renderClientSearch,
+  renderCancelConfirmation,
   renderMainMenu,
   renderScheduleDay,
   renderToday,
