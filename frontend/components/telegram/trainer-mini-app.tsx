@@ -26,6 +26,10 @@ import {
 
 import { waitForTelegramInitData } from "./telegram-web-app-script";
 import type { IScannerControls } from "@zxing/browser";
+import { getBannerClass, formatMoney, type BannerState } from "@/components/sales/sales-shared";
+import { useSalesCatalog } from "@/components/sales/use-sales-catalog";
+import { useSalesOrder } from "@/components/sales/use-sales-order";
+import { findByBarcode, type Product } from "@/lib/api/products";
 
 declare global {
   interface Window {
@@ -44,7 +48,7 @@ declare global {
   }
 }
 
-type AppTab = "home" | "schedule" | "clients" | "profile";
+type AppTab = "home" | "schedule" | "sales" | "profile";
 type ScheduleMode = "list" | "detail" | "editor";
 type AuthMode = "checking" | "linked" | "telegram";
 type SlotEditorMode = "create" | "edit";
@@ -144,7 +148,7 @@ function usePreventMiniAppRubberBand(scrollRef: RefObject<HTMLElement | null>) {
 const tabLabels: Record<AppTab, string> = {
   home: "Главная",
   schedule: "Расписание",
-  clients: "Клиенты",
+  sales: "Продажа",
   profile: "Профиль",
 };
 
@@ -306,13 +310,12 @@ function tabIcon(tab: AppTab, active: boolean) {
     );
   }
 
-  if (tab === "clients") {
+  if (tab === "sales") {
     return (
       <svg {...common}>
-        <path d="M16 18a4 4 0 0 0-8 0" />
-        <circle cx="12" cy="9" r="3" />
-        <path d="M19 18a3 3 0 0 0-2-2.8" />
-        <path d="M17 7.2a2.5 2.5 0 0 1 0 4.6" />
+        <path d="M4 6h2l1.5 9h9l2-6H7" />
+        <circle cx="9" cy="19" r="1" />
+        <circle cx="17" cy="19" r="1" />
       </svg>
     );
   }
@@ -349,7 +352,7 @@ function AppHeader({ title, action }: { title?: string; action?: React.ReactNode
 }
 
 function BottomNav({ active, onChange }: { active: AppTab; onChange: (tab: AppTab) => void }) {
-  const tabs: AppTab[] = ["home", "schedule", "clients", "profile"];
+  const tabs: AppTab[] = ["home", "schedule", "sales", "profile"];
 
   return (
     <nav className="z-30 shrink-0 border-t border-[rgba(255,255,255,0.08)] bg-[rgba(8,11,16,0.96)] px-2 pb-[max(8px,env(safe-area-inset-bottom))] pt-2 backdrop-blur">
@@ -921,73 +924,6 @@ function LessonDetailsScreen({
   );
 }
 
-function ClientsScreen({
-  query,
-  results,
-  searching,
-  onQueryChange,
-  onSearch,
-  onScan,
-}: {
-  query: string;
-  results: StaffClientSearchResult[];
-  searching: boolean;
-  onQueryChange: (value: string) => void;
-  onSearch: () => void;
-  onScan: () => void;
-}) {
-  return (
-    <div className="space-y-4 px-4 pb-4 pt-4">
-      <section className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] p-3">
-        <input
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") onSearch();
-          }}
-          placeholder="Имя, телефон, штрихкод"
-          className="h-12 w-full rounded-lg border border-[var(--line-soft)] bg-[rgba(255,255,255,0.04)] px-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
-        />
-        <button
-          type="button"
-          onClick={onSearch}
-          disabled={searching}
-          className="mt-2 h-11 w-full rounded-lg bg-[var(--accent)] text-sm font-semibold text-[var(--text-inverse)] disabled:opacity-60"
-        >
-          {searching ? "Ищем..." : "Найти"}
-        </button>
-        <button
-          type="button"
-          onClick={onScan}
-          disabled={searching}
-          className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-[var(--line-soft)] text-sm font-semibold text-[var(--text-main)] disabled:opacity-60"
-        >
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-            <path d="M4 7V4h3M17 4h3v3M20 17v3h-3M7 20H4v-3M7 9v6M10 9v6M14 9v6M17 9v6" />
-          </svg>
-          Сканировать штрихкод
-        </button>
-      </section>
-
-      <section className="space-y-2">
-        {results.length === 0 ? (
-          <div className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] p-6 text-center text-sm text-[var(--text-muted)]">
-            Найдите клиента по имени, телефону или штрихкоду.
-          </div>
-        ) : (
-          results.map((client) => (
-            <article key={`${client.id}-${client.subscription_id || "no-sub"}`} className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] p-4">
-              <p className="font-semibold text-[var(--text-main)]">{clientName(client)}</p>
-              {client.phone ? <p className="mt-1 text-xs text-[var(--text-muted)]">{client.phone}</p> : null}
-              <p className="mt-2 text-sm text-[var(--accent)]">{subscriptionLabel(client)}</p>
-            </article>
-          ))
-        )}
-      </section>
-    </div>
-  );
-}
-
 function BarcodeScanner({ onDetected, onClose }: { onDetected: (value: string) => void; onClose: () => void }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const onDetectedRef = useRef(onDetected);
@@ -1054,6 +990,169 @@ function BarcodeScanner({ onDetected, onClose }: { onDetected: (value: string) =
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function SalesScreen({ modules }: { modules: string[] }) {
+  const [banner, setBanner] = useState<BannerState>(null);
+  const [scannerMode, setScannerMode] = useState<{ type: "product" } | { type: "marking"; lineKey: string } | null>(null);
+  const canCreateSales = modules.includes("sales_create");
+  const canPaySales = modules.includes("sales_pay");
+  const canRecoverSalesAqsi = modules.includes("sales_aqsi_recovery");
+  const catalogApi = useSalesCatalog({ enabled: true, setBanner });
+  const orderApi = useSalesOrder({
+    cashViewActive: true,
+    canCreateSales,
+    canPaySales,
+    canRecoverSalesAqsi,
+    setBanner,
+    onHistoryChanged: catalogApi.reloadCatalog,
+  });
+  const [scanBusy, setScanBusy] = useState(false);
+
+  async function addProduct(product: Product) {
+    if (!canCreateSales || orderApi.orderLocked) return;
+    await orderApi.addCatalogProduct(product);
+  }
+
+  async function handleScannedValue(value: string) {
+    const mode = scannerMode;
+    setScannerMode(null);
+    if (!mode) return;
+    if (mode.type === "marking") {
+      orderApi.setMarkingDraftValue(mode.lineKey, value);
+      setBanner({ tone: "success", text: "Код маркировки считан" });
+      return;
+    }
+
+    setScanBusy(true);
+    setBanner(null);
+    try {
+      const product = await findByBarcode(value);
+      await addProduct(product);
+    } catch (error) {
+      setBanner({ tone: "error", text: error instanceof Error ? error.message : "Товар не найден" });
+    } finally {
+      setScanBusy(false);
+    }
+  }
+
+  if (!modules.includes("sales")) {
+    return <div className="px-4 py-8 text-center text-sm text-[var(--text-muted)]">Нет доступа к продажам.</div>;
+  }
+
+  return (
+    <div className="space-y-4 px-4 pb-5 pt-4">
+      {banner ? <div className={`rounded-lg border p-3 text-sm ${getBannerClass(banner.tone)}`}>{banner.text}</div> : null}
+
+      {!canCreateSales || !canPaySales ? (
+        <div className="rounded-lg border border-[rgba(255,160,0,0.3)] bg-[rgba(255,160,0,0.08)] p-3 text-sm text-[var(--warning)]">
+          Для полной продажи нужны права «Создание продаж» и «Оплата продаж».
+        </div>
+      ) : null}
+
+      <section className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] p-3">
+        <div className="flex gap-2">
+          <input
+            value={catalogApi.query}
+            onChange={(event) => catalogApi.setQuery(event.target.value)}
+            placeholder="Название, артикул, штрихкод"
+            className="h-11 min-w-0 flex-1 rounded-lg border border-[var(--line-soft)] bg-[rgba(255,255,255,0.04)] px-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
+          />
+          <button
+            type="button"
+            onClick={() => setScannerMode({ type: "product" })}
+            disabled={!canCreateSales || scanBusy || orderApi.orderLocked}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[var(--line-soft)] text-[var(--text-main)] disabled:opacity-40"
+            aria-label="Сканировать товар"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+              <path d="M4 7V4h3M17 4h3v3M20 17v3h-3M7 20H4v-3M7 9v6M10 9v6M14 9v6M17 9v6" />
+            </svg>
+          </button>
+        </div>
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+          {catalogApi.catalogGroups.map((group) => (
+            <button
+              key={group.id}
+              type="button"
+              onClick={() => { catalogApi.setQuery(""); catalogApi.setSelectedCatalogGroup(group.id); }}
+              className={`h-9 shrink-0 rounded-full px-3 text-xs ${catalogApi.selectedCatalogGroup === group.id && !catalogApi.query ? "bg-[var(--accent)] text-[var(--text-inverse)]" : "border border-[var(--line-soft)] text-[var(--text-muted)]"}`}
+            >
+              {group.label}
+            </button>
+          ))}
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {catalogApi.catalogLoading ? <p className="col-span-2 py-5 text-center text-sm text-[var(--text-muted)]">Загружаем товары...</p> : null}
+          {!catalogApi.catalogLoading && catalogApi.catalog.length === 0 ? <p className="col-span-2 py-5 text-center text-sm text-[var(--text-muted)]">Товары не найдены</p> : null}
+          {catalogApi.catalog.map((product) => (
+            <button
+              key={product.id}
+              type="button"
+              onClick={() => void addProduct(product)}
+              disabled={!canCreateSales || orderApi.orderLocked || (product.has_stock && product.stock <= 0)}
+              className="min-h-24 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-left disabled:opacity-40"
+            >
+              <p className="line-clamp-2 text-sm font-semibold text-[var(--text-main)]">{product.name}</p>
+              <p className="mt-2 text-sm text-[var(--accent)]">{formatMoney(product.sale_price || 0)}</p>
+              {product.has_stock ? <p className="mt-1 text-[10px] text-[var(--text-muted)]">Остаток: {product.stock}</p> : null}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] p-3">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-[var(--text-main)]">Корзина</h2>
+          <span className="text-xs text-[var(--text-muted)]">{orderApi.basketLines.reduce((sum, line) => sum + line.quantity, 0)} шт.</span>
+        </div>
+        {orderApi.basketLines.length === 0 ? <p className="py-6 text-center text-sm text-[var(--text-muted)]">Добавьте товар</p> : null}
+        <div className="mt-2 space-y-2">
+          {orderApi.basketLines.map((line) => (
+            <article key={line.key} className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] p-3">
+              <div className="flex justify-between gap-3">
+                <div className="min-w-0"><p className="truncate text-sm font-semibold text-[var(--text-main)]">{line.name}</p><p className="mt-1 text-xs text-[var(--text-muted)]">{formatMoney(line.salePrice)} × {line.quantity}</p></div>
+                <p className="shrink-0 text-sm font-semibold text-[var(--text-main)]">{formatMoney(line.total)}</p>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <button type="button" onClick={() => void orderApi.decrementLine(line)} disabled={orderApi.orderLocked} className="h-9 w-10 rounded-lg border border-[var(--line-soft)]">−</button>
+                <span className="min-w-8 text-center text-sm">{line.quantity}</span>
+                <button type="button" onClick={() => void orderApi.incrementLine(line)} disabled={orderApi.orderLocked} className="h-9 w-10 rounded-lg border border-[var(--line-soft)]">+</button>
+                <button type="button" onClick={() => void orderApi.removeLine(line)} disabled={orderApi.orderLocked} className="ml-auto h-9 px-3 text-xs text-[#ffb599]">Удалить</button>
+              </div>
+              {line.markingRequired ? (
+                <button type="button" onClick={() => setScannerMode({ type: "marking", lineKey: line.key })} disabled={orderApi.orderLocked} className={`mt-2 h-10 w-full rounded-lg border text-xs font-semibold ${orderApi.markingDrafts[line.key] ? "border-[rgba(63,185,80,0.35)] text-[var(--success)]" : "border-[rgba(255,160,0,0.35)] text-[var(--warning)]"}`}>
+                  {orderApi.markingDrafts[line.key] ? "Маркировка считана ✓" : "Сканировать маркировку"}
+                </button>
+              ) : null}
+            </article>
+          ))}
+        </div>
+
+        {orderApi.serviceRequiresClient ? (
+          <div className="mt-3 rounded-lg border border-[var(--line-soft)] p-3">
+            <p className="mb-2 text-xs text-[var(--text-muted)]">Клиент для услуги</p>
+            {orderApi.selectedClient ? (
+              <div className="flex items-center justify-between gap-2"><span className="text-sm">{clientName(orderApi.selectedClient)}</span><button type="button" onClick={() => orderApi.setSelectedClient(null)} className="text-xs text-[#ffb599]">Сменить</button></div>
+            ) : (
+              <>
+                <input value={orderApi.clientQuery} onChange={(event) => orderApi.setClientQuery(event.target.value)} onKeyDown={orderApi.handleClientSearchKeyDown} placeholder="Введите клиента и нажмите Enter" className="h-10 w-full rounded-lg border border-[var(--line-soft)] bg-transparent px-3 text-sm outline-none" />
+                <div className="mt-2 space-y-1">{orderApi.clientResults.map((client) => <button key={client.id} type="button" onClick={() => void orderApi.applyClientSelection(client)} className="w-full rounded-lg border border-[var(--line-soft)] p-2 text-left text-sm">{clientName(client)}</button>)}</div>
+              </>
+            )}
+          </div>
+        ) : null}
+
+        <div className="mt-4 flex items-end justify-between"><span className="text-xs uppercase tracking-wider text-[var(--text-muted)]">Итого</span><span className="text-2xl font-semibold text-[var(--text-main)]">{formatMoney(orderApi.order?.total_amount || 0)}</span></div>
+        {orderApi.paymentBusy ? <div className="mt-3 rounded-lg bg-[rgba(94,244,216,0.08)] p-3 text-center text-sm text-[var(--accent)]">Ожидаем операцию на кассе...</div> : null}
+        <button type="button" onClick={() => void orderApi.handleInitiatePayment()} disabled={!canPaySales || orderApi.orderLocked || orderApi.basketLines.length === 0 || orderApi.sendBlockedByClient || orderApi.sendBlockedByMarking} className="mt-3 h-12 w-full rounded-lg bg-[var(--accent)] text-sm font-semibold text-[var(--text-inverse)] disabled:opacity-40">Оплата картой</button>
+        <button type="button" onClick={() => { if (window.confirm("Подтвердить оплату наличными и отправить чек на кассу?")) void orderApi.handleConfirmCash(); }} disabled={!canPaySales || orderApi.orderLocked || orderApi.basketLines.length === 0 || orderApi.sendBlockedByClient || orderApi.sendBlockedByMarking} className="mt-2 h-11 w-full rounded-lg border border-[var(--line-soft)] text-sm font-semibold disabled:opacity-40">Оплата наличными</button>
+        {orderApi.receiptError && canRecoverSalesAqsi ? <button type="button" onClick={() => void orderApi.handleSyncV4()} className="mt-2 h-11 w-full rounded-lg border border-[var(--warning)] text-sm text-[var(--warning)]">Восстановить фискализацию</button> : null}
+      </section>
+
+      {scannerMode ? <BarcodeScanner onClose={() => setScannerMode(null)} onDetected={(value) => void handleScannedValue(value)} /> : null}
     </div>
   );
 }
@@ -1131,14 +1230,11 @@ export function TrainerMiniApp() {
   const [slotEditor, setSlotEditor] = useState<SlotEditorState | null>(null);
   const [slotSaving, setSlotSaving] = useState(false);
   const [query, setQuery] = useState("");
-  const [clientQuery, setClientQuery] = useState("");
   const [results, setResults] = useState<StaffClientSearchResult[]>([]);
-  const [clientResults, setClientResults] = useState<StaffClientSearchResult[]>([]);
-  const [barcodeScannerTarget, setBarcodeScannerTarget] = useState<"clients" | "booking" | null>(null);
+  const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [slotLoading, setSlotLoading] = useState(false);
   const [searching, setSearching] = useState(false);
-  const [clientSearching, setClientSearching] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [authMode, setAuthMode] = useState<AuthMode>("checking");
@@ -1359,25 +1455,6 @@ export function TrainerMiniApp() {
     }
   }
 
-  async function runClientSearch(searchValue = clientQuery) {
-    const normalizedQuery = searchValue.trim();
-    if (normalizedQuery.length < 2) {
-      setClientResults([]);
-      return;
-    }
-
-    setClientSearching(true);
-    setError("");
-    try {
-      setClientQuery(normalizedQuery);
-      setClientResults(await searchStaffClients(normalizedQuery));
-    } catch (searchError) {
-      setError(searchError instanceof Error ? searchError.message : "Не удалось найти клиента");
-    } finally {
-      setClientSearching(false);
-    }
-  }
-
   async function bookClient(client: StaffClientSearchResult, allowUnpaid = false) {
     if (!selectedSlotId) return;
     setBusyId(`client-${client.id}`);
@@ -1539,7 +1616,7 @@ export function TrainerMiniApp() {
             onBack={() => setScheduleMode("list")}
             onQueryChange={setQuery}
             onSearch={() => void runSearch()}
-            onScan={() => setBarcodeScannerTarget("booking")}
+            onScan={() => setBarcodeScannerOpen(true)}
             onBookClient={(client, allowUnpaid) => void bookClient(client, allowUnpaid)}
             onToggleAttend={(booking) => void toggleAttend(booking)}
             onCancelBooking={(booking) => void cancelClientBooking(booking)}
@@ -1563,15 +1640,8 @@ export function TrainerMiniApp() {
           />
         ) : null}
 
-        {activeTab === "clients" ? (
-          <ClientsScreen
-            query={clientQuery}
-            results={clientResults}
-            searching={clientSearching}
-            onQueryChange={setClientQuery}
-            onSearch={() => void runClientSearch()}
-            onScan={() => setBarcodeScannerTarget("clients")}
-          />
+        {activeTab === "sales" ? (
+          <SalesScreen modules={modules} />
         ) : null}
 
         {activeTab === "profile" ? (
@@ -1580,17 +1650,12 @@ export function TrainerMiniApp() {
       </div>
 
       <BottomNav active={activeTab} onChange={changeTab} />
-      {barcodeScannerTarget ? (
+      {barcodeScannerOpen ? (
         <BarcodeScanner
-          onClose={() => setBarcodeScannerTarget(null)}
+          onClose={() => setBarcodeScannerOpen(false)}
           onDetected={(value) => {
-            const target = barcodeScannerTarget;
-            setBarcodeScannerTarget(null);
-            if (target === "booking") {
-              void runSearch(value);
-            } else {
-              void runClientSearch(value);
-            }
+            setBarcodeScannerOpen(false);
+            void runSearch(value);
           }}
         />
       ) : null}
