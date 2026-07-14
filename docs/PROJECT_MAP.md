@@ -39,7 +39,6 @@ HardZone - monorepo CRM для CrossFit-клуба:
 - Frontend PM2: `hardzone-frontend`, local port `3001`.
 - Public ports: `22`, `80`, `443`.
 - Internal-only ports: `3000`, `3001`, `5432`.
-- Old server `80.66.87.178` must not be used unless explicitly requested.
 
 ## Current Stabilization
 
