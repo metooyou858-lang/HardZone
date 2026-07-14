@@ -160,6 +160,7 @@ async function getAqsiShiftStatus({ force = false } = {}) {
   if (
     !force &&
     aqsiShiftStatusCache &&
+    aqsiShiftStatusCache.status.open === true &&
     cacheMs > 0 &&
     now - aqsiShiftStatusCache.cachedAtMs <= cacheMs
   ) {
