@@ -57,13 +57,13 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: hardzone
+          POSTGRES_DB: hardzone_test
           POSTGRES_USER: hardzone
           POSTGRES_PASSWORD: hardzone
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U hardzone -d hardzone"
+          --health-cmd "pg_isready -U hardzone -d hardzone_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -73,7 +73,7 @@ jobs:
         working-directory: backend
 
     env:
-      DATABASE_URL: postgres://hardzone:hardzone@127.0.0.1:5432/hardzone
+      DATABASE_URL: postgres://hardzone:hardzone@127.0.0.1:5432/hardzone_test
       HARDZONE_SESSION_SECRET: ci-session-secret
       BACKEND_API_TOKEN: ci-api-token
       NODE_ENV: test
