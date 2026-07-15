@@ -157,6 +157,26 @@ ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "su - app -c 'pm2 logs in
 ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "su - app -c 'pm2 logs hardzone-frontend --lines 200 --nostream'"
 ```
 
+## Nginx configuration
+
+The canonical production virtual host is stored in `infrastructure/nginx/hardzone.conf`.
+The Telegram staff Mini App needs `Permissions-Policy: camera=(self)` for barcode
+scanning on Android. Do not replace it with `camera=()`: Chromium WebView will
+show the permission prompt and then reject camera access with `Permission denied`.
+
+After changing the server copy, validate and reload nginx:
+
+```powershell
+ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "nginx -t && systemctl reload nginx"
+curl.exe -I https://hardzone.space/telegram/trainer
+```
+
+The response must contain:
+
+```text
+Permissions-Policy: camera=(self),microphone=(),geolocation=()
+```
+
 ## Smoke Checks
 
 Local:
