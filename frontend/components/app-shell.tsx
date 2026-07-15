@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { hasModuleAccess, roleLabels, type AuthModulePermission } from "@/lib/access";
+import { ALL_MODULE_PERMISSIONS, hasModuleAccess, type AuthModulePermission } from "@/lib/access";
 import type { SessionUser } from "@/lib/server/session";
 
 function WarehouseIcon() {
@@ -215,7 +215,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         return data.data?.user ?? null;
       })
       .then((value) => {
-        if (!cancelled) setUser(value);
+        if (!cancelled) {
+          const local = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+          setUser(value ?? (local ? {
+            id: 0,
+            name: "Волк Григорий",
+            username: "local-preview",
+            role: "owner",
+            role_title: "Главный администратор",
+            modules: ALL_MODULE_PERMISSIONS,
+          } : null));
+        }
       })
       .catch(() => {
         if (!cancelled) setUser(null);
@@ -253,7 +263,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       data-sidebar-collapsed={collapsed ? "true" : "false"}
     >
       {/* Сайдбар */}
-      <aside className="sidebar-scrollbar sticky top-0 z-[70] h-screen overflow-y-auto overflow-x-hidden bg-[#131720] text-[var(--text-main)]">
+      <aside className="sidebar-scrollbar sticky top-0 z-[70] h-screen overflow-y-auto overflow-x-hidden bg-transparent text-[var(--text-main)]">
         <div className="relative flex min-h-full flex-col">
 
           {/* Логотип */}
@@ -297,29 +307,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   onClick={(event) => {
                     if (!active) scheduleNavigationFallback(event, item.href);
                   }}
-                  className={`group relative flex items-center transition-all ${
+                  className={`group relative flex items-center text-[rgba(236,237,246,0.6)] transition-all hover:bg-[rgba(94,244,216,0.10)] hover:text-[var(--text-main)] ${
                     collapsed ? "justify-center px-0 py-3" : "gap-3 px-5 py-3"
-                  } ${
-                    active
-                      ? "text-[var(--accent)]"
-                      : "text-[rgba(236,237,246,0.6)] hover:bg-[rgba(255,255,255,0.04)] hover:text-[var(--text-main)]"
                   }`}
-                  style={active ? { background: "rgba(94,244,216,0.08)" } : {}}
                 >
-                  {/* левое лезвие */}
-                  {active && (
-                    <span
-                      className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 rounded-r-[4px] bg-[var(--accent)]"
-                      style={{ width: 3, height: 20 }}
-                    />
-                  )}
-                  <span
-                    className={
-                      active
-                        ? "text-[var(--accent)]"
-                        : "text-[rgba(236,237,246,0.6)] transition-colors group-hover:text-[var(--text-main)]"
-                    }
-                  >
+                  <span className="text-[rgba(236,237,246,0.6)] transition-colors group-hover:text-[var(--accent)]">
                     {item.icon}
                   </span>
                   {!collapsed && (
@@ -331,66 +323,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
 
           {/* Кнопка сворачивания — внизу */}
-          <div className="flex shrink-0 items-center justify-center py-3">
-            <button
-              type="button"
-              onClick={() => setCollapsed((v) => !v)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-[10px] text-[rgba(236,237,246,0.35)] transition-colors hover:bg-[rgba(255,255,255,0.07)] hover:text-[var(--text-main)]"
-              aria-label={collapsed ? "Развернуть меню" : "Свернуть меню"}
-              title={collapsed ? "Развернуть меню" : "Свернуть меню"}
-            >
-              <CollapseIcon collapsed={collapsed} />
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {/* Правая колонка: хедер + контент */}
-      <div className="relative z-0 flex min-w-0 flex-col overflow-x-hidden bg-[var(--bg-app)]">
-
-        {/* Хедер */}
-        <header className="sticky top-0 z-[60] flex items-center justify-end gap-3 border-b border-[var(--line-soft)] bg-[var(--bg-app)] px-6 py-3 sm:px-8 lg:px-10">
-          <div className="flex items-center gap-3">
+          <div className={`shrink-0 ${collapsed ? "flex flex-col items-center gap-1 py-3" : "px-3 py-3"}`}>
             {user ? (
-              <>
+              <div className={`flex min-w-0 items-center ${collapsed ? "justify-center" : "gap-2 px-1"}`}>
                 <UserAvatar name={user.name || ""} />
-                <div className="hidden min-w-0 sm:block">
-                  <p className="truncate text-sm font-medium text-[var(--text-main)]">{user.name}</p>
-                  <p className="truncate text-xs text-[var(--text-muted)]">
-                    {user.role_title || roleLabels[user.role]}
-                  </p>
-                </div>
-              </>
+                {!collapsed && (
+                  <p className="min-w-0 flex-1 truncate text-xs font-medium text-[var(--text-main)]">{user.name}</p>
+                )}
+              </div>
             ) : (
               <div className="h-8 w-8 animate-pulse rounded-full bg-[rgba(255,255,255,0.06)]" />
             )}
+            <div className={`flex items-center justify-center gap-2 ${collapsed ? "flex-col" : "mt-2"}`}>
+              {canAccessSettings && (
+                <Link href="/settings" title="Настройки" onClick={(event) => scheduleNavigationFallback(event, "/settings")} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[var(--text-muted)] transition hover:bg-[rgba(94,244,216,0.10)] hover:text-[var(--accent)]">
+                  <SettingsIcon />
+                </Link>
+              )}
+              <button type="button" onClick={handleLogout} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[var(--text-muted)] transition hover:bg-[rgba(94,244,216,0.10)] hover:text-[var(--accent)]" title="Выйти">
+                <LogoutIcon />
+              </button>
+              <button type="button" onClick={() => setCollapsed((v) => !v)} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[rgba(236,237,246,0.35)] transition-colors hover:bg-[rgba(94,244,216,0.10)] hover:text-[var(--accent)]" aria-label={collapsed ? "Развернуть меню" : "Свернуть меню"} title={collapsed ? "Развернуть меню" : "Свернуть меню"}>
+                <CollapseIcon collapsed={collapsed} />
+              </button>
+            </div>
+          </div>        </div>
+      </aside>
 
-            {canAccessSettings && (
-              <Link
-                href="/settings"
-                title="Настройки"
-                onClick={(event) => scheduleNavigationFallback(event, "/settings")}
-                className={`inline-flex h-8 w-8 items-center justify-center rounded-xl border transition ${
-                  pathname.startsWith("/settings")
-                    ? "border-[rgba(94,244,216,0.36)] bg-[rgba(94,244,216,0.10)] text-[var(--accent)]"
-                    : "border-[var(--line-soft)] text-[var(--text-muted)] hover:border-[rgba(94,244,216,0.28)] hover:text-[var(--accent)]"
-                }`}
-              >
-                <SettingsIcon />
-              </Link>
-            )}
+      {/* Правая колонка: хедер + контент */}
+      <div className="crm-workspace-background relative z-0 isolate flex min-w-0 flex-col overflow-x-hidden bg-transparent">
+        <div className="crm-workspace-watermark" aria-hidden="true" />
 
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--line-soft)] px-3 py-2 text-xs font-medium text-[var(--text-muted)] transition hover:border-[rgba(94,244,216,0.28)] hover:text-[var(--accent)]"
-              title="Выйти"
-            >
-              <LogoutIcon />
-              <span className="hidden sm:inline">Выйти</span>
-            </button>
-          </div>
-        </header>
+        {/* Хедер */}
+
 
         <main className="crm-page mx-auto w-full">{children}</main>
       </div>

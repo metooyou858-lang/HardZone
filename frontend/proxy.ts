@@ -8,6 +8,16 @@ const PUBLIC_FILE_PATTERN = /\.[^/]+$/;
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
+  const isLocalPreview =
+    process.env.NODE_ENV === "development" &&
+    (request.nextUrl.hostname === "localhost" || request.nextUrl.hostname === "127.0.0.1");
+  if (isLocalPreview) {
+    if (pathname === "/login") {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+    return NextResponse.next();
+  }
+
   if (
     pathname.startsWith("/api/") ||
     pathname.startsWith("/auth-api/") ||

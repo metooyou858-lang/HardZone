@@ -110,6 +110,57 @@ select {
   grid-template-columns: var(--sidebar-width, 200px) minmax(0, 1fr);
 }
 
+.crm-workspace-background::before,
+.crm-workspace-background > * {
+  position: relative;
+  z-index: 1;
+}
+
+.crm-workspace-background::after {
+  content: "";
+  position: fixed;
+  pointer-events: none;
+}
+
+.crm-workspace-background::before {
+  inset: 0 0 0 var(--sidebar-width, 200px);
+  z-index: 0;
+  opacity: 0.22;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(circle at 48% 42%, #000 16%, transparent 76%);
+}
+
+.crm-workspace-background > * {
+  position: relative;
+  z-index: 1;
+}
+
+.crm-workspace-background::after {
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(circle at 18% 10%, rgba(94, 244, 216, 0.12), transparent 31%),
+    radial-gradient(circle at 92% 88%, rgba(144, 147, 255, 0.09), transparent 32%);
+}
+
+
+.crm-workspace-watermark {
+  position: fixed;
+  left: calc(var(--sidebar-width, 200px) + (100vw - var(--sidebar-width, 200px)) / 2);
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 0;
+  width: min(78vw, 1050px);
+  height: min(88vh, 1050px);
+  aspect-ratio: 1;
+  pointer-events: none;
+  background: url("/hardzone-watermark-square.png") center / contain no-repeat;
+  filter: invert(1);
+  opacity: 0.04;
+}
 .crm-page {
   max-width: min(100%, 1480px);
   padding: 1.5rem;
