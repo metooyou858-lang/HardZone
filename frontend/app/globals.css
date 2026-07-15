@@ -83,6 +83,7 @@ html {
 
 body {
   min-height: 100vh;
+  overflow-x: hidden;
   margin: 0;
   background:
     radial-gradient(circle at top left,  rgba(94, 244, 216, 0.07), transparent 25%),
@@ -106,7 +107,8 @@ select {
 
 .app-grid {
   display: grid;
-  min-height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   grid-template-columns: var(--sidebar-width, 200px) minmax(0, 1fr);
 }
 

@@ -263,7 +263,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       data-sidebar-collapsed={collapsed ? "true" : "false"}
     >
       {/* Сайдбар */}
-      <aside className="sidebar-scrollbar sticky top-0 z-[70] h-screen overflow-y-auto overflow-x-hidden bg-transparent text-[var(--text-main)]">
+      <aside className="sidebar-scrollbar z-[70] h-dvh overflow-y-auto overflow-x-hidden bg-transparent text-[var(--text-main)]">
         <div className="relative flex min-h-full flex-col">
 
           {/* Логотип */}
@@ -351,13 +351,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Правая колонка: хедер + контент */}
-      <div className="crm-workspace-background relative z-0 isolate flex min-w-0 flex-col overflow-x-hidden bg-transparent">
+      <div className="crm-workspace-background relative z-0 isolate flex h-dvh min-h-0 min-w-0 flex-col bg-transparent">
         <div className="crm-workspace-watermark" aria-hidden="true" />
 
         {/* Хедер */}
 
 
-        <main className="crm-page mx-auto w-full">{children}</main>
+        <main className="crm-page mx-auto min-h-0 w-full flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>
   );
