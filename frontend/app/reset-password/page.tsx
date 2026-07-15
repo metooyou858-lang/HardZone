@@ -1,315 +1,112 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
-import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, useEffect, useState } from "react";
+import styles from "../auth.module.css";
 
-type ResetUser = {
-  id: number;
-  name: string;
-  username: string;
-  email: string | null;
-};
+type ResetUser = { id: number; name: string; username: string; email: string | null };
 
-function ForgotPasswordForm() {
+function EyeButton({ visible, onToggle }: { visible: boolean; onToggle: () => void }) {
+  return (
+    <button className={styles.eyeButton} type="button" onClick={onToggle} aria-label={visible ? "Скрыть пароль" : "Показать пароль"} aria-pressed={visible}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12S6.8 6.7 12 6.7 20.5 12 20.5 12 17.2 17.3 12 17.3 3.5 12 3.5 12z" /><circle cx="12" cy="12" r="2.4" />{visible ? <path d="M4 4l16 16" /> : null}</svg>
+    </button>
+  );
+}
+
+function RequestResetForm() {
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [sent, setSent] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
     setError("");
-    setSuccess("");
-
     try {
-      const response = await fetch("/auth-api/password-reset", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email }),
-      });
-
+      const response = await fetch("/auth-api/password-reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
       const data = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(data.error || "Не удалось отправить новый пароль");
-      }
-
-      setSuccess(
-        "Если сотрудник с таким email существует, на эту почту отправлен новый временный пароль. После входа его лучше сразу сменить."
-      );
-      setEmail("");
+      if (!response.ok) throw new Error(data.error || "Не удалось отправить ссылку");
+      setSent(true);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Не удалось отправить новый пароль");
+      setError(submitError instanceof Error ? submitError.message : "Не удалось отправить ссылку");
     } finally {
       setSubmitting(false);
     }
   }
 
+  if (sent) {
+    return <div className={styles.successPanel} role="status"><span className={styles.successMark}>✓</span><strong>Проверьте почту</strong><p>Если сотрудник с таким email существует, ссылка для создания нового пароля уже отправлена.</p><Link className={styles.reset} href="/login">Вернуться ко входу</Link></div>;
+  }
+
   return (
-    <>
-      <div className="mb-8">
-        <p className="font-[family:var(--font-mono)] text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">
-          HardZone CRM
-        </p>
-        <h1 className="mt-3 font-[family:var(--font-heading)] text-3xl font-semibold tracking-tight text-[var(--text-main)]">
-          Восстановление доступа
-        </h1>
-        <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">
-          Введите email сотрудника. Система сгенерирует новый временный пароль и отправит его на эту почту.
-        </p>
-      </div>
-
-      <form className="space-y-5" onSubmit={handleSubmit}>
-        <label className="block">
-          <span className="mb-2 block text-sm font-medium text-[var(--text-main)]">Email сотрудника</span>
-          <input
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            autoComplete="email"
-            className="w-full rounded-2xl border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[var(--text-main)] outline-none transition focus:border-[var(--accent)]"
-            placeholder="you@hardzone.ru"
-          />
-        </label>
-
-        {error ? (
-          <div className="rounded-2xl border border-[rgba(255,107,107,0.28)] bg-[rgba(255,107,107,0.08)] px-4 py-3 text-sm text-[#ffb4b4]">
-            {error}
-          </div>
-        ) : null}
-
-        {success ? (
-          <div className="rounded-2xl border border-[rgba(0,191,165,0.24)] bg-[rgba(0,191,165,0.08)] px-4 py-3 text-sm text-[var(--text-main)]">
-            {success}
-          </div>
-        ) : null}
-
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            disabled={submitting}
-            className="inline-flex items-center justify-center rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[#04120f] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {submitting ? "Готовим пароль..." : "Отправить новый пароль"}
-          </button>
-          <Link
-            href="/login"
-            className="inline-flex items-center rounded-2xl border border-[var(--line-soft)] px-4 py-3 text-sm font-medium text-[var(--text-main)] transition hover:border-[rgba(0,191,165,0.24)] hover:text-[var(--accent)]"
-          >
-            К входу
-          </Link>
-        </div>
-      </form>
-    </>
+    <form onSubmit={handleSubmit} className={styles.form}>
+      <label><span>Email сотрудника</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" placeholder="name@hardzone.space" required /></label>
+      {error ? <div className={styles.errorPanel} role="alert">{error}</div> : null}
+      <button className={styles.submit} type="submit" disabled={submitting}><span className={styles.buttonLabel}>{submitting ? "Отправляем…" : "Получить ссылку"}</span><span className={styles.mailIcon} aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3" /><path d="M4 7l8 6 8-6" /></svg></span></button>
+    </form>
   );
 }
 
-function TokenResetForm({ token }: { token: string }) {
+function SetPasswordForm({ token }: { token: string }) {
+  const [user, setUser] = useState<ResetUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [password, setPassword] = useState("");
+  const [repeat, setRepeat] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showRepeat, setShowRepeat] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [user, setUser] = useState<ResetUser | null>(null);
-  const [password, setPassword] = useState("");
-  const [passwordRepeat, setPasswordRepeat] = useState("");
-
-  const canSubmit = useMemo(
-    () => Boolean(user && password.trim() && passwordRepeat.trim() && !submitting),
-    [password, passwordRepeat, submitting, user]
-  );
+  const [done, setDone] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-
-    fetch(`/auth-api/password-reset?token=${encodeURIComponent(token)}`, {
-      credentials: "same-origin",
-      cache: "no-store",
-    })
-      .then(async (response) => {
-        const data = (await response.json()) as {
-          error?: string;
-          data?: { user?: ResetUser };
-        };
-
-        if (!response.ok || !data.data?.user) {
-          throw new Error(data.error || "Ссылка восстановления недействительна");
-        }
-
-        if (!cancelled) {
-          setUser(data.data.user);
-          setError("");
-        }
-      })
-      .catch((loadError) => {
-        if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Ссылка восстановления недействительна");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    fetch(`/auth-api/password-reset?token=${encodeURIComponent(token)}`, { credentials: "same-origin", cache: "no-store" })
+      .then(async (response) => { const data = (await response.json()) as { error?: string; data?: { user?: ResetUser } }; if (!response.ok || !data.data?.user) throw new Error(data.error || "Ссылка недействительна или истекла"); if (!cancelled) setUser(data.data.user); })
+      .catch((loadError) => { if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Ссылка недействительна или истекла"); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [token]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSubmitting(true);
     setError("");
-    setSuccess("");
-
+    if (password.length < 8) return setError("Пароль должен быть не короче 8 символов");
+    if (password !== repeat) return setError("Пароли не совпадают");
+    setSubmitting(true);
     try {
-      if (password.trim().length < 8) {
-        throw new Error("Пароль должен быть не короче 8 символов");
-      }
-
-      if (password !== passwordRepeat) {
-        throw new Error("Пароли не совпадают");
-      }
-
-      const response = await fetch("/auth-api/password-reset", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ token, password }),
-      });
-
+      const response = await fetch("/auth-api/password-reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, password }) });
       const data = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(data.error || "Не удалось изменить пароль");
-      }
-
-      setSuccess("Пароль обновлён. Теперь можно войти в CRM под своей учётной записью.");
-      setPassword("");
-      setPasswordRepeat("");
+      if (!response.ok) throw new Error(data.error || "Не удалось сохранить пароль");
+      setDone(true);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Не удалось изменить пароль");
-    } finally {
-      setSubmitting(false);
-    }
+      setError(submitError instanceof Error ? submitError.message : "Не удалось сохранить пароль");
+    } finally { setSubmitting(false); }
   }
 
-  if (loading) {
-    return (
-      <div className="rounded-2xl border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] px-4 py-4 text-sm text-[var(--text-muted)]">
-        Проверяем ссылку восстановления...
-      </div>
-    );
-  }
+  if (loading) return <div className={styles.statusPanel}>Проверяем ссылку восстановления…</div>;
+  if (done) return <div className={styles.successPanel} role="status"><span className={styles.successMark}>✓</span><strong>Пароль обновлён</strong><p>Теперь можно войти в CRM с новым паролем.</p><Link className={styles.reset} href="/login">Перейти ко входу</Link></div>;
+  if (!user) return <div className={styles.errorPanel} role="alert">{error}</div>;
 
   return (
-    <>
-      <div className="mb-8">
-        <p className="font-[family:var(--font-mono)] text-xs uppercase tracking-[0.24em] text-[var(--text-muted)]">
-          HardZone CRM
-        </p>
-        <h1 className="mt-3 font-[family:var(--font-heading)] text-3xl font-semibold tracking-tight text-[var(--text-main)]">
-          Смена пароля сотрудника
-        </h1>
-        <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">
-          Одноразовая ссылка позволяет сотруднику самостоятельно задать новый пароль.
-        </p>
-      </div>
-
-      {user ? (
-        <div className="mb-5 rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.03)] px-4 py-4 text-sm text-[var(--text-main)]">
-          <p className="font-medium">{user.name}</p>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">{user.email || user.username}</p>
-        </div>
-      ) : null}
-
-      {error && !user ? (
-        <div className="rounded-2xl border border-[rgba(255,107,107,0.28)] bg-[rgba(255,107,107,0.08)] px-4 py-4 text-sm text-[#ffb4b4]">
-          {error}
-        </div>
-      ) : null}
-
-      {user ? (
-        <form className="space-y-5" onSubmit={handleSubmit}>
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-[var(--text-main)]">Новый пароль</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="new-password"
-              className="w-full rounded-2xl border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[var(--text-main)] outline-none transition focus:border-[var(--accent)]"
-            />
-          </label>
-
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-[var(--text-main)]">Повторите пароль</span>
-            <input
-              type="password"
-              value={passwordRepeat}
-              onChange={(event) => setPasswordRepeat(event.target.value)}
-              autoComplete="new-password"
-              className="w-full rounded-2xl border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[var(--text-main)] outline-none transition focus:border-[var(--accent)]"
-            />
-          </label>
-
-          {error ? (
-            <div className="rounded-2xl border border-[rgba(255,107,107,0.28)] bg-[rgba(255,107,107,0.08)] px-4 py-3 text-sm text-[#ffb4b4]">
-              {error}
-            </div>
-          ) : null}
-
-          {success ? (
-            <div className="rounded-2xl border border-[rgba(0,191,165,0.24)] bg-[rgba(0,191,165,0.08)] px-4 py-3 text-sm text-[var(--text-main)]">
-              {success}
-            </div>
-          ) : null}
-
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="submit"
-              disabled={!canSubmit}
-              className="inline-flex items-center justify-center rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[#04120f] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {submitting ? "Обновляем пароль..." : "Сохранить пароль"}
-            </button>
-            <Link
-              href="/login"
-              className="inline-flex items-center rounded-2xl border border-[var(--line-soft)] px-4 py-3 text-sm font-medium text-[var(--text-main)] transition hover:border-[rgba(0,191,165,0.24)] hover:text-[var(--accent)]"
-            >
-              К входу
-            </Link>
-          </div>
-        </form>
-      ) : null}
-    </>
+    <form onSubmit={handleSubmit} className={styles.form}>
+      <div className={styles.userPanel}><strong>{user.name}</strong><span>{user.email || user.username}</span></div>
+      <label><span>Новый пароль</span><div className={styles.passwordField}><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" placeholder="Не менее 8 символов" required /><EyeButton visible={showPassword} onToggle={() => setShowPassword((value) => !value)} /></div></label>
+      <label><span>Повторите пароль</span><div className={styles.passwordField}><input type={showRepeat ? "text" : "password"} value={repeat} onChange={(event) => setRepeat(event.target.value)} autoComplete="new-password" placeholder="Повторите новый пароль" required /><EyeButton visible={showRepeat} onToggle={() => setShowRepeat((value) => !value)} /></div></label>
+      {error ? <div className={styles.errorPanel} role="alert">{error}</div> : null}
+      <button className={styles.submit} type="submit" disabled={submitting}><span className={styles.buttonLabel}>{submitting ? "Сохраняем…" : "Сохранить пароль"}</span><span className={styles.mailIcon} aria-hidden="true">✓</span></button>
+    </form>
   );
 }
 
-function ResetPasswordContent() {
-  const searchParams = useSearchParams();
-  const token = searchParams.get("token")?.trim() || "";
-
-  return token ? <TokenResetForm token={token} /> : <ForgotPasswordForm />;
+function ResetContent() {
+  const token = useSearchParams().get("token")?.trim() || "";
+  return <><div className={styles.eyebrow}><span /> HARDZONE CRM</div><h1>{token ? "Новый пароль" : "Восстановление доступа"}</h1><p className={`${styles.lead} ${styles.resetLead}`}>{token ? "Задайте новый пароль для своей учётной записи." : "Укажите рабочий email — мы отправим одноразовую ссылку для создания нового пароля."}</p>{token ? <SetPasswordForm token={token} /> : <RequestResetForm />}</>;
 }
 
 export default function ResetPasswordPage() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(0,229,200,0.14),_transparent_28%),linear-gradient(180deg,#0D1117_0%,#111827_100%)] px-6 py-10">
-      <div className="w-full max-w-lg rounded-[28px] border border-[var(--line-soft)] bg-[rgba(18,24,37,0.92)] p-8 shadow-[0_28px_90px_rgba(0,0,0,0.45)] backdrop-blur">
-        <Suspense
-          fallback={
-            <div className="rounded-2xl border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] px-4 py-4 text-sm text-[var(--text-muted)]">
-              Готовим форму восстановления...
-            </div>
-          }
-        >
-          <ResetPasswordContent />
-        </Suspense>
-      </div>
-    </div>
-  );
+  return <main className={styles.page}><div className={styles.grid} aria-hidden="true" /><div className={styles.glowOne} aria-hidden="true" /><div className={styles.glowTwo} aria-hidden="true" /><section className={styles.shell} aria-label="Восстановление доступа HardZone CRM"><div className={styles.logoWrap}><div className={styles.logoHalo} aria-hidden="true" /><Image className={styles.logo} src="/hardzone-auth-logo.png" alt="HardZone" width={184} height={152} priority /></div><div className={`${styles.card} ${styles.resetCard}`}><Link className={styles.backLink} href="/login">← К экрану входа</Link><Suspense fallback={<div className={styles.statusPanel}>Готовим форму…</div>}><ResetContent /></Suspense></div></section></main>;
 }

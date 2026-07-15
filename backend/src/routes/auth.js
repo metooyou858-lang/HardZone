@@ -3,7 +3,7 @@ const express = require('express');
 const { buildUserAccessPayload, getDefaultModulesForRole, getDefaultRoleTitle } = require('../authz');
 const { query, withTransaction } = require('../db');
 const authMiddleware = require('../middleware/auth');
-const { isMailConfigured, sendTemporaryPasswordEmail } = require('../services/mail');
+const { isMailConfigured, sendPasswordResetEmail } = require('../services/mail');
 const { normalizeEmail, serializeUser } = require('../services/user-auth');
 const { sendInternalError } = require('../utils/http-response');
 const { createTemporaryPassword, hashPassword, normalizeUsername, verifyPassword } = require('../utils/passwords');
@@ -17,10 +17,6 @@ const MANAGEABLE_ROLES = ['admin'];
 
 function isUniqueViolation(error, indexName) {
   return String(error?.message || '').includes(indexName);
-}
-
-function canExposeTemporaryPassword() {
-  return process.env.NODE_ENV !== 'production' && process.env.HARDZONE_EXPOSE_TEMP_PASSWORD === 'true';
 }
 
 function getFrontendBaseUrl() {
@@ -93,37 +89,51 @@ async function fetchUserWithTrainer(client, userId) {
   return rows[0] || null;
 }
 
-async function resetUserPasswordAndSendEmail(user) {
+async function sendPasswordSetupLink(user, createdBy = null) {
   if (!user?.id || !user?.email || !user?.is_active) {
-    throw new Error('Нельзя отправить новый пароль для этой учетной записи');
+    throw new Error('Нельзя отправить ссылку для этой учётной записи');
   }
 
   if (!isMailConfigured()) {
     throw new Error('Почтовый сервис пока не настроен');
   }
 
-  const nextPassword = createTemporaryPassword();
-  const passwordHash = await hashPassword(nextPassword);
+  const rawToken = createResetToken();
+  const tokenHash = hashResetToken(rawToken);
 
-  await withTransaction(async (client) => {
+  const tokenData = await withTransaction(async (client) => {
     await client.query(
       `
-        UPDATE users
-        SET password_hash = $1, updated_at = NOW()
-        WHERE id = $2
+        UPDATE user_password_reset_tokens
+        SET used_at = NOW()
+        WHERE user_id = $1 AND used_at IS NULL
       `,
-      [passwordHash, user.id]
+      [user.id]
     );
 
-    await sendTemporaryPasswordEmail({
-      to: user.email,
-      name: user.name,
-      password: nextPassword,
-    });
+    const { rows } = await client.query(
+      `
+        INSERT INTO user_password_reset_tokens (user_id, token_hash, expires_at, created_by)
+        VALUES ($1, $2, NOW() + ($3 || ' hours')::interval, $4)
+        RETURNING expires_at
+      `,
+      [user.id, tokenHash, RESET_LINK_TTL_HOURS, createdBy]
+    );
+
+    return rows[0];
+  });
+
+  const resetUrl = `${getFrontendBaseUrl()}/reset-password?token=${encodeURIComponent(rawToken)}`;
+  await sendPasswordResetEmail({
+    to: user.email,
+    name: user.name,
+    resetUrl,
+    expiresInHours: RESET_LINK_TTL_HOURS,
   });
 
   return {
     email: user.email,
+    expires_at: tokenData.expires_at,
   };
 }
 
@@ -297,9 +307,7 @@ router.post('/users', authMiddleware, requireModule('users_manage'), async (req,
     const phone = String(req.body?.phone || '').trim() || null;
     const phoneNormalized = normalizePhone(phone);
     const username = normalizeUsername(email);
-    const providedPassword = String(req.body?.password || '').trim();
-    const generatedPassword = !providedPassword;
-    const password = providedPassword || createTemporaryPassword();
+    const password = createTemporaryPassword();
     const role = MANAGEABLE_ROLES.includes(req.body?.role) ? req.body.role : 'admin';
     const roleTitle = String(req.body?.role_title || '').trim() || getDefaultRoleTitle(role);
     const isActive = req.body?.is_active !== undefined ? Boolean(req.body.is_active) : true;
@@ -342,21 +350,11 @@ router.post('/users', authMiddleware, requireModule('users_manage'), async (req,
     let emailSent = false;
     let emailError = null;
 
-    if (generatedPassword && email) {
-      if (isMailConfigured()) {
-        try {
-          await sendTemporaryPasswordEmail({
-            to: email,
-            name,
-            password,
-          });
-          emailSent = true;
-        } catch (deliveryError) {
-          emailError = deliveryError instanceof Error ? deliveryError.message : 'Не удалось отправить письмо сотруднику';
-        }
-      } else {
-        emailError = 'Почтовый сервис пока не настроен';
-      }
+    try {
+      await sendPasswordSetupLink(createdUser, req.user?.id || null);
+      emailSent = true;
+    } catch (deliveryError) {
+      emailError = deliveryError instanceof Error ? deliveryError.message : 'Не удалось отправить ссылку сотруднику';
     }
 
     return res.status(201).json({
@@ -366,7 +364,6 @@ router.post('/users', authMiddleware, requireModule('users_manage'), async (req,
         onboarding: {
           email_sent: emailSent,
           email_error: emailError,
-          temporary_password: generatedPassword && !emailSent && canExposeTemporaryPassword() ? password : null,
         },
       },
     });
@@ -468,12 +465,6 @@ router.patch('/users/:id', authMiddleware, requireModule('users_manage'), async 
     if (req.body?.is_active !== undefined) {
       values.push(Boolean(req.body.is_active));
       updates.push(`is_active = $${values.length}`);
-    }
-
-    if (req.body?.password) {
-      const passwordHash = await hashPassword(req.body.password);
-      values.push(passwordHash);
-      updates.push(`password_hash = $${values.length}`);
     }
 
     const createTrainerProfile = Boolean(req.body?.create_trainer_profile);
@@ -617,7 +608,7 @@ router.post('/password-reset/request', async (req, res) => {
       return res.json({ success: true });
     }
 
-    await resetUserPasswordAndSendEmail(user);
+    await sendPasswordSetupLink(user);
 
     return res.json({ success: true });
   } catch (error) {
@@ -625,7 +616,7 @@ router.post('/password-reset/request', async (req, res) => {
   }
 });
 
-router.post('/users/:id/send-password', authMiddleware, requireModule('users_manage'), async (req, res) => {
+router.post('/users/:id/password-reset', authMiddleware, requireModule('users_manage'), async (req, res) => {
   try {
     const { rows: userRows } = await query(
       `
@@ -651,78 +642,20 @@ router.post('/users/:id/send-password', authMiddleware, requireModule('users_man
     }
 
     if (!user.is_active) {
-      return res.status(409).json({ success: false, error: 'Нельзя отправить новый пароль отключенному сотруднику' });
+      return res.status(409).json({ success: false, error: 'Нельзя отправить ссылку отключённому сотруднику' });
     }
 
-    const result = await resetUserPasswordAndSendEmail(user);
+    const data = await sendPasswordSetupLink(user, req.user?.id || null);
 
     return res.json({
       success: true,
       data: {
-        email: result.email,
-      },
-    });
-  } catch (error) {
-    return sendInternalError(res, error, { route: 'auth.users.send_password' });
-  }
-});
-
-router.post('/users/:id/reset-link', authMiddleware, requireModule('users_manage'), async (req, res) => {
-  try {
-    const { rows: userRows } = await query(
-      `
-        SELECT id, name, username, email, is_active, role
-        FROM users
-        WHERE id = $1
-        LIMIT 1
-      `,
-      [req.params.id]
-    );
-
-    const user = userRows[0];
-    if (!user) {
-      return res.status(404).json({ success: false, error: 'Пользователь не найден' });
-    }
-
-    if (!canManageUser(req.user?.role, user.role)) {
-      return res.status(403).json({ success: false, error: 'Недостаточно прав для управления этим пользователем' });
-    }
-
-    const rawToken = createResetToken();
-    const tokenHash = hashResetToken(rawToken);
-
-    const data = await withTransaction(async (client) => {
-      await client.query(
-        `
-          UPDATE user_password_reset_tokens
-          SET used_at = NOW()
-          WHERE user_id = $1 AND used_at IS NULL
-        `,
-        [user.id]
-      );
-
-      const { rows } = await client.query(
-        `
-          INSERT INTO user_password_reset_tokens (user_id, token_hash, expires_at, created_by)
-          VALUES ($1, $2, NOW() + ($3 || ' hours')::interval, $4)
-          RETURNING expires_at
-        `,
-        [user.id, tokenHash, RESET_LINK_TTL_HOURS, req.user?.id || null]
-      );
-
-      return rows[0];
-    });
-
-    return res.json({
-      success: true,
-      data: {
-        email: user.email || null,
+        email: data.email,
         expires_at: data.expires_at,
-        reset_url: `${getFrontendBaseUrl()}/reset-password?token=${encodeURIComponent(rawToken)}`,
       },
     });
   } catch (error) {
-    return sendInternalError(res, error, { route: 'auth.users.reset_link' });
+    return sendInternalError(res, error, { route: 'auth.users.password_reset' });
   }
 });
 
@@ -766,6 +699,10 @@ router.post('/password-reset/complete', async (req, res) => {
 
     if (!token || !password) {
       return res.status(422).json({ success: false, error: 'Укажите токен и новый пароль' });
+    }
+
+    if (password.length < 8) {
+      return res.status(422).json({ success: false, error: 'Пароль должен быть не короче 8 символов' });
     }
 
     const resetToken = await findActiveResetToken(token);

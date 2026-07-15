@@ -9,6 +9,8 @@ import "@fontsource/ibm-plex-mono/latin-400.css";
 import "@fontsource/ibm-plex-mono/latin-500.css";
 import "@fontsource/plus-jakarta-sans/latin-600.css";
 import "@fontsource/plus-jakarta-sans/latin-700.css";
+import "@fontsource/plus-jakarta-sans/cyrillic-ext-600.css";
+import "@fontsource/plus-jakarta-sans/cyrillic-ext-700.css";
 import "@fontsource/inter/cyrillic-400.css";
 import "@fontsource/inter/cyrillic-500.css";
 import "@fontsource/inter/cyrillic-600.css";

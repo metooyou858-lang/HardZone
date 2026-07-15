@@ -20,7 +20,7 @@ import {
   createAuthUser,
   deleteAuthUser,
   fetchAuthUsers,
-  sendAuthUserTemporaryPassword,
+  sendAuthUserPasswordReset,
   updateAuthUser,
 } from "@/lib/api/auth";
 
@@ -37,7 +37,6 @@ type UserFormState = {
   modules: AuthModulePermission[];
   create_trainer_profile: boolean;
   is_active: boolean;
-  password: string;
 };
 
 type OnboardingState = {
@@ -45,10 +44,9 @@ type OnboardingState = {
   email: string | null;
   emailSent: boolean;
   emailError: string | null;
-  temporaryPassword: string | null;
 };
 
-type PasswordDispatchState = {
+type ResetDispatchState = {
   userName: string;
   email: string | null;
 };
@@ -71,7 +69,6 @@ const initialFormState: UserFormState = {
   modules: [...accessPresets[0].modules],
   create_trainer_profile: false,
   is_active: true,
-  password: "",
 };
 
 function formatLastLogin(value?: string | null) {
@@ -96,37 +93,19 @@ function toFormState(user: AuthUser): UserFormState {
     modules: [...user.modules],
     create_trainer_profile: false,
     is_active: user.is_active,
-    password: "",
   };
-}
-
-async function copyText(value: string) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(value);
-    return;
-  }
-
-  const textarea = document.createElement("textarea");
-  textarea.value = value;
-  textarea.style.position = "fixed";
-  textarea.style.opacity = "0";
-  document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand("copy");
-  textarea.remove();
 }
 
 export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) {
   const [users, setUsers] = useState<AuthUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [copying, setCopying] = useState<"temporary_password" | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const [form, setForm] = useState<UserFormState>(initialFormState);
   const [onboarding, setOnboarding] = useState<OnboardingState | null>(null);
-  const [passwordDispatch, setPasswordDispatch] = useState<PasswordDispatchState | null>(null);
+  const [resetDispatch, setResetDispatch] = useState<ResetDispatchState | null>(null);
 
   const editingUser = useMemo(
     () => (editingUserId === null ? null : users.find((user) => user.id === editingUserId) ?? null),
@@ -157,7 +136,7 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
     setEditingUserId(null);
     setForm(initialFormState);
     setOnboarding(null);
-    setPasswordDispatch(null);
+    setResetDispatch(null);
     setError("");
     setSuccess("");
   }
@@ -182,7 +161,7 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
     setEditingUserId(user.id);
     setForm(toFormState(user));
     setOnboarding(null);
-    setPasswordDispatch(null);
+    setResetDispatch(null);
     setError("");
     setSuccess("");
   }
@@ -262,7 +241,7 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
     setSubmitting(true);
     setError("");
     setSuccess("");
-    setPasswordDispatch(null);
+    setResetDispatch(null);
 
     try {
       const payload = {
@@ -286,21 +265,17 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
           email: created.user.email,
           emailSent: created.onboarding.email_sent,
           emailError: created.onboarding.email_error,
-          temporaryPassword: created.onboarding.temporary_password,
         });
 
         if (created.onboarding.email_sent) {
-          setSuccess("Сотрудник создан. Пароль отправлен на почту.");
-        } else if (created.onboarding.temporary_password) {
-          setSuccess("Сотрудник создан. Временный пароль показан ниже.");
+          setSuccess("Сотрудник создан. Ссылка для установки пароля отправлена на почту.");
         } else {
-          setSuccess("Сотрудник создан.");
+          setSuccess("Сотрудник создан, но ссылку отправить не удалось.");
         }
       } else {
         await updateAuthUser(editingUserId, {
           ...payload,
           create_trainer_profile: !editingUser?.trainer_profile ? form.create_trainer_profile : undefined,
-          password: form.password.trim() ? form.password : undefined,
         });
         setOnboarding(null);
         setSuccess("Изменения сохранены.");
@@ -362,40 +337,23 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
     }
   }
 
-  async function handleSendTemporaryPassword(user: AuthUser) {
+  async function handleSendPasswordReset(user: AuthUser) {
     setSubmitting(true);
     setError("");
     setSuccess("");
     setOnboarding(null);
 
     try {
-      const dispatch = await sendAuthUserTemporaryPassword(user.id);
-      setPasswordDispatch({
+      const dispatch = await sendAuthUserPasswordReset(user.id);
+      setResetDispatch({
         userName: user.name,
         email: dispatch.email,
       });
-      setSuccess("Новый пароль отправлен. Старый пароль больше не действует.");
+      setSuccess("Ссылка для создания нового пароля отправлена.");
     } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : "Не удалось отправить новый пароль");
+      setError(sendError instanceof Error ? sendError.message : "Не удалось отправить ссылку");
     } finally {
       setSubmitting(false);
-    }
-  }
-
-  async function handleCopyTemporaryPassword() {
-    if (!onboarding?.temporaryPassword) {
-      return;
-    }
-
-    setCopying("temporary_password");
-
-    try {
-      await copyText(onboarding.temporaryPassword);
-      setSuccess("Пароль скопирован.");
-    } catch {
-      setError("Не удалось скопировать пароль.");
-    } finally {
-      setCopying(null);
     }
   }
 
@@ -464,22 +422,11 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
               />
             </label>
 
-            {editingUserId !== null ? (
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-[var(--text-main)]">Новый пароль</span>
-                <input
-                  type="password"
-                  value={form.password}
-                  onChange={(event) => setForm((state) => ({ ...state, password: event.target.value }))}
-                  className="w-full rounded-2xl border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[var(--text-main)] outline-none transition focus:border-[var(--accent)]"
-                  placeholder="Оставьте пустым"
-                />
-              </label>
-            ) : (
-              <div className="rounded-2xl border border-[var(--line-soft)] bg-[rgba(255,255,255,0.02)] px-4 py-3 text-sm text-[var(--text-muted)]">
-                Логин совпадает с email. Пароль система создаст сама.
-              </div>
-            )}
+            <div className="rounded-2xl border border-[var(--line-soft)] bg-[rgba(255,255,255,0.02)] px-4 py-3 text-sm text-[var(--text-muted)]">
+              {editingUserId === null
+                ? "Логин совпадает с email. Ссылка для установки пароля будет отправлена сотруднику на почту."
+                : "Изменение забытого пароля выполняется только по одноразовой ссылке."}
+            </div>
           </div>
 
           <div className="rounded-[22px] border border-[var(--line-soft)] bg-[rgba(255,255,255,0.02)] p-4">
@@ -770,26 +717,7 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
 
             {onboarding.emailSent ? (
               <div className="mt-3 rounded-2xl border border-[rgba(0,191,165,0.18)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[var(--text-main)]">
-                Пароль уже отправлен на почту.
-              </div>
-            ) : null}
-
-            {onboarding.temporaryPassword ? (
-              <div className="mt-3 rounded-2xl border border-[var(--line-soft)] bg-[rgba(12,18,28,0.55)] p-4">
-                <p className="text-sm font-medium text-[var(--text-main)]">Временный пароль</p>
-                <input
-                  readOnly
-                  value={onboarding.temporaryPassword}
-                  className="mt-3 w-full rounded-2xl border border-[var(--line-soft)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[var(--text-main)] outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={handleCopyTemporaryPassword}
-                  disabled={copying === "temporary_password"}
-                  className="mt-3 inline-flex items-center rounded-2xl border border-[rgba(0,191,165,0.22)] bg-[rgba(0,191,165,0.1)] px-4 py-2 text-sm font-medium text-[var(--accent)] transition hover:border-[rgba(0,191,165,0.38)] hover:bg-[rgba(0,191,165,0.14)] disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {copying === "temporary_password" ? "Копируем..." : "Скопировать пароль"}
-                </button>
+                Ссылка для установки пароля отправлена на почту.
               </div>
             ) : null}
 
@@ -801,10 +729,10 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
           </div>
         ) : null}
 
-        {passwordDispatch ? (
+        {resetDispatch ? (
           <div className="mt-4 rounded-[22px] border border-[rgba(0,191,165,0.18)] bg-[rgba(0,191,165,0.07)] px-4 py-3 text-sm text-[var(--text-main)]">
-            Новый пароль отправлен: {passwordDispatch.userName}
-            {passwordDispatch.email ? ` • ${passwordDispatch.email}` : ""}
+            Ссылка для создания нового пароля отправлена: {resetDispatch.userName}
+            {resetDispatch.email ? ` • ${resetDispatch.email}` : ""}
           </div>
         ) : null}
       </section>
@@ -887,10 +815,10 @@ export function UsersPanel({ currentUserId, currentUserRole }: UsersPanelProps) 
                       <button
                         type="button"
                         disabled={submitting || !canManageListedUser(user)}
-                        onClick={() => handleSendTemporaryPassword(user)}
+                        onClick={() => handleSendPasswordReset(user)}
                         className="inline-flex items-center rounded-2xl border border-[rgba(0,191,165,0.18)] px-3 py-2 text-xs font-medium text-[var(--accent)] transition hover:border-[rgba(0,191,165,0.34)] disabled:cursor-not-allowed disabled:opacity-70"
                       >
-                        Новый пароль
+                        Отправить ссылку
                       </button>
                       {user.id !== currentUserId && canManageListedUser(user) ? (
                         <>

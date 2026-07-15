@@ -67,29 +67,25 @@ async function getTransporter() {
   return transporterPromise;
 }
 
-function buildTemporaryPasswordText({ to, name, password, loginUrl }) {
+function buildPasswordResetText({ name, resetUrl, expiresInHours }) {
   return [
     `Здравствуйте, ${name || 'сотрудник HardZone'}!`,
     '',
-    'Для вашей учетной записи HardZone CRM подготовлен новый временный пароль.',
+    'Для вашей учётной записи HardZone CRM запрошено создание нового пароля.',
     '',
-    `Логин: ${to}`,
-    `Временный пароль: ${password}`,
-    `Вход в CRM: ${loginUrl}`,
+    `Задать новый пароль: ${resetUrl}`,
     '',
-    'После входа рекомендуем сразу сменить пароль на свой.',
+    `Ссылка действует ${expiresInHours} ч. и может быть использована только один раз.`,
     '',
-    'Если это письмо пришло вам по ошибке, просто проигнорируйте его.',
+    'Если вы не запрашивали изменение пароля, просто проигнорируйте письмо: текущий пароль продолжит действовать.',
     '',
     'HardZone CRM',
   ].join('\n');
 }
 
-function buildTemporaryPasswordHtml({ to, name, password, loginUrl }) {
+function buildPasswordResetHtml({ name, resetUrl, expiresInHours }) {
   const safeName = escapeHtml(name || 'сотрудник HardZone');
-  const safeEmail = escapeHtml(to);
-  const safePassword = escapeHtml(password);
-  const safeLoginUrl = escapeHtml(loginUrl);
+  const safeResetUrl = escapeHtml(resetUrl);
 
   return `
     <div style="margin:0;padding:32px 0;background:#0b1018;">
@@ -100,41 +96,34 @@ function buildTemporaryPasswordHtml({ to, name, password, loginUrl }) {
               <img src="cid:${LOGO_CID}" alt="HardZone" style="display:block;width:132px;max-width:100%;height:auto;" />
             </div>
             <div style="font-family:Arial,sans-serif;font-size:11px;letter-spacing:0.24em;text-transform:uppercase;color:#7f95b3;text-align:center;">HardZone CRM</div>
-            <h1 style="margin:14px 0 0;font-family:Arial,sans-serif;font-size:28px;line-height:1.2;color:#f5f7fb;text-align:center;">Временный пароль для входа</h1>
+            <h1 style="margin:14px 0 0;font-family:Arial,sans-serif;font-size:28px;line-height:1.2;color:#f5f7fb;text-align:center;">Создание нового пароля</h1>
             <p style="margin:14px 0 0;font-family:Arial,sans-serif;font-size:15px;line-height:1.7;color:#9fb2cd;text-align:center;">
-              Здравствуйте, ${safeName}. Для вашей учетной записи подготовлен новый временный пароль.
+              Здравствуйте, ${safeName}. Перейдите по защищённой ссылке и задайте новый пароль для HardZone CRM.
             </p>
           </div>
 
           <div style="padding:28px 32px 20px;">
             <div style="border:1px solid rgba(255,255,255,0.08);border-radius:22px;background:#171f31;padding:20px 22px;">
-              <div style="font-family:Arial,sans-serif;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:#7f95b3;">Данные для входа</div>
-              <div style="margin-top:18px;">
-                <div style="font-family:Arial,sans-serif;font-size:13px;color:#8ea2bf;">Логин</div>
-                <div style="margin-top:6px;font-family:Arial,sans-serif;font-size:16px;font-weight:600;color:#f5f7fb;">${safeEmail}</div>
-              </div>
-              <div style="margin-top:18px;">
-                <div style="font-family:Arial,sans-serif;font-size:13px;color:#8ea2bf;">Временный пароль</div>
-                <div style="margin-top:8px;display:inline-block;padding:14px 18px;border-radius:18px;background:#0f1523;border:1px solid rgba(0,229,200,0.22);font-family:'Courier New',monospace;font-size:22px;font-weight:700;letter-spacing:0.04em;color:#00e5c8;">
-                  ${safePassword}
-                </div>
-              </div>
+              <div style="font-family:Arial,sans-serif;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:#7f95b3;">Безопасность</div>
+              <p style="margin:14px 0 0;font-family:Arial,sans-serif;font-size:14px;line-height:1.7;color:#9fb2cd;">
+                Ссылка действует ${expiresInHours} ч. и может быть использована только один раз. До завершения операции текущий пароль не изменится.
+              </p>
             </div>
 
             <div style="margin-top:24px;">
-              <a href="${safeLoginUrl}" style="display:inline-block;padding:14px 22px;border-radius:18px;background:#00c8ad;color:#04120f;text-decoration:none;font-family:Arial,sans-serif;font-size:15px;font-weight:700;">
-                Войти в HardZone CRM
+              <a href="${safeResetUrl}" style="display:inline-block;padding:14px 22px;border-radius:18px;background:#00c8ad;color:#04120f;text-decoration:none;font-family:Arial,sans-serif;font-size:15px;font-weight:700;">
+                Задать новый пароль
               </a>
             </div>
 
             <p style="margin:20px 0 0;font-family:Arial,sans-serif;font-size:14px;line-height:1.7;color:#9fb2cd;">
-              После входа рекомендуем сразу сменить пароль на свой. Если письмо пришло вам по ошибке, просто проигнорируйте его.
+              Если вы не запрашивали изменение пароля, просто проигнорируйте письмо. Текущий пароль продолжит действовать.
             </p>
           </div>
 
           <div style="padding:18px 32px 26px;border-top:1px solid rgba(255,255,255,0.06);font-family:Arial,sans-serif;font-size:12px;line-height:1.7;color:#6f829f;">
             HardZone CRM • Хабаровск<br />
-            Ссылка для входа: <a href="${safeLoginUrl}" style="color:#8fe9dc;text-decoration:none;">${safeLoginUrl}</a>
+            Ссылка для изменения пароля: <a href="${safeResetUrl}" style="color:#8fe9dc;text-decoration:none;">${safeResetUrl}</a>
           </div>
         </div>
       </div>
@@ -142,21 +131,19 @@ function buildTemporaryPasswordHtml({ to, name, password, loginUrl }) {
   `;
 }
 
-async function sendTemporaryPasswordEmail({ to, name, password }) {
+async function sendPasswordResetEmail({ to, name, resetUrl, expiresInHours }) {
   if (!to) {
     throw new Error('Recipient email is required');
   }
 
   const transporter = await getTransporter();
   const config = readMailConfig();
-  const loginUrl = `${getFrontendBaseUrl()}/login`;
-
   await transporter.sendMail({
     from: config.from,
     to,
-    subject: 'HardZone CRM • временный пароль для входа',
-    text: buildTemporaryPasswordText({ to, name, password, loginUrl }),
-    html: buildTemporaryPasswordHtml({ to, name, password, loginUrl }),
+    subject: 'HardZone CRM • создание нового пароля',
+    text: buildPasswordResetText({ name, resetUrl, expiresInHours }),
+    html: buildPasswordResetHtml({ name, resetUrl, expiresInHours }),
     attachments: [
       {
         filename: 'hardzone-logo.png',
@@ -169,5 +156,5 @@ async function sendTemporaryPasswordEmail({ to, name, password }) {
 
 module.exports = {
   isMailConfigured,
-  sendTemporaryPasswordEmail,
+  sendPasswordResetEmail,
 };

@@ -12,6 +12,7 @@ const { after, before, test } = require('node:test');
 const app = require('../src/app');
 const { pool, query } = require('../src/db');
 const { hashPassword } = require('../src/utils/passwords');
+const { createResetToken, hashResetToken } = require('../src/utils/reset-tokens');
 
 let server;
 let baseUrl;
@@ -173,6 +174,63 @@ test('login rejects wrong passwords and inactive users', async () => {
   });
 
   assert.equal(inactive.response.status, 403);
+});
+
+test('password reset token replaces the password once and cannot be reused', async () => {
+  const user = await createUser();
+  const token = createResetToken();
+
+  await query(
+    `
+      INSERT INTO user_password_reset_tokens (user_id, token_hash, expires_at)
+      VALUES ($1, $2, NOW() + INTERVAL '1 hour')
+    `,
+    [user.id, hashResetToken(token)]
+  );
+
+  const tokenCheck = await request(`/api/auth/password-reset/${encodeURIComponent(token)}`);
+  assert.equal(tokenCheck.response.status, 200);
+  assert.equal(tokenCheck.body.data.user.id, Number(user.id));
+
+  const nextPassword = 'UpdatedPassword123!';
+  const completed = await request('/api/auth/password-reset/complete', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token, password: nextPassword }),
+  });
+  assert.equal(completed.response.status, 200);
+
+  const oldLogin = await request('/api/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: user.username, password: user.password }),
+  });
+  assert.equal(oldLogin.response.status, 401);
+
+  const newLogin = await request('/api/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: user.username, password: nextPassword }),
+  });
+  assert.equal(newLogin.response.status, 200);
+
+  const reused = await request('/api/auth/password-reset/complete', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token, password: 'AnotherPassword123!' }),
+  });
+  assert.equal(reused.response.status, 404);
+});
+
+test('password reset request does not reveal an unknown email', async () => {
+  const { response, body } = await request('/api/auth/password-reset/request', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'missing-user@example.test' }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(body.success, true);
 });
 
 test('session-protected endpoints reject missing, expired, and tampered sessions', async () => {

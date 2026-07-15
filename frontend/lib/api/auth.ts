@@ -32,20 +32,17 @@ export type AuthUserPayload = {
   role_title?: string;
   modules?: AuthModulePermission[];
   is_active?: boolean;
-  password?: string;
   create_trainer_profile?: boolean;
 };
 
 export type ResetLinkPayload = {
   email: string | null;
   expires_at: string;
-  reset_url: string;
 };
 
 export type AuthUserOnboarding = {
   email_sent: boolean;
   email_error: string | null;
-  temporary_password: string | null;
 };
 
 export async function fetchAuthUsers(): Promise<AuthUser[]> {
@@ -76,16 +73,8 @@ export async function updateAuthUser(id: number, payload: Partial<AuthUserPayloa
   return response.data.user;
 }
 
-export async function createAuthUserResetLink(id: number): Promise<ResetLinkPayload> {
-  const response = await apiFetch<{ success: true; data: ResetLinkPayload }>(`/auth/users/${id}/reset-link`, {
-    method: "POST",
-  });
-
-  return response.data;
-}
-
-export async function sendAuthUserTemporaryPassword(id: number): Promise<{ email: string | null }> {
-  const response = await apiFetch<{ success: true; data: { email: string | null } }>(`/auth/users/${id}/send-password`, {
+export async function sendAuthUserPasswordReset(id: number): Promise<ResetLinkPayload> {
+  const response = await apiFetch<{ success: true; data: ResetLinkPayload }>(`/auth/users/${id}/password-reset`, {
     method: "POST",
   });
 
