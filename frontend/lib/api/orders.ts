@@ -9,6 +9,7 @@ export type Order = {
   status: OrderStatus;
   payment_type: PaymentType | null;
   client_id: string | null;
+  client_name: string | null;
   total_amount: string;
   items_count: number;
   aqsi_receipt_id: string | null;

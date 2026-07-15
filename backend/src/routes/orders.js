@@ -728,9 +728,12 @@ router.get('/', async (req, res) => {
     }
 
     let sql = `
-      SELECT o.*, COUNT(oi.id)::int AS items_count_actual
+      SELECT o.*,
+             NULLIF(CONCAT_WS(' ', c.last_name, c.first_name), '') AS client_name,
+             COUNT(oi.id)::int AS items_count_actual
       FROM orders o
       LEFT JOIN order_items oi ON oi.order_id = o.id
+      LEFT JOIN clients c ON c.id = o.client_id
     `;
     const params = [];
 
@@ -750,7 +753,7 @@ router.get('/', async (req, res) => {
       sql += ` WHERE o.status = $${params.length}`;
     }
 
-    sql += ` GROUP BY o.id ORDER BY o.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    sql += ` GROUP BY o.id, c.id ORDER BY o.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(parsedLimit, parsedOffset);
 
     const { rows } = await pool.query(sql, params);
@@ -762,7 +765,13 @@ router.get('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    const { rows: orderRows } = await pool.query('SELECT * FROM orders WHERE id = $1', [req.params.id]);
+    const { rows: orderRows } = await pool.query(
+      `SELECT o.*, NULLIF(CONCAT_WS(' ', c.last_name, c.first_name), '') AS client_name
+       FROM orders o
+       LEFT JOIN clients c ON c.id = o.client_id
+       WHERE o.id = $1`,
+      [req.params.id]
+    );
     const order = orderRows[0];
 
     if (!order) {

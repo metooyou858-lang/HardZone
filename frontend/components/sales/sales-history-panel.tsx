@@ -147,6 +147,11 @@ export function SalesHistoryPanel({
                           {formatSalesDate(historyOrder.created_at)}
                         </p>
                         <p className="mt-0.5 text-xs text-[var(--text-muted)]">#{historyOrder.id.slice(0, 8)}</p>
+                        {historyOrder.client_name && (
+                          <p className="mt-1 truncate text-xs text-[var(--accent)]">
+                            Клиент: {historyOrder.client_name}
+                          </p>
+                        )}
                       </div>
 
                       <div className="text-sm text-[var(--text-muted)]">{historyOrder.items_count}</div>
