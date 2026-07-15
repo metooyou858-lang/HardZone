@@ -17,7 +17,7 @@ export function DashboardContent({ name, modules }: { name: string; modules?: re
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const local = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+    const local = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") && window.location.port === "3000";
     if (local) {
       const today = new Date().toISOString().slice(0, 10);
       setData({ generated_at: new Date().toISOString(), schedule: { date: today, total_slots: 0, completed_slots: 0, total_bookings: 0, slots: [] }, attention: { unpaid_visits: [], expiring_subscriptions: [], low_stock: [] } });
