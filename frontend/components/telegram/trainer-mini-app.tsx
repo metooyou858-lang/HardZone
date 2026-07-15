@@ -30,6 +30,8 @@ import { getBannerClass, formatMoney, type BannerState } from "@/components/sale
 import { useSalesCatalog } from "@/components/sales/use-sales-catalog";
 import { useSalesOrder } from "@/components/sales/use-sales-order";
 import { findByBarcode, type Product } from "@/lib/api/products";
+import { fetchClient, type ClientListItem } from "@/lib/api/clients";
+import { attachEligibleSubscriptionToBooking } from "@/lib/api/schedule";
 
 declare global {
   interface Window {
@@ -492,11 +494,13 @@ function BookingRow({
   busy,
   onToggle,
   onCancel,
+  onResolvePayment,
 }: {
   booking: StaffBooking;
   busy: boolean;
   onToggle: () => void;
   onCancel: () => void;
+  onResolvePayment: () => void;
 }) {
   const attended = booking.status === "attended";
 
@@ -532,6 +536,16 @@ function BookingRow({
           className="mt-2 h-11 w-full rounded-lg border border-[rgba(255,116,57,0.35)] text-sm font-semibold text-[#ffb599] disabled:opacity-60"
         >
           Отменить запись
+        </button>
+      ) : null}
+      {booking.coverage_status === "unpaid" ? (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onResolvePayment}
+          className="mt-2 h-11 w-full rounded-lg border border-[rgba(248,191,0,0.4)] bg-[rgba(248,191,0,0.12)] text-sm font-semibold text-[#f8bf00] disabled:opacity-60"
+        >
+          Перейти к оплате
         </button>
       ) : null}
     </article>
@@ -767,6 +781,7 @@ function LessonDetailsScreen({
   onBookClient,
   onToggleAttend,
   onCancelBooking,
+  onResolvePayment,
   canEdit,
   onEdit,
   canCancel,
@@ -785,6 +800,7 @@ function LessonDetailsScreen({
   onBookClient: (client: StaffClientSearchResult, allowUnpaid?: boolean) => void;
   onToggleAttend: (booking: StaffBooking) => void;
   onCancelBooking: (booking: StaffBooking) => void;
+  onResolvePayment: (booking: StaffBooking) => void;
   canEdit: boolean;
   onEdit: () => void;
   canCancel: boolean;
@@ -916,6 +932,7 @@ function LessonDetailsScreen({
               busy={busyId === booking.id}
               onToggle={() => onToggleAttend(booking)}
               onCancel={() => onCancelBooking(booking)}
+              onResolvePayment={() => onResolvePayment(booking)}
             />
           ))
         )}
@@ -924,7 +941,18 @@ function LessonDetailsScreen({
   );
 }
 
-function BarcodeScanner({ onDetected, onClose }: { onDetected: (value: string) => void; onClose: () => void }) {
+async function requestCameraStream() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("Камера недоступна в этой версии Telegram");
+  }
+
+  return navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: "environment" } },
+    audio: false,
+  });
+}
+
+function BarcodeScanner({ stream, onDetected, onClose }: { stream: MediaStream; onDetected: (value: string) => void; onClose: () => void }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const onDetectedRef = useRef(onDetected);
   const onCloseRef = useRef(onClose);
@@ -944,8 +972,8 @@ function BarcodeScanner({ onDetected, onClose }: { onDetected: (value: string) =
         const { BrowserMultiFormatReader } = await import("@zxing/browser");
         if (cancelled || !videoRef.current) return;
         const reader = new BrowserMultiFormatReader();
-        controls = await reader.decodeFromConstraints(
-          { video: { facingMode: { ideal: "environment" } }, audio: false },
+        controls = await reader.decodeFromStream(
+          stream,
           videoRef.current,
           (result, _error, activeControls) => {
             const value = result?.getText().trim();
@@ -965,8 +993,9 @@ function BarcodeScanner({ onDetected, onClose }: { onDetected: (value: string) =
     return () => {
       cancelled = true;
       controls?.stop();
+      stream.getTracks().forEach((track) => track.stop());
     };
-  }, []);
+  }, [stream]);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black text-white">
@@ -994,7 +1023,7 @@ function BarcodeScanner({ onDetected, onClose }: { onDetected: (value: string) =
   );
 }
 
-function SalesScreen({ modules }: { modules: string[] }) {
+function SalesScreen({ modules, initialClientId }: { modules: string[]; initialClientId: string | null }) {
   const [banner, setBanner] = useState<BannerState>(null);
   const [scannerMode, setScannerMode] = useState<{ type: "product" } | { type: "marking"; lineKey: string } | null>(null);
   const canCreateSales = modules.includes("sales_create");
@@ -1010,6 +1039,28 @@ function SalesScreen({ modules }: { modules: string[] }) {
     onHistoryChanged: catalogApi.reloadCatalog,
   });
   const [scanBusy, setScanBusy] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+
+  useEffect(() => {
+    if (!initialClientId) return;
+
+    fetchClient(initialClientId)
+      .then((client) => orderApi.setSelectedClient(client as unknown as ClientListItem))
+      .catch((loadError) => {
+        setBanner({ tone: "error", text: loadError instanceof Error ? loadError.message : "Не удалось выбрать клиента" });
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialClientId]);
+
+  async function openScanner(mode: { type: "product" } | { type: "marking"; lineKey: string }) {
+    try {
+      const stream = await requestCameraStream();
+      setScannerMode(mode);
+      setCameraStream(stream);
+    } catch (cameraError) {
+      setBanner({ tone: "error", text: cameraError instanceof Error ? cameraError.message : "Не удалось открыть камеру" });
+    }
+  }
 
   async function addProduct(product: Product) {
     if (!canCreateSales || orderApi.orderLocked) return;
@@ -1062,7 +1113,7 @@ function SalesScreen({ modules }: { modules: string[] }) {
           />
           <button
             type="button"
-            onClick={() => setScannerMode({ type: "product" })}
+            onClick={() => void openScanner({ type: "product" })}
             disabled={!canCreateSales || scanBusy || orderApi.orderLocked}
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[var(--line-soft)] text-[var(--text-main)] disabled:opacity-40"
             aria-label="Сканировать товар"
@@ -1123,7 +1174,7 @@ function SalesScreen({ modules }: { modules: string[] }) {
                 <button type="button" onClick={() => void orderApi.removeLine(line)} disabled={orderApi.orderLocked} className="ml-auto h-9 px-3 text-xs text-[#ffb599]">Удалить</button>
               </div>
               {line.markingRequired ? (
-                <button type="button" onClick={() => setScannerMode({ type: "marking", lineKey: line.key })} disabled={orderApi.orderLocked} className={`mt-2 h-10 w-full rounded-lg border text-xs font-semibold ${orderApi.markingDrafts[line.key] ? "border-[rgba(63,185,80,0.35)] text-[var(--success)]" : "border-[rgba(255,160,0,0.35)] text-[var(--warning)]"}`}>
+                <button type="button" onClick={() => void openScanner({ type: "marking", lineKey: line.key })} disabled={orderApi.orderLocked} className={`mt-2 h-10 w-full rounded-lg border text-xs font-semibold ${orderApi.markingDrafts[line.key] ? "border-[rgba(63,185,80,0.35)] text-[var(--success)]" : "border-[rgba(255,160,0,0.35)] text-[var(--warning)]"}`}>
                   {orderApi.markingDrafts[line.key] ? "Маркировка считана ✓" : "Сканировать маркировку"}
                 </button>
               ) : null}
@@ -1152,7 +1203,7 @@ function SalesScreen({ modules }: { modules: string[] }) {
         {orderApi.receiptError && canRecoverSalesAqsi ? <button type="button" onClick={() => void orderApi.handleSyncV4()} className="mt-2 h-11 w-full rounded-lg border border-[var(--warning)] text-sm text-[var(--warning)]">Восстановить фискализацию</button> : null}
       </section>
 
-      {scannerMode ? <BarcodeScanner onClose={() => setScannerMode(null)} onDetected={(value) => void handleScannedValue(value)} /> : null}
+      {scannerMode && cameraStream ? <BarcodeScanner stream={cameraStream} onClose={() => { setScannerMode(null); setCameraStream(null); }} onDetected={(value) => { setCameraStream(null); void handleScannedValue(value); }} /> : null}
     </div>
   );
 }
@@ -1232,6 +1283,8 @@ export function TrainerMiniApp() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<StaffClientSearchResult[]>([]);
   const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [salesClientId, setSalesClientId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [slotLoading, setSlotLoading] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -1302,6 +1355,36 @@ export function TrainerMiniApp() {
     setAuthMode("telegram");
     setAuthError(data?.error || "Не удалось войти через Telegram");
     return false;
+  }
+
+  async function openClientScanner() {
+    try {
+      const stream = await requestCameraStream();
+      setCameraStream(stream);
+      setBarcodeScannerOpen(true);
+    } catch (cameraError) {
+      setError(cameraError instanceof Error ? cameraError.message : "Не удалось открыть камеру");
+    }
+  }
+
+  async function resolveBookingPayment(booking: StaffBooking) {
+    setBusyId(booking.id);
+    setError("");
+    try {
+      const result = await attachEligibleSubscriptionToBooking(booking.id);
+      if (result.attached) {
+        if (selectedSlotId) await refreshSelected();
+        return;
+      }
+
+      setSalesClientId(String(booking.client_id));
+      setActiveTab("sales");
+      setScheduleMode("list");
+    } catch (resolveError) {
+      setError(resolveError instanceof Error ? resolveError.message : "Не удалось перейти к оплате");
+    } finally {
+      setBusyId(null);
+    }
   }
 
   async function loadStaff() {
@@ -1616,10 +1699,11 @@ export function TrainerMiniApp() {
             onBack={() => setScheduleMode("list")}
             onQueryChange={setQuery}
             onSearch={() => void runSearch()}
-            onScan={() => setBarcodeScannerOpen(true)}
+            onScan={() => void openClientScanner()}
             onBookClient={(client, allowUnpaid) => void bookClient(client, allowUnpaid)}
             onToggleAttend={(booking) => void toggleAttend(booking)}
             onCancelBooking={(booking) => void cancelClientBooking(booking)}
+            onResolvePayment={(booking) => void resolveBookingPayment(booking)}
             canEdit={canEditSlot(selected.slot)}
             onEdit={() => void openEditSlot()}
             canCancel={canCancelSlot && !slotSaving}
@@ -1641,7 +1725,7 @@ export function TrainerMiniApp() {
         ) : null}
 
         {activeTab === "sales" ? (
-          <SalesScreen modules={modules} />
+          <SalesScreen modules={modules} initialClientId={salesClientId} />
         ) : null}
 
         {activeTab === "profile" ? (
@@ -1650,11 +1734,13 @@ export function TrainerMiniApp() {
       </div>
 
       <BottomNav active={activeTab} onChange={changeTab} />
-      {barcodeScannerOpen ? (
+      {barcodeScannerOpen && cameraStream ? (
         <BarcodeScanner
-          onClose={() => setBarcodeScannerOpen(false)}
+          stream={cameraStream}
+          onClose={() => { setBarcodeScannerOpen(false); setCameraStream(null); }}
           onDetected={(value) => {
             setBarcodeScannerOpen(false);
+            setCameraStream(null);
             void runSearch(value);
           }}
         />
