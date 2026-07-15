@@ -825,6 +825,10 @@ async function runV4SlipSyncPass(limit = 10) {
 let delayedSyncTimer = null;
 
 function startDelayedAqsiSyncScheduler() {
+  if (!process.env.AQSI_BASE_URL || !process.env.AQSI_API_KEY || !process.env.AQSI_SHOP_ID) {
+    return;
+  }
+
   if (delayedSyncTimer) {
     return;
   }

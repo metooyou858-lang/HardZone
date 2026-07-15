@@ -33,3 +33,5 @@
 - Деплой с Windows запускать через `.\deploy.ps1`, подробности в `docs/OPERATIONS.md`.
 - Перед risky production work запускать `.\scripts\backup-production.ps1` и проверять restore через `.\scripts\test-restore-production-backup.ps1`.
 - Перед изменением AQSI сверять `swagger (3).json` и `docs/PAYMENTS.md`.
+
+- На staging с production-копией данных не запускать фоновую синхронизацию AQSI без полного набора AQSI_BASE_URL, AQSI_API_KEY, AQSI_SHOP_ID: реальные заказы из копии иначе попадают в цикл ошибочных запросов.
