@@ -7,6 +7,7 @@ export type { AuthModulePermission };
 export const moduleByPath: Array<{ prefix: string; permission: AuthModulePermission }> = [
   { prefix: "/admin/users", permission: "users_manage" },
   { prefix: "/analytics", permission: "analytics" },
+  { prefix: "/finance", permission: "analytics" },
   { prefix: "/services", permission: "services" },
   { prefix: "/warehouse", permission: "warehouse" },
   { prefix: "/clients", permission: "clients" },

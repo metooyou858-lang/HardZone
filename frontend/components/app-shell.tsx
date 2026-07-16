@@ -71,6 +71,14 @@ function AnalyticsIcon() {
   );
 }
 
+function FinanceIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
+      <path d="M3.75 6.25h12.5M5.833 10h8.334M7.5 13.75h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <rect x="2.917" y="3.75" width="14.166" height="12.5" rx="2" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
 function SettingsIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true">
@@ -132,6 +140,7 @@ const navItems: Array<{ href: string; label: string; icon: React.ReactNode; perm
   { href: "/clients", label: "Клиенты", icon: <ClientsIcon />, permission: "clients" },
   { href: "/schedule", label: "Расписание", icon: <ScheduleIcon />, permission: "schedule" },
   { href: "/analytics", label: "Аналитика", icon: <AnalyticsIcon />, permission: "analytics" },
+  { href: "/finance", label: "Финансы", icon: <FinanceIcon />, permission: "analytics" },
 ];
 
 function UserAvatar({ name }: { name: string }) {

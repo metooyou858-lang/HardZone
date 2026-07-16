@@ -22,15 +22,20 @@ import { fetchProducts, type Product } from "@/lib/api/products";
 import { fetchTrainingTypes, type TrainingType } from "@/lib/api/training-types";
 
 type Tab = "overview" | "checks" | "products" | "services" | "expenses" | "visits" | "payroll";
+type AnalyticsSection = "analytics" | "finance";
 
-const tabs: { id: Tab; label: string }[] = [
+const financeTabs: { id: Tab; label: string }[] = [
   { id: "overview", label: "Обзор" },
   { id: "checks", label: "Чеки" },
   { id: "products", label: "Товарка" },
   { id: "services", label: "Услуги" },
   { id: "expenses", label: "Расходы" },
-  { id: "visits", label: "Посещения" },
   { id: "payroll", label: "Зарплаты" },
+];
+
+const analyticsTabs: { id: Tab; label: string }[] = [
+  { id: "overview", label: "Обзор" },
+  { id: "visits", label: "Посещения" },
 ];
 
 const paymentLabels: Record<string, string> = {
@@ -278,6 +283,21 @@ function Overview({ report }: { report: AnalyticsReport }) {
   );
 }
 
+function AnalyticsOverview({ report }: { report: AnalyticsReport }) {
+  const { summary } = report;
+  const uniqueClients = new Set(report.visits.map((visit) => visit.client_name)).size;
+
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Посещения" value={formatNumber(summary.visits_count)} hint="Всего посещений за период" />
+        <StatCard label="Групповые" value={formatNumber(summary.group_visits)} hint="Посещения групповых тренировок" />
+        <StatCard label="Open Gym" value={formatNumber(summary.open_gym_visits)} hint="Самостоятельные тренировки" />
+        <StatCard label="Клиенты" value={formatNumber(uniqueClients)} hint="Уникальные посетители за период" />
+      </div>
+    </div>
+  );
+}
 function MonthPeriodPicker({
   month,
   range,
@@ -912,7 +932,7 @@ function PayrollTab() {
   );
 }
 
-export default function AnalyticsPage() {
+export function AnalyticsWorkspace({ section }: { section: AnalyticsSection }) {
   const [tab, setTab] = useState<Tab>("overview");
   const [month, setMonth] = useState(currentMonthValue);
   const [report, setReport] = useState<AnalyticsReport | null>(null);
@@ -922,6 +942,7 @@ export default function AnalyticsPage() {
   const [expenseBusy, setExpenseBusy] = useState(false);
   const [deletingExpenseId, setDeletingExpenseId] = useState<number | null>(null);
   const range = useMemo(() => getMonthRange(month), [month]);
+  const tabs = section === "finance" ? financeTabs : analyticsTabs;
 
   useEffect(() => {
     let cancelled = false;
@@ -1028,7 +1049,7 @@ export default function AnalyticsPage() {
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <h1 className="font-[family:var(--font-heading)] text-3xl font-semibold tracking-tight text-[var(--text-main)] sm:text-4xl">
-            Аналитика
+            {section === "finance" ? "Финансы" : "Аналитика"}
           </h1>
         </div>
 
@@ -1080,7 +1101,7 @@ export default function AnalyticsPage() {
 
       {tab !== "payroll" && !loading && report && (
         <>
-          {tab === "overview" && <Overview report={report} />}
+          {tab === "overview" && (section === "finance" ? <Overview report={report} /> : <AnalyticsOverview report={report} />)}
           {tab === "checks" && <ChecksTable checks={report.checks} />}
           {tab === "products" && <SalesLinesTable lines={report.product_sales} emptyText="Товарных продаж за выбранный период нет" />}
           {tab === "services" && (
@@ -1135,4 +1156,8 @@ export default function AnalyticsPage() {
       )}
     </div>
   );
+}
+
+export default function AnalyticsPage() {
+  return <AnalyticsWorkspace section="analytics" />;
 }
