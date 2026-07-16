@@ -162,7 +162,7 @@ function StatCard({ label, value, hint, tone = "neutral" }: { label: string; val
       ? "border-[rgba(63,185,80,0.24)] bg-[rgba(63,185,80,0.08)]"
       : tone === "warn"
         ? "border-[rgba(255,116,57,0.25)] bg-[rgba(255,116,57,0.08)]"
-        : "border-[var(--line-soft)] bg-[var(--bg-card)]";
+        : "border-[var(--line-soft)] bg-[rgba(22,27,39,0.68)]";
 
   return (
     <article className={`rounded-[8px] border p-4 ${toneClass}`}>
@@ -266,7 +266,7 @@ function Overview({ report }: { report: AnalyticsReport }) {
         <StatCard label="Денежный итог" value={formatMoney(summary.cash_profit)} hint="Выручка минус закупки и списания" tone={summary.cash_profit >= 0 ? "good" : "warn"} />
       </div>
 
-      <section className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
+      <section className="rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.58)] p-5 backdrop-blur-[3px]">
         <SectionTitle label="finance split" title="Разбор выручки и расходов" />
         <div className="mt-5 grid gap-3 md:grid-cols-3">
           <StatCard label="Товарка" value={formatMoney(summary.product_revenue)} hint={`${summary.product_items_sold} шт. продано`} />
@@ -318,7 +318,7 @@ function MonthPeriodPicker({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-2">
+    <div className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.58)] p-2 backdrop-blur-[3px]">
       <span className="px-2 text-xs font-medium text-[var(--text-muted)]">Период</span>
       <button onClick={() => onChange(shiftMonthValue(month, -1))} className="h-9 w-9 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] text-lg leading-none text-[var(--text-main)] transition hover:border-[var(--accent)]" aria-label="Предыдущий месяц">
         ‹
