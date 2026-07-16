@@ -129,9 +129,8 @@ function shiftMonthValue(monthValue: string, shift: number) {
 
 function formatPeriodDate(value: string) {
   const [year, month, day] = value.slice(0, 10).split("-");
-  return `${day}.${month}.${year}`;
+  return day + "." + month + "." + year;
 }
-
 function formatMoney(value: number | string | null | undefined) {
   const number = Number(value || 0);
   return `${number.toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽`;
@@ -261,11 +260,10 @@ function Overview({ report }: { report: AnalyticsReport }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-3">
         <StatCard label="Выручка" value={formatMoney(summary.revenue)} hint={`${summary.checks_count} чеков за период`} tone="good" />
         <StatCard label="Валовая прибыль" value={formatMoney(summary.gross_profit)} hint="Выручка минус себестоимость проданного" tone={summary.gross_profit >= 0 ? "good" : "warn"} />
         <StatCard label="Денежный итог" value={formatMoney(summary.cash_profit)} hint="Выручка минус закупки и списания" tone={summary.cash_profit >= 0 ? "good" : "warn"} />
-        <StatCard label="Посещения" value={formatNumber(summary.visits_count)} hint={`${summary.group_visits} групповых · ${summary.open_gym_visits} Open Gym`} />
       </div>
 
       <section className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-5">
@@ -300,12 +298,12 @@ function AnalyticsOverview({ report }: { report: AnalyticsReport }) {
 }
 function MonthPeriodPicker({
   month,
-  range,
   onChange,
+  onRefresh,
 }: {
   month: string;
-  range: { from: string; to: string };
   onChange: (value: string) => void;
+  onRefresh: () => void;
 }) {
   const { year, month: monthNumber } = parseMonthValue(month);
   const currentYear = new Date().getFullYear();
@@ -320,72 +318,40 @@ function MonthPeriodPicker({
   }
 
   return (
-    <div className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-3">
-      <div className="grid gap-3 sm:grid-cols-[auto_1fr_auto] sm:items-end">
-        <button
-          onClick={() => onChange(shiftMonthValue(month, -1))}
-          className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-lg leading-none text-[var(--text-main)] transition hover:border-[var(--accent)]"
-          aria-label="Предыдущий месяц"
-        >
-          ‹
-        </button>
-
-        <div className="grid gap-3 sm:grid-cols-[1fr_96px]">
-          <label className="grid gap-1 text-xs text-[var(--text-muted)]">
-            Месяц
-            <select
-              value={monthNumber}
-              onChange={(event) => setMonthPart(Number(event.target.value))}
-              className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none"
-            >
-              {monthLabels.map((label, index) => (
-                <option key={label} value={index + 1}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="grid gap-1 text-xs text-[var(--text-muted)]">
-            Год
-            <select
-              value={year}
-              onChange={(event) => setYearPart(Number(event.target.value))}
-              className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none"
-            >
-              {years.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <button
-          onClick={() => onChange(shiftMonthValue(month, 1))}
-          className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-lg leading-none text-[var(--text-main)] transition hover:border-[var(--accent)]"
-          aria-label="Следующий месяц"
-        >
-          ›
-        </button>
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-[var(--text-muted)]">
-          Период: <span className="text-[var(--text-main)]">{formatPeriodDate(range.from)} - {formatPeriodDate(range.to)}</span>
-        </p>
-        <button
-          onClick={() => onChange(currentMonthValue())}
-          className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-2 text-xs font-medium text-[var(--text-main)] transition hover:border-[var(--accent)]"
-        >
-          Текущий месяц
-        </button>
-      </div>
+    <div className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-2">
+      <span className="px-2 text-xs font-medium text-[var(--text-muted)]">Период</span>
+      <button onClick={() => onChange(shiftMonthValue(month, -1))} className="h-9 w-9 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] text-lg leading-none text-[var(--text-main)] transition hover:border-[var(--accent)]" aria-label="Предыдущий месяц">
+        ‹
+      </button>
+      <label>
+        <span className="sr-only">Месяц</span>
+        <select value={monthNumber} onChange={(event) => setMonthPart(Number(event.target.value))} className="h-9 min-w-[132px] rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none">
+          {monthLabels.map((label, index) => (
+            <option key={label} value={index + 1}>{label}</option>
+          ))}
+        </select>
+      </label>
+      <label>
+        <span className="sr-only">Год</span>
+        <select value={year} onChange={(event) => setYearPart(Number(event.target.value))} className="h-9 w-[92px] rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none">
+          {years.map((item) => (
+            <option key={item} value={item}>{item}</option>
+          ))}
+        </select>
+      </label>
+      <button onClick={() => onChange(shiftMonthValue(month, 1))} className="h-9 w-9 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] text-lg leading-none text-[var(--text-main)] transition hover:border-[var(--accent)]" aria-label="Следующий месяц">
+        ›
+      </button>
+      <span className="mx-1 hidden h-5 w-px bg-[var(--line-soft)] sm:block" />
+      <button onClick={() => onChange(currentMonthValue())} className="h-9 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-xs font-medium text-[var(--text-main)] transition hover:border-[var(--accent)]">
+        Текущий месяц
+      </button>
+      <button onClick={onRefresh} className="h-9 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-xs font-medium text-[var(--text-main)] transition hover:border-[var(--accent)]">
+        Обновить
+      </button>
     </div>
   );
 }
-
 function ExternalExpenseForm({
   defaultDate,
   busy,
@@ -1046,7 +1012,7 @@ export function AnalyticsWorkspace({ section }: { section: AnalyticsSection }) {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h1 className="font-[family:var(--font-heading)] text-3xl font-semibold tracking-tight text-[var(--text-main)] sm:text-4xl">
             {section === "finance" ? "Финансы" : "Аналитика"}
@@ -1054,12 +1020,7 @@ export function AnalyticsWorkspace({ section }: { section: AnalyticsSection }) {
         </div>
 
         {tab !== "payroll" && (
-          <div className="grid gap-3 xl:min-w-[520px]">
-            <MonthPeriodPicker month={month} range={range} onChange={setMonth} />
-            <button onClick={() => setReloadToken((value) => value + 1)} className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-4 py-2 text-sm font-medium text-[var(--text-main)] transition hover:border-[var(--accent)]">
-              Обновить
-            </button>
-          </div>
+          <MonthPeriodPicker month={month} onChange={setMonth} onRefresh={() => setReloadToken((value) => value + 1)} />
         )}
       </div>
 
