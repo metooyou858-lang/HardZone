@@ -936,7 +936,7 @@ router.get('/', async (req, res) => {
     const revenue = roundMoney(orderRevenue + legacyRevenue);
     const costOfSoldGoods = roundMoney(orderCost + legacyCost);
     const grossProfit = roundMoney(revenue - costOfSoldGoods);
-    const cashProfit = roundMoney(revenue - purchaseExpenses - writeoffExpenses - externalExpenses - payrollExpenses);
+    const cashProfit = roundMoney(revenue - purchaseExpenses - externalExpenses - payrollExpenses);
 
     const productLines = checks
       .flatMap((check) =>

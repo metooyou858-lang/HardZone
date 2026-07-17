@@ -149,6 +149,13 @@ function formatNumber(value: number | string | null | undefined) {
   return Number(value || 0).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
 }
 
+function formatCount(value: number, one: string, few: string, many: string) {
+  const mod100 = Math.abs(value) % 100;
+  const mod10 = mod100 % 10;
+  const form = mod100 >= 11 && mod100 <= 14 ? many : mod10 === 1 ? one : mod10 >= 2 && mod10 <= 4 ? few : many;
+  return `${value} ${form}`;
+}
+
 function formatDate(value: string | null | undefined) {
   if (!value) return "—";
 
@@ -190,11 +197,11 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
-function SectionTitle({ label, title }: { label: string; title: string }) {
+function SectionTitle({ label, title }: { label?: string; title: string }) {
   return (
     <div>
-      <p className="font-[family:var(--font-mono)] text-[11px] uppercase tracking-[0.22em] text-[var(--text-muted)]">{label}</p>
-      <h2 className="mt-2 text-lg font-semibold text-[var(--text-main)]">{title}</h2>
+      {label && <p className="font-[family:var(--font-mono)] text-[11px] uppercase tracking-[0.22em] text-[var(--text-muted)]">{label}</p>}
+      <h2 className={label ? "mt-2 text-lg font-semibold text-[var(--text-main)]" : "text-lg font-semibold text-[var(--text-main)]"}>{title}</h2>
     </div>
   );
 }
@@ -206,25 +213,38 @@ function ChecksTable({ checks }: { checks: AnalyticsCheck[] }) {
 
   return (
     <section className="overflow-hidden rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)]">
+      <div className="hidden grid-cols-[1.1fr_1fr_0.8fr_0.8fr_0.8fr] gap-3 border-b border-[var(--line-soft)] bg-[var(--bg-panel)] px-4 py-3 text-xs font-medium text-[var(--text-muted)] lg:grid">
+        <span>Чек и дата</span>
+        <span>Клиент и оплата</span>
+        <span>Статус</span>
+        <span>Выручка</span>
+        <span>Прибыль</span>
+      </div>
       {checks.map((check, index) => (
-        <div key={check.id} className={index < checks.length - 1 ? "border-b border-[var(--line-soft)]" : ""}>
-          <div className="grid gap-3 px-4 py-4 lg:grid-cols-[1.1fr_1fr_0.8fr_0.8fr_0.8fr] lg:items-center">
+        <details key={check.id} className={`group ${index < checks.length - 1 ? "border-b border-[var(--line-soft)]" : ""}`}>
+          <summary className="grid cursor-pointer list-none gap-3 px-4 py-4 text-sm transition hover:bg-[rgba(255,255,255,0.025)] lg:grid-cols-[1.1fr_1fr_0.8fr_0.8fr_0.8fr] lg:items-center">
             <div>
               <p className="font-[family:var(--font-mono)] text-xs text-[var(--text-muted)]">#{shortId(check.id)}</p>
-              <p className="mt-1 text-sm font-medium text-[var(--text-main)]">{formatDate(check.confirmed_at || check.created_at)}</p>
+              <p className="mt-1 font-medium text-[var(--text-main)]">{formatDate(check.confirmed_at || check.created_at)}</p>
             </div>
             <div>
-              <p className="text-sm text-[var(--text-main)]">{check.client_name || "Без клиента"}</p>
+              <p className="text-[var(--text-main)]">{check.client_name || "Без клиента"}</p>
               <p className="mt-1 text-xs text-[var(--text-muted)]">{paymentLabels[check.payment_type || ""] || "Тип оплаты не указан"}</p>
             </div>
-            <p className="text-sm text-[var(--text-muted)]">{statusLabels[check.status] || check.status}</p>
-            <p className="text-sm font-semibold text-[var(--text-main)]">{formatMoney(check.revenue)}</p>
-            <p className={`text-sm font-semibold ${check.profit >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]"}`}>{formatMoney(check.profit)}</p>
-          </div>
+            <p className="text-[var(--text-muted)]">{statusLabels[check.status] || check.status}</p>
+            <p className="font-semibold text-[var(--text-main)]">{formatMoney(check.revenue)}</p>
+            <div className="flex items-center justify-between gap-3">
+              <p className={`font-semibold ${check.profit >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]"}`}>{formatMoney(check.profit)}</p>
+              <span aria-hidden="true" className="text-[var(--text-muted)] transition-transform group-open:rotate-180">⌄</span>
+            </div>
+          </summary>
           <div className="bg-[var(--bg-panel)] px-4 py-3">
+            <div className="mb-2 hidden grid-cols-[0.8fr_2fr_0.7fr_0.7fr_0.7fr] gap-2 text-[11px] text-[var(--text-muted)] sm:grid">
+              <span>Тип</span><span>Позиция</span><span>Количество</span><span>Выручка</span><span>Прибыль</span>
+            </div>
             <div className="grid gap-2">
               {check.items.map((item) => (
-                <div key={item.id} className="grid gap-2 text-xs text-[var(--text-muted)] sm:grid-cols-[0.8fr_2fr_0.7fr_0.7fr_0.7fr]">
+                <div key={item.id} className="grid gap-1 border-t border-[var(--line-soft)] pt-2 text-xs text-[var(--text-muted)] first:border-0 first:pt-0 sm:grid-cols-[0.8fr_2fr_0.7fr_0.7fr_0.7fr] sm:gap-2">
                   <span>{kindLabels[item.kind]}</span>
                   <span className="min-w-0 truncate text-[var(--text-main)]">{item.name}</span>
                   <span>{formatNumber(item.active_quantity)} шт.</span>
@@ -234,7 +254,7 @@ function ChecksTable({ checks }: { checks: AnalyticsCheck[] }) {
               ))}
             </div>
           </div>
-        </div>
+        </details>
       ))}
     </section>
   );
@@ -266,25 +286,49 @@ function SalesLinesTable({ lines, emptyText }: { lines: AnalyticsSaleLine[]; emp
 
 function Overview({ report }: { report: AnalyticsReport }) {
   const { summary } = report;
+  const totalExpenses = summary.purchase_expenses + summary.external_expenses + summary.payroll_expenses;
+  const hasFinancialActivity =
+    report.checks.length > 0 ||
+    report.product_sales.length > 0 ||
+    report.service_sales.length > 0 ||
+    report.purchases.length > 0 ||
+    report.writeoffs.length > 0 ||
+    report.external_expenses.length > 0 ||
+    report.payroll_expenses.length > 0;
+
+  if (!hasFinancialActivity) {
+    return (
+      <section className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-6 py-12 text-center">
+        <h2 className="text-base font-semibold text-[var(--text-main)]">За выбранный период финансовых операций нет</h2>
+        <p className="mt-2 text-sm text-[var(--text-muted)]">Выберите другой месяц, чтобы посмотреть финансовый результат.</p>
+      </section>
+    );
+  }
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 md:grid-cols-3">
-        <StatCard label="Выручка" value={formatMoney(summary.revenue)} hint={`${summary.checks_count} чеков за период`} tone="good" />
-        <StatCard label="Валовая прибыль" value={formatMoney(summary.gross_profit)} hint="Выручка минус себестоимость проданного" tone={summary.gross_profit >= 0 ? "good" : "warn"} />
-        <StatCard label="Денежный итог" value={formatMoney(summary.cash_profit)} hint="Выручка минус закупки и списания" tone={summary.cash_profit >= 0 ? "good" : "warn"} />
-      </div>
+      <section className="rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.62)] p-4 sm:p-5">
+        <SectionTitle title="Финансовый результат" />
+        <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto_1fr_auto_1fr] md:items-stretch">
+          <StatCard label="Выручка" value={formatMoney(summary.revenue)} hint={`${summary.checks_count} чеков за период`} tone="good" />
+          <div className="hidden items-center text-2xl text-[var(--text-muted)] md:flex">−</div>
+          <StatCard label="Оплаченные расходы" value={formatMoney(totalExpenses)} hint="Закупки, внешние расходы и выплаченные зарплаты" tone="warn" />
+          <div className="hidden items-center text-2xl text-[var(--text-muted)] md:flex">=</div>
+          <StatCard label="Чистый результат" value={formatMoney(summary.cash_profit)} hint="Выручка за вычетом оплаченных расходов" tone={summary.cash_profit >= 0 ? "good" : "warn"} />
+        </div>
+      </section>
 
-      <section className="rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.58)] p-5 backdrop-blur-[3px]">
-        <SectionTitle label="finance split" title="Разбор выручки и расходов" />
-        <div className="mt-5 grid gap-3 md:grid-cols-3">
+      <section className="rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.58)] p-4 sm:p-5">
+        <SectionTitle title="Из чего сложился результат" />
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <StatCard label="Товарка" value={formatMoney(summary.product_revenue)} hint={`${summary.product_items_sold} шт. продано`} />
           <StatCard label="Услуги" value={formatMoney(summary.service_revenue)} hint="Услуги и тренировочные продукты" />
+          <StatCard label="Валовая прибыль" value={formatMoney(summary.gross_profit)} hint="Выручка минус себестоимость продаж" tone={summary.gross_profit >= 0 ? "good" : "warn"} />
+          <StatCard label="Себестоимость продаж" value={formatMoney(summary.cost_of_sold_goods)} hint="Товарные позиции в чеках" />
           <StatCard label="Закупки склада" value={formatMoney(summary.purchase_expenses)} hint={`${report.purchases.length} приходных операций`} tone="warn" />
-          <StatCard label="Списания" value={formatMoney(summary.writeoff_expenses)} hint={`${report.writeoffs.length} складских списаний по себестоимости`} tone="warn" />
+          <StatCard label="Списания" value={formatMoney(summary.writeoff_expenses)} hint={`${report.writeoffs.length} складских потерь · не вычитаются повторно`} />
           <StatCard label="Внешние расходы" value={formatMoney(summary.external_expenses)} hint={`${report.external_expenses.length} ручных позиций`} tone="warn" />
-          <StatCard label="Зарплаты" value={formatMoney(summary.payroll_expenses)} hint={formatNumber(report.payroll_expenses.length) + " выплат сотрудникам"} tone="warn" />
-          <StatCard label="Себестоимость продаж" value={formatMoney(summary.cost_of_sold_goods)} hint="Себестоимость товарных позиций в чеках" />
+          <StatCard label="Зарплаты" value={formatMoney(summary.payroll_expenses)} hint={`${report.payroll_expenses.length} выплат сотрудникам`} tone="warn" />
         </div>
       </section>
     </div>
@@ -409,8 +453,12 @@ function ExternalExpenseForm({
   }
 
   return (
-    <form onSubmit={submit} className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-4">
-      <SectionTitle label="manual expense" title="Добавить внешний расход" />
+    <details className="group rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)]">
+      <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-4 text-sm font-medium text-[var(--text-main)]">
+        <span>+ Добавить внешний расход</span>
+        <span aria-hidden="true" className="text-[var(--text-muted)] transition-transform group-open:rotate-180">⌄</span>
+      </summary>
+      <form onSubmit={submit} className="border-t border-[var(--line-soft)] p-4">
       <div className="mt-4 grid gap-3 lg:grid-cols-[1.3fr_0.7fr_0.8fr_1.4fr_auto] lg:items-end">
         <label className="grid gap-1 text-xs text-[var(--text-muted)]">
           Статья
@@ -463,6 +511,7 @@ function ExternalExpenseForm({
 
       {error && <p className="mt-3 text-sm text-[var(--danger)]">{error}</p>}
     </form>
+    </details>
   );
 }
 
@@ -549,7 +598,7 @@ function PayrollRulesPanel({ rules, trainers, trainingTypes, services, busy, onC
   }
 
   const editor = <form onSubmit={submit} className="rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.58)] p-4 backdrop-blur-[3px]">
-      <SectionTitle label="payroll rules" title={editingId === null ? "Новое правило оплаты" : "Редактирование правила"} />
+      <SectionTitle title={editingId === null ? "Новое правило оплаты" : "Редактирование правила"} />
       <div className="mt-4 grid gap-3 lg:grid-cols-[1.4fr_0.7fr_1fr]">
         <label className="grid gap-1 text-xs text-[var(--text-main)]">Название<input value={name} onChange={(e) => setName(e.target.value)} placeholder="Например, групповые занятия" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)]" /></label>
         <label className="grid gap-1 text-xs text-[var(--text-main)]">Действует с<input value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} type="date" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)]" /></label>
@@ -580,7 +629,7 @@ function PayrollRulesPanel({ rules, trainers, trainingTypes, services, busy, onC
 
   return <div className="space-y-4">
     <div className="flex items-center justify-between gap-3">
-      <SectionTitle label="payroll rules" title="Правила оплаты" />
+      <SectionTitle title="Правила оплаты" />
       <button type="button" onClick={startCreate} className="h-10 rounded-[8px] border border-[var(--accent)] bg-[var(--accent-soft)] px-4 text-sm font-medium text-[var(--accent)]">+ Создать новое правило</button>
     </div>
     {editingId === null && editorOpen && editor}
@@ -601,8 +650,8 @@ function PayrollCalculation({ report }: { report: PayrollReport }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="К выплате" value={formatMoney(report.summary.total_amount)} hint={`${report.summary.trainers_count} тренеров`} tone="good" />
-        <StatCard label="Занятия" value={formatNumber(report.summary.slots_count)} hint={`${report.summary.attended_count} посещений отмечено`} />
+        <StatCard label="К выплате" value={formatMoney(report.summary.total_amount)} hint={formatCount(report.summary.trainers_count, "тренер", "тренера", "тренеров")} tone="good" />
+        <StatCard label="Занятия" value={formatNumber(report.summary.slots_count)} hint={`${formatCount(report.summary.attended_count, "посещение", "посещения", "посещений")} отмечено`} />
         <StatCard label="База" value={formatMoney(report.summary.base_amount)} hint="сумма базовых ставок" />
         <StatCard label="Доплаты" value={formatMoney(report.summary.bonus_amount)} hint={`${report.summary.warnings_count} предупреждений`} tone={report.summary.warnings_count > 0 ? "warn" : "neutral"} />
       </div>
@@ -619,7 +668,7 @@ function PayrollCalculation({ report }: { report: PayrollReport }) {
               >
                 <div>
                   <p className="font-semibold text-[var(--text-main)]">{trainer.trainer_name}</p>
-                  <p className="mt-1 text-xs text-[var(--text-muted)]">{trainer.slots_count} занятий · {trainer.attended_count} посещений</p>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">{formatCount(trainer.slots_count, "занятие", "занятия", "занятий")} · {formatCount(trainer.attended_count, "посещение", "посещения", "посещений")}</p>
                 </div>
                 <p className="text-[var(--text-muted)]">База {formatMoney(trainer.base_amount)}</p>
                 <p className="text-[var(--text-muted)]">Доплаты {formatMoney(trainer.bonus_amount)}</p>
@@ -649,8 +698,10 @@ function PayrollTrainerDetails({ trainer }: { trainer: PayrollTrainerSummary }) 
               <p className="text-[var(--text-muted)]">база {formatMoney(line.base_amount)}</p>
               <p className="text-[var(--text-muted)]">
                 {line.bonus_threshold === null
-                  ? "доплаты нет"
-                  : `(${line.attended_count} - ${line.bonus_threshold}) x ${formatMoney(line.bonus_per_person)} = ${formatMoney(line.bonus_amount)}`}
+                  ? "Доплата не предусмотрена"
+                  : line.attended_count <= line.bonus_threshold
+                    ? `Доплата после ${line.bonus_threshold} человек — порог не достигнут`
+                    : `(${line.attended_count} − ${line.bonus_threshold}) × ${formatMoney(line.bonus_per_person)} = ${formatMoney(line.bonus_amount)}`}
               </p>
               <p className="text-right font-semibold text-[var(--text-main)]">{formatMoney(line.total_amount)}</p>
             </div>
@@ -772,7 +823,7 @@ function PayrollRunsPanel() {
   return (
     <div className="space-y-4">
       <section className="rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.58)] p-4 backdrop-blur-[3px]">
-        <SectionTitle label="payroll statement" title="Сформировать расчётную ведомость" />
+        <SectionTitle title="Сформировать расчётную ведомость" />
         <p className="mt-2 text-sm text-[var(--text-muted)]">
           После формирования суммы сохраняются снимком и больше не зависят от изменений правил.
         </p>
@@ -786,7 +837,7 @@ function PayrollRunsPanel() {
             <input value={to} onChange={(event) => setTo(event.target.value)} type="date" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none" />
           </label>
           <button onClick={() => void createRun()} disabled={busy} className="h-10 rounded-[8px] border border-[var(--accent)] bg-[var(--accent-soft)] px-4 text-sm font-medium text-[var(--accent)] disabled:opacity-60">
-            {busy ? "Формирую..." : "Сформировать"}
+            {busy ? "Формирую..." : "Сформировать ведомость"}
           </button>
         </div>
       </section>
@@ -833,7 +884,7 @@ function PayrollRunsPanel() {
                 <summary className="grid cursor-pointer list-none gap-3 px-4 py-4 sm:grid-cols-[1.4fr_0.8fr_0.8fr_auto] sm:items-center">
                   <div>
                     <p className="font-medium text-[var(--text-main)]">{employee.trainer_name}</p>
-                    <p className="mt-1 text-xs text-[var(--text-muted)]">{employee.slots_count} занятий · {employee.attended_count} посещений</p>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">{formatCount(employee.slots_count, "занятие", "занятия", "занятий")} · {formatCount(employee.attended_count, "посещение", "посещения", "посещений")}</p>
                   </div>
                   <p className="text-sm text-[var(--text-muted)]">База {formatMoney(employee.base_amount)} · доплаты {formatMoney(employee.bonus_amount)}</p>
                   <p className="text-base font-semibold text-[var(--text-main)]">{formatMoney(employee.total_amount)}</p>
@@ -841,7 +892,7 @@ function PayrollRunsPanel() {
                     <span className="text-xs font-medium text-[var(--success)]">Выплачено {employee.paid_date ? formatPeriodDate(employee.paid_date) : ""}</span>
                   ) : run.status === "approved" ? (
                     <button onClick={(event) => { event.preventDefault(); void payEmployee(run.id, employee.id); }} disabled={busy} className="rounded-[8px] border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-xs font-medium text-[var(--accent)] disabled:opacity-60">
-                      Выплачено
+                      Отметить выплату
                     </button>
                   ) : (
                     <span className="text-xs text-[var(--text-muted)]">Ожидает утверждения</span>
@@ -962,7 +1013,7 @@ function PayrollTab() {
       <section className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-4">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <SectionTitle label="payroll" title="Зарплаты" />
+            <SectionTitle title="Зарплаты" />
           </div>
           {mode !== "runs" && (
           <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
@@ -1219,10 +1270,13 @@ export function AnalyticsWorkspace({ section }: { section: AnalyticsSection }) {
                 <EmptyState text="Расходов за выбранный период нет" />
               ) : (
                 <section className="overflow-hidden rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)]">
+                  <div className="hidden grid-cols-[0.8fr_1.4fr_1fr_0.8fr_1fr_auto] gap-3 border-b border-[var(--line-soft)] bg-[var(--bg-panel)] px-4 py-3 text-xs font-medium text-[var(--text-muted)] lg:grid">
+                    <span>Тип</span><span>Наименование</span><span>Детали</span><span>Сумма</span><span>Дата</span><span />
+                  </div>
                   {expenseRows.map((row, index) => (
                     <div key={row.id} className={`grid gap-3 px-4 py-4 text-sm lg:grid-cols-[0.8fr_1.4fr_1fr_0.8fr_1fr_auto] lg:items-center ${index < expenseRows.length - 1 ? "border-b border-[var(--line-soft)]" : ""}`}>
                       <p className={row.type === "Приёмка" ? "font-medium text-[var(--warning)]" : "font-medium text-[var(--danger)]"}>{row.type}</p>
-                      <p className="min-w-0 truncate font-medium text-[var(--text-main)]">{row.name}</p>
+                      <div className="min-w-0"><p className="truncate font-medium text-[var(--text-main)]">{row.name}</p>{row.amount === 0 && <p className="mt-1 text-xs text-[var(--warning)]">Не указана стоимость</p>}</div>
                       <p className="text-xs text-[var(--text-muted)]">{row.detail}</p>
                       <p className="font-semibold text-[var(--text-main)]">{formatMoney(row.amount)}</p>
                       <p className="text-xs text-[var(--text-muted)]">{formatDate(row.date)}</p>

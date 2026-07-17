@@ -105,6 +105,11 @@ select {
   font: inherit;
 }
 
+:where(a, button, input, textarea, select, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .app-grid {
   display: grid;
   height: 100dvh;
@@ -188,7 +193,7 @@ select {
 
 @media (max-width: 960px) {
   .app-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: var(--sidebar-width, 64px) minmax(0, 1fr);
   }
 
   html {

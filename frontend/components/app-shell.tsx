@@ -164,6 +164,7 @@ function UserAvatar({ name }: { name: string }) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [narrowLayout, setNarrowLayout] = useState(false);
   const [user, setUser] = useState<SessionUser | null>(null);
   const pathnameRef = useRef(pathname);
   const navigationFallbackRef = useRef<number | null>(null);
@@ -206,6 +207,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const stored = window.localStorage.getItem("hardzone.sidebar-collapsed");
     if (stored === "true") setCollapsed(true);
+  }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 960px)");
+    const update = () => setNarrowLayout(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
   }, []);
 
   useEffect(() => {
@@ -257,6 +266,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
+  const sidebarCollapsed = collapsed || narrowLayout;
+
   const canAccessSettings =
     hasModuleAccess(user?.modules, "services") ||
     hasModuleAccess(user?.modules, "users_manage") ||
@@ -268,8 +279,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div
       className="app-grid bg-[var(--bg-app)]"
-      style={{ ["--sidebar-width" as string]: collapsed ? "64px" : "clamp(184px, 13vw, 200px)" }}
-      data-sidebar-collapsed={collapsed ? "true" : "false"}
+      style={{ ["--sidebar-width" as string]: sidebarCollapsed ? "64px" : "clamp(184px, 13vw, 200px)" }}
+      data-sidebar-collapsed={sidebarCollapsed ? "true" : "false"}
     >
       {/* Сайдбар */}
       <aside className="sidebar-scrollbar z-[70] h-dvh overflow-y-auto overflow-x-hidden bg-transparent text-[var(--text-main)]">
@@ -278,7 +289,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {/* Логотип */}
           <div
             className={`flex h-[60px] shrink-0 items-center gap-[10px] overflow-hidden ${
-              collapsed ? "justify-center px-0" : "px-5"
+              sidebarCollapsed ? "justify-center px-0" : "px-5"
             }`}
           >
             <Link
@@ -293,7 +304,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <ZapIcon />
             </Link>
-            {!collapsed && (
+            {!sidebarCollapsed && (
               <span
                 className="whitespace-nowrap text-[13px] font-extrabold tracking-[0.08em] text-[var(--text-main)]"
                 style={{ fontFamily: "var(--font-heading)" }}
@@ -317,13 +328,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     if (!active) scheduleNavigationFallback(event, item.href);
                   }}
                   className={`group relative flex items-center text-[rgba(236,237,246,0.6)] transition-all hover:bg-[rgba(94,244,216,0.10)] hover:text-[var(--text-main)] ${
-                    collapsed ? "justify-center px-0 py-3" : "gap-3 px-5 py-3"
+                    sidebarCollapsed ? "justify-center px-0 py-3" : "gap-3 px-5 py-3"
                   }`}
                 >
                   <span className="text-[rgba(236,237,246,0.6)] transition-colors group-hover:text-[var(--accent)]">
                     {item.icon}
                   </span>
-                  {!collapsed && (
+                  {!sidebarCollapsed && (
                     <span className="text-[13px] font-medium">{item.label}</span>
                   )}
                 </Link>
@@ -332,18 +343,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
 
           {/* Кнопка сворачивания — внизу */}
-          <div className={`shrink-0 ${collapsed ? "flex flex-col items-center gap-1 py-3" : "px-3 py-3"}`}>
+          <div className={`shrink-0 ${sidebarCollapsed ? "flex flex-col items-center gap-1 py-3" : "px-3 py-3"}`}>
             {user ? (
-              <div className={`flex min-w-0 items-center ${collapsed ? "justify-center" : "gap-2 px-1"}`}>
+              <div className={`flex min-w-0 items-center ${sidebarCollapsed ? "justify-center" : "gap-2 px-1"}`}>
                 <UserAvatar name={user.name || ""} />
-                {!collapsed && (
+                {!sidebarCollapsed && (
                   <p className="min-w-0 flex-1 truncate text-xs font-medium text-[var(--text-main)]">{user.name}</p>
                 )}
               </div>
             ) : (
               <div className="h-8 w-8 animate-pulse rounded-full bg-[rgba(255,255,255,0.06)]" />
             )}
-            <div className={`flex items-center justify-center gap-2 ${collapsed ? "flex-col" : "mt-2"}`}>
+            <div className={`flex items-center justify-center gap-2 ${sidebarCollapsed ? "flex-col" : "mt-2"}`}>
               {canAccessSettings && (
                 <Link href="/settings" title="Настройки" onClick={(event) => scheduleNavigationFallback(event, "/settings")} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[var(--text-muted)] transition hover:bg-[rgba(94,244,216,0.10)] hover:text-[var(--accent)]">
                   <SettingsIcon />
@@ -352,8 +363,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <button type="button" onClick={handleLogout} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[var(--text-muted)] transition hover:bg-[rgba(94,244,216,0.10)] hover:text-[var(--accent)]" title="Выйти">
                 <LogoutIcon />
               </button>
-              <button type="button" onClick={() => setCollapsed((v) => !v)} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[rgba(236,237,246,0.35)] transition-colors hover:bg-[rgba(94,244,216,0.10)] hover:text-[var(--accent)]" aria-label={collapsed ? "Развернуть меню" : "Свернуть меню"} title={collapsed ? "Развернуть меню" : "Свернуть меню"}>
-                <CollapseIcon collapsed={collapsed} />
+              <button type="button" onClick={() => setCollapsed((v) => !v)} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[rgba(236,237,246,0.35)] transition-colors hover:bg-[rgba(94,244,216,0.10)] hover:text-[var(--accent)]" aria-label={sidebarCollapsed ? "Развернуть меню" : "Свернуть меню"} title={sidebarCollapsed ? "Развернуть меню" : "Свернуть меню"} disabled={narrowLayout}>
+                <CollapseIcon collapsed={sidebarCollapsed} />
               </button>
             </div>
           </div>        </div>
