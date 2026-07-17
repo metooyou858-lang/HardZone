@@ -502,6 +502,7 @@ function PayrollRulesPanel({ rules, trainers, trainingTypes, services, busy, onC
   onDelete: (rule: PayrollRule) => Promise<void>;
 }) {
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [name, setName] = useState("");
   const [allTrainers, setAllTrainers] = useState(true);
   const [trainerIds, setTrainerIds] = useState<number[]>([]);
@@ -530,10 +531,13 @@ function PayrollRulesPanel({ rules, trainers, trainingTypes, services, busy, onC
     const payload = { name: name.trim(), trainer_ids: trainerIds, all_trainers: allTrainers, training_type_ids: trainingTypeIds, product_ids: productIds, all_activities: allActivities, calculation_type: calculationType, base_amount: calculationType === "fixed" ? money(baseAmount) : 0, per_attendee_amount: calculationType === "per_attendee" ? money(perAttendeeAmount) : 0, percentage_rate: calculationType === "percentage" ? money(percentageRate) : 0, bonus_threshold: calculationType === "fixed" && bonusThreshold ? Number(bonusThreshold) : null, bonus_per_person: calculationType === "fixed" ? money(bonusPerPerson) : 0, tiers: [], effective_from: effectiveFrom, comment: comment.trim() || null };
     if (editingId === null) await onCreate(payload); else await onUpdate(editingId, payload);
     setEditingId(null);
+    setEditorOpen(false);
     setName(""); setTrainerIds([]); setTrainingTypeIds([]); setProductIds([]); setBaseAmount(""); setBonusThreshold(""); setBonusPerPerson(""); setPerAttendeeAmount(""); setPercentageRate(""); setComment("");
   }
 
-  function startEdit(rule: PayrollRule) { setEditingId(rule.id); setName(rule.name); setAllTrainers(rule.all_trainers); setTrainerIds(rule.trainers.map((t)=>Number(t.trainer_id))); setAllActivities(rule.all_activities); setTrainingTypeIds(rule.items.filter((i)=>i.training_type_id!==null).map((i)=>Number(i.training_type_id))); setProductIds(rule.items.filter((i)=>i.product_id!==null).map((i)=>Number(i.product_id))); setCalculationType(rule.calculation_type === "tiered" ? "fixed" : rule.calculation_type); setBaseAmount(String(rule.base_amount || "")); setBonusThreshold(rule.bonus_threshold===null?"":String(rule.bonus_threshold)); setBonusPerPerson(String(rule.bonus_per_person || "")); setPerAttendeeAmount(String(rule.per_attendee_amount || "")); setPercentageRate(String(rule.percentage_rate || "")); setEffectiveFrom(rule.effective_from); setComment(rule.comment || ""); window.scrollTo({top:0,behavior:"smooth"}); }
+  function startEdit(rule: PayrollRule) { setEditingId(rule.id); setEditorOpen(true); setName(rule.name); setAllTrainers(rule.all_trainers); setTrainerIds(rule.trainers.map((t)=>Number(t.trainer_id))); setAllActivities(rule.all_activities); setTrainingTypeIds(rule.items.filter((i)=>i.training_type_id!==null).map((i)=>Number(i.training_type_id))); setProductIds(rule.items.filter((i)=>i.product_id!==null).map((i)=>Number(i.product_id))); setCalculationType(rule.calculation_type === "tiered" ? "fixed" : rule.calculation_type); setBaseAmount(String(rule.base_amount || "")); setBonusThreshold(rule.bonus_threshold===null?"":String(rule.bonus_threshold)); setBonusPerPerson(String(rule.bonus_per_person || "")); setPerAttendeeAmount(String(rule.per_attendee_amount || "")); setPercentageRate(String(rule.percentage_rate || "")); setEffectiveFrom(rule.effective_from); setComment(rule.comment || ""); }
+
+  function startCreate() { setEditingId(null); setEditorOpen(true); setName(""); setAllTrainers(true); setTrainerIds([]); setAllActivities(false); setTrainingTypeIds([]); setProductIds([]); setCalculationType("fixed"); setBaseAmount(""); setBonusThreshold(""); setBonusPerPerson(""); setPerAttendeeAmount(""); setPercentageRate(""); setEffectiveFrom(todayDateValue()); setComment(""); setError(null); }
 
   function ruleFormula(rule: PayrollRule) {
     if (rule.calculation_type === "per_attendee") return `${formatMoney(rule.per_attendee_amount)} за каждого пришедшего`;
@@ -542,8 +546,7 @@ function PayrollRulesPanel({ rules, trainers, trainingTypes, services, busy, onC
     return `Ставка ${formatMoney(rule.base_amount)} за занятие${rule.bonus_threshold === null ? "" : ` · свыше ${rule.bonus_threshold}: +${formatMoney(rule.bonus_per_person || 0)}`}`;
   }
 
-  return <div className="space-y-4">
-    <form onSubmit={submit} className="rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.58)] p-4 backdrop-blur-[3px]">
+  const editor = <form onSubmit={submit} className="rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.58)] p-4 backdrop-blur-[3px]">
       <SectionTitle label="payroll rules" title={editingId === null ? "Новое правило оплаты" : "Редактирование правила"} />
       <div className="mt-4 grid gap-3 lg:grid-cols-[1.4fr_0.7fr_1fr]">
         <label className="grid gap-1 text-xs text-[var(--text-main)]">Название<input value={name} onChange={(e) => setName(e.target.value)} placeholder="Например, групповые занятия" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)]" /></label>
@@ -570,11 +573,21 @@ function PayrollRulesPanel({ rules, trainers, trainingTypes, services, busy, onC
         {calculationType === "percentage" && <label className="mt-3 grid max-w-xs gap-1 text-xs text-[var(--text-main)]">Процент тренеру<input value={percentageRate} onChange={(e)=>setPercentageRate(e.target.value)} inputMode="decimal" placeholder="50" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none placeholder:text-[var(--text-main)]" /><span className="text-[11px]">Остаток автоматически остаётся залу</span></label>}
       </div>
       {error && <p className="mt-3 text-sm text-[var(--danger)]">{error}</p>}
-      <button disabled={busy} className="mt-4 h-10 rounded-[8px] border border-[var(--accent)] bg-[var(--accent-soft)] px-4 text-sm font-medium text-[var(--accent)] disabled:opacity-60">{busy ? "Сохраняю..." : editingId === null ? "Сохранить правило" : "Сохранить изменения"}</button>
+      <div className="mt-4 flex gap-3"><button disabled={busy} className="h-10 rounded-[8px] border border-[var(--accent)] bg-[var(--accent-soft)] px-4 text-sm font-medium text-[var(--accent)] disabled:opacity-60">{busy ? "Сохраняю..." : editingId === null ? "Сохранить правило" : "Сохранить изменения"}</button><button type="button" onClick={() => { setEditorOpen(false); setEditingId(null); }} className="h-10 rounded-[8px] border border-[var(--line-soft)] px-4 text-sm text-[var(--text-main)]">Отмена</button></div>
     </form>
 
-    <section className="space-y-3">{rules.length === 0 ? <EmptyState text="Правил оплаты пока нет" /> : rules.map((rule)=><article key={rule.id} className="rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.58)] p-4 backdrop-blur-[3px]"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-[var(--text-main)]">{rule.name}</p><p className="mt-1 text-xs text-[var(--text-muted)]">{rule.all_trainers ? "Все сотрудники" : rule.trainers.map((t)=>t.trainer_name).join(", ")} · {rule.all_activities ? "Все занятия" : rule.items.map((i)=>i.training_type_name||i.product_name).filter(Boolean).join(", ")}</p></div><div className="flex gap-3"><button type="button" onClick={()=>startEdit(rule)} className="text-xs text-[var(--accent)]">Редактировать</button><button type="button" onClick={()=>void onDelete(rule)} className="text-xs text-[var(--danger)]">Удалить</button></div></div><div className="mt-3 grid gap-2 text-sm sm:grid-cols-[1.8fr_0.7fr]"><span>{ruleFormula(rule)}</span><span>с {formatPeriodDate(rule.effective_from)}</span></div>{rule.comment && <p className="mt-2 text-xs text-[var(--text-muted)]">{rule.comment}</p>}</article>)}</section>
-  </div>;
+  return <div className="space-y-4">
+    <div className="flex items-center justify-between gap-3">
+      <SectionTitle label="payroll rules" title="Правила оплаты" />
+      <button type="button" onClick={startCreate} className="h-10 rounded-[8px] border border-[var(--accent)] bg-[var(--accent-soft)] px-4 text-sm font-medium text-[var(--accent)]">+ Создать новое правило</button>
+    </div>
+    {editingId === null && editorOpen && editor}
+    <section className="space-y-3">
+      {rules.length === 0 ? <EmptyState text="Правил оплаты пока нет" /> : rules.map((rule) => <div key={rule.id} className="space-y-3">
+        <article className="rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.58)] p-4 backdrop-blur-[3px]"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-[var(--text-main)]">{rule.name}</p><p className="mt-1 text-xs text-[var(--text-muted)]">{rule.all_trainers ? "Все сотрудники" : rule.trainers.map((t)=>t.trainer_name).join(", ")} · {rule.all_activities ? "Все занятия" : rule.items.map((i)=>i.training_type_name||i.product_name).filter(Boolean).join(", ")}</p></div><div className="flex gap-3"><button type="button" onClick={()=>startEdit(rule)} className="text-xs text-[var(--accent)]">Редактировать</button><button type="button" onClick={()=>void onDelete(rule)} className="text-xs text-[var(--danger)]">Удалить</button></div></div><div className="mt-3 grid gap-2 text-sm sm:grid-cols-[1.8fr_0.7fr]"><span>{ruleFormula(rule)}</span><span>с {formatPeriodDate(rule.effective_from)}</span></div>{rule.comment && <p className="mt-2 text-xs text-[var(--text-muted)]">{rule.comment}</p>}</article>
+        {editingId === rule.id && editorOpen && editor}
+      </div>)}
+    </section>  </div>;
 }
 function PayrollCalculation({ report }: { report: PayrollReport }) {
   const [expandedTrainerId, setExpandedTrainerId] = useState<number | null>(null);
