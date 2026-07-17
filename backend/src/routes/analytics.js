@@ -247,7 +247,7 @@ function buildPayrollLine(slot, rules) {
   } else if (rule?.calculation_type === 'percentage') {
     baseAmount = 0;
     bonusPeople = attendedCount;
-    const grossAmount = roundMoney(Number(slot.service_price || 0) * attendedCount);
+    const grossAmount = roundMoney(Number(slot.service_gross_amount || 0));
     bonusAmount = roundMoney(grossAmount * (Number(rule.percentage_rate || 0) / 100));
   } else if (rule?.calculation_type === 'tiered') {
     const tier = (Array.isArray(rule.tiers) ? rule.tiers : []).find((item) => {
@@ -264,6 +264,10 @@ function buildPayrollLine(slot, rules) {
 
   if (!rule) {
     warnings.push('Нет правила оплаты для занятия');
+  }
+
+  if (rule?.calculation_type === 'percentage' && attendedCount > 0 && Number(slot.service_gross_amount || 0) === 0) {
+    warnings.push('Не найдена стоимость услуги для процентного расчёта');
   }
 
   if (confirmedCount > 0 && attendedCount === 0) {
@@ -293,8 +297,8 @@ function buildPayrollLine(slot, rules) {
     rule_name: rule?.name || null,
     calculation_type: rule?.calculation_type || null,
     percentage_rate: Number(rule?.percentage_rate || 0),
-    gross_amount: roundMoney(Number(slot.service_price || 0) * attendedCount),
-    gym_amount: roundMoney((Number(slot.service_price || 0) * attendedCount) - totalAmount),
+    gross_amount: roundMoney(Number(slot.service_gross_amount || 0)),
+    gym_amount: roundMoney(Number(slot.service_gross_amount || 0) - totalAmount),
     warnings,
   };
 }
@@ -413,7 +417,30 @@ async function calculatePayrollSnapshot(from, to) {
   const [rules, slotsResult] = await Promise.all([
     fetchPayrollRules(),
     pool.query(
-      `SELECT ss.id, ss.date::text AS date, ss.start_time, ss.slot_type, ss.training_type_id, ss.product_id, ss.trainer_id, tt.name AS training_type_name, p.name AS product_name, p.sale_price AS service_price, CONCAT_WS(' ', t.last_name, t.first_name) AS trainer_name, COALESCE(SUM(CASE WHEN b.status = 'attended' THEN b.places_count ELSE 0 END), 0)::INT AS attended_count, COALESCE(SUM(CASE WHEN b.status IN ('confirmed', 'attended') THEN b.places_count ELSE 0 END), 0)::INT AS confirmed_count FROM schedule_slots ss JOIN trainers t ON t.id = ss.trainer_id LEFT JOIN training_types tt ON tt.id = ss.training_type_id LEFT JOIN products p ON p.id = ss.product_id LEFT JOIN bookings b ON b.slot_id = ss.id WHERE ss.date >= $1::date AND ss.date <= $2::date AND ss.status <> 'cancelled' AND ss.trainer_id IS NOT NULL GROUP BY ss.id, tt.name, p.name, p.sale_price, t.last_name, t.first_name ORDER BY ss.date DESC, ss.start_time DESC, ss.id DESC`,
+      `SELECT ss.id, ss.date::text AS date, ss.start_time, ss.slot_type, ss.training_type_id, ss.product_id, ss.trainer_id, tt.name AS training_type_name, p.name AS product_name, p.sale_price AS service_price,
+            COALESCE(
+              NULLIF((
+                SELECT SUM(
+                  CASE
+                    WHEN pb.status = 'attended'
+                      AND pb.covered_by_booking_id IS NULL
+                      AND pcs.product_id IS NOT NULL
+                    THEN COALESCE(pp.sale_price, 0)
+                      / GREATEST(COALESCE(psp.visits_total, pcs.visits_total, 1), 1)
+                      * pb.places_count
+                    ELSE 0
+                  END
+                )
+                FROM bookings pb
+                LEFT JOIN client_subscriptions pcs ON pcs.id = pb.subscription_id
+                LEFT JOIN products pp ON pp.id = pcs.product_id
+                LEFT JOIN product_subscription_params psp ON psp.product_id = pp.id
+                WHERE pb.slot_id = ss.id
+              ), 0),
+              COALESCE(p.sale_price, 0)
+                * COALESCE(SUM(CASE WHEN b.status = 'attended' THEN b.places_count ELSE 0 END), 0),
+              0
+            ) AS service_gross_amount, CONCAT_WS(' ', t.last_name, t.first_name) AS trainer_name, COALESCE(SUM(CASE WHEN b.status = 'attended' THEN b.places_count ELSE 0 END), 0)::INT AS attended_count, COALESCE(SUM(CASE WHEN b.status IN ('confirmed', 'attended') THEN b.places_count ELSE 0 END), 0)::INT AS confirmed_count FROM schedule_slots ss JOIN trainers t ON t.id = ss.trainer_id LEFT JOIN training_types tt ON tt.id = ss.training_type_id LEFT JOIN products p ON p.id = ss.product_id LEFT JOIN bookings b ON b.slot_id = ss.id WHERE ss.date >= $1::date AND ss.date <= $2::date AND ss.status <> 'cancelled' AND ss.trainer_id IS NOT NULL GROUP BY ss.id, tt.name, p.name, p.sale_price, t.last_name, t.first_name ORDER BY ss.date DESC, ss.start_time DESC, ss.id DESC`,
       [from, to]
     ),
   ]);
@@ -645,6 +672,29 @@ router.get('/payroll', async (req, res) => {
             tt.name AS training_type_name,
             p.name AS product_name,
             p.sale_price AS service_price,
+            COALESCE(
+              NULLIF((
+                SELECT SUM(
+                  CASE
+                    WHEN pb.status = 'attended'
+                      AND pb.covered_by_booking_id IS NULL
+                      AND pcs.product_id IS NOT NULL
+                    THEN COALESCE(pp.sale_price, 0)
+                      / GREATEST(COALESCE(psp.visits_total, pcs.visits_total, 1), 1)
+                      * pb.places_count
+                    ELSE 0
+                  END
+                )
+                FROM bookings pb
+                LEFT JOIN client_subscriptions pcs ON pcs.id = pb.subscription_id
+                LEFT JOIN products pp ON pp.id = pcs.product_id
+                LEFT JOIN product_subscription_params psp ON psp.product_id = pp.id
+                WHERE pb.slot_id = ss.id
+              ), 0),
+              COALESCE(p.sale_price, 0)
+                * COALESCE(SUM(CASE WHEN b.status = 'attended' THEN b.places_count ELSE 0 END), 0),
+              0
+            ) AS service_gross_amount,
             CONCAT_WS(' ', t.last_name, t.first_name) AS trainer_name,
             COALESCE(SUM(CASE WHEN b.status = 'attended' THEN b.places_count ELSE 0 END), 0)::INT AS attended_count,
             COALESCE(SUM(CASE WHEN b.status IN ('confirmed', 'attended') THEN b.places_count ELSE 0 END), 0)::INT AS confirmed_count
