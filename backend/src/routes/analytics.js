@@ -241,11 +241,9 @@ function buildPayrollLine(slot, rules) {
   let bonusAmount = roundMoney(bonusPeople * bonusPerPerson);
 
   if (rule?.calculation_type === 'per_attendee') {
-    baseAmount = 0;
     bonusPeople = attendedCount;
     bonusAmount = roundMoney(attendedCount * Number(rule.per_attendee_amount || 0));
   } else if (rule?.calculation_type === 'percentage') {
-    baseAmount = 0;
     bonusPeople = attendedCount;
     const grossAmount = roundMoney(Number(slot.service_price || 0) * attendedCount);
     bonusAmount = roundMoney(grossAmount * (Number(rule.percentage_rate || 0) / 100));
@@ -255,7 +253,6 @@ function buildPayrollLine(slot, rules) {
       const to = item.to === null || item.to === undefined || item.to === '' ? Number.POSITIVE_INFINITY : Number(item.to);
       return attendedCount >= from && attendedCount <= to;
     });
-    baseAmount = 0;
     bonusPeople = attendedCount;
     bonusAmount = roundMoney(Number(tier?.amount || 0));
   }
