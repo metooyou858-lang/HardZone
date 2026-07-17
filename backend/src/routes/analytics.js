@@ -241,9 +241,11 @@ function buildPayrollLine(slot, rules) {
   let bonusAmount = roundMoney(bonusPeople * bonusPerPerson);
 
   if (rule?.calculation_type === 'per_attendee') {
+    baseAmount = 0;
     bonusPeople = attendedCount;
     bonusAmount = roundMoney(attendedCount * Number(rule.per_attendee_amount || 0));
   } else if (rule?.calculation_type === 'percentage') {
+    baseAmount = 0;
     bonusPeople = attendedCount;
     const grossAmount = roundMoney(Number(slot.service_price || 0) * attendedCount);
     bonusAmount = roundMoney(grossAmount * (Number(rule.percentage_rate || 0) / 100));
@@ -253,6 +255,7 @@ function buildPayrollLine(slot, rules) {
       const to = item.to === null || item.to === undefined || item.to === '' ? Number.POSITIVE_INFINITY : Number(item.to);
       return attendedCount >= from && attendedCount <= to;
     });
+    baseAmount = 0;
     bonusPeople = attendedCount;
     bonusAmount = roundMoney(Number(tier?.amount || 0));
   }
@@ -313,7 +316,7 @@ router.post('/payroll/rules', async (req, res) => {
     const productIds = normalizeIdList(req.body?.product_ids);
     const allTrainers = req.body?.all_trainers === true;
     const allActivities = req.body?.all_activities === true;
-    const calculationType = ['fixed', 'per_attendee', 'tiered', 'percentage'].includes(req.body?.calculation_type) ? req.body.calculation_type : 'fixed';
+    const calculationType = ['fixed', 'per_attendee', 'percentage'].includes(req.body?.calculation_type) ? req.body.calculation_type : 'fixed';
     const salaryAmount = 0;
     const baseAmount = parseNonNegativeAmount(req.body?.base_amount, 0);
     const perAttendeeAmount = parseNonNegativeAmount(req.body?.per_attendee_amount, 0);
@@ -333,7 +336,6 @@ router.post('/payroll/rules', async (req, res) => {
     if (!allActivities && trainingTypeIds.length === 0 && productIds.length === 0) return res.status(422).json({ success: false, error: 'Выберите занятия' });
     if (!effectiveFrom) return res.status(422).json({ success: false, error: 'Укажите дату начала действия' });
     if ([baseAmount, perAttendeeAmount, percentageRate, bonusPerPerson].some((value) => value === null) || percentageRate > 100 || Number.isNaN(bonusThreshold)) return res.status(422).json({ success: false, error: 'Проверьте суммы и пороги оплаты' });
-    if (calculationType === 'tiered' && (tiers.length === 0 || tiers.some((tier) => !Number.isInteger(tier.from) || tier.from < 0 || (tier.to !== null && (!Number.isInteger(tier.to) || tier.to < tier.from)) || tier.amount === null))) return res.status(422).json({ success: false, error: 'Проверьте диапазоны оплаты' });
 
     await client.query('BEGIN');
     const { rows } = await client.query(
@@ -362,7 +364,7 @@ router.put('/payroll/rules/:id', async (req, res) => {
     const productIds = normalizeIdList(req.body?.product_ids);
     const allTrainers = req.body?.all_trainers === true;
     const allActivities = req.body?.all_activities === true;
-    const calculationType = ['fixed', 'per_attendee', 'tiered', 'percentage'].includes(req.body?.calculation_type) ? req.body.calculation_type : 'fixed';
+    const calculationType = ['fixed', 'per_attendee', 'percentage'].includes(req.body?.calculation_type) ? req.body.calculation_type : 'fixed';
     const salaryAmount = 0;
     const baseAmount = parseNonNegativeAmount(req.body?.base_amount, 0);
     const perAttendeeAmount = parseNonNegativeAmount(req.body?.per_attendee_amount, 0);
@@ -373,7 +375,7 @@ router.put('/payroll/rules/:id', async (req, res) => {
     const comment = asOptionalString(req.body?.comment);
     const tiers = Array.isArray(req.body?.tiers) ? req.body.tiers.map((tier) => ({ from: Number.parseInt(String(tier.from), 10), to: tier.to === null || tier.to === '' ? null : Number.parseInt(String(tier.to), 10), amount: parseNonNegativeAmount(tier.amount, null) })) : [];
     if (!Number.isInteger(id) || !name || (!allTrainers && trainerIds.length === 0) || (!allActivities && trainingTypeIds.length === 0 && productIds.length === 0) || !effectiveFrom) return res.status(422).json({ success: false, error: 'Заполните сотрудников, занятия и параметры правила' });
-    if ([baseAmount, perAttendeeAmount, percentageRate, bonusPerPerson].some((value) => value === null) || percentageRate > 100 || Number.isNaN(bonusThreshold) || (calculationType === 'tiered' && (tiers.length === 0 || tiers.some((tier) => !Number.isInteger(tier.from) || tier.from < 0 || (tier.to !== null && (!Number.isInteger(tier.to) || tier.to < tier.from)) || tier.amount === null)))) return res.status(422).json({ success: false, error: 'Проверьте суммы и диапазоны оплаты' });
+    if ([baseAmount, perAttendeeAmount, percentageRate, bonusPerPerson].some((value) => value === null) || percentageRate > 100 || Number.isNaN(bonusThreshold)) return res.status(422).json({ success: false, error: 'Проверьте параметры оплаты' });
     await client.query('BEGIN');
     const { rowCount } = await client.query(`UPDATE payroll_rules SET name=$2, all_trainers=$3, all_activities=$4, salary_amount=$5, calculation_type=$6, per_attendee_amount=$7, percentage_rate=$8, tiers=$9::jsonb, base_amount=$10, bonus_threshold=$11, bonus_per_person=$12, effective_from=$13, comment=$14, updated_at=NOW() WHERE id=$1`, [id,name,allTrainers,allActivities,salaryAmount,calculationType,perAttendeeAmount,percentageRate,JSON.stringify(tiers),baseAmount,bonusThreshold,bonusPerPerson,effectiveFrom,comment]);
     if (rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, error: 'Правило не найдено' }); }
