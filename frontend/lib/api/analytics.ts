@@ -123,8 +123,9 @@ export type PayrollRule = {
   all_trainers: boolean;
   all_activities: boolean;
   salary_amount: number;
-  calculation_type: "fixed" | "per_attendee" | "tiered";
+  calculation_type: "fixed" | "per_attendee" | "tiered" | "percentage";
   per_attendee_amount: number;
+  percentage_rate: number;
   tiers: PayrollTier[];
   is_active: boolean;
   base_amount: number;
@@ -156,6 +157,8 @@ export type PayrollLine = {
   bonus_per_person: number;
   bonus_people: number;
   bonus_amount: number;
+  gross_amount?: number;
+  gym_amount?: number;
   total_amount: number;
   rule_id: number | null;
   warnings: string[];
@@ -168,6 +171,8 @@ export type PayrollTrainerSummary = {
   attended_count: number;
   base_amount: number;
   bonus_amount: number;
+  gross_amount?: number;
+  gym_amount?: number;
   total_amount: number;
   warnings_count: number;
   lines: PayrollLine[];
@@ -181,6 +186,8 @@ export type PayrollRunEmployee = {
   attended_count: number;
   base_amount: number;
   bonus_amount: number;
+  gross_amount?: number;
+  gym_amount?: number;
   total_amount: number;
   payment_status: "pending" | "paid";
   paid_date: string | null;
@@ -208,6 +215,8 @@ export type PayrollReport = {
     attended_count: number;
     base_amount: number;
     bonus_amount: number;
+  gross_amount?: number;
+  gym_amount?: number;
     total_amount: number;
     warnings_count: number;
   };
@@ -280,9 +289,10 @@ export async function createPayrollRule(data: {
   product_ids: number[];
   all_activities: boolean;
   salary_amount: number;
-  calculation_type: "fixed" | "per_attendee" | "tiered";
+  calculation_type: "fixed" | "per_attendee" | "tiered" | "percentage";
   base_amount: number;
   per_attendee_amount: number;
+  percentage_rate: number;
   bonus_threshold?: number | null;
   bonus_per_person?: number | null;
   tiers: Array<{ from: number; to: number | null; amount: number }>;

@@ -172,6 +172,7 @@ async function fetchPayrollRules() {
         pr.salary_amount,
         pr.calculation_type,
         pr.per_attendee_amount,
+        pr.percentage_rate,
         pr.tiers,
         pr.is_active,
         pr.base_amount,
@@ -209,6 +210,7 @@ async function fetchPayrollRules() {
     base_amount: Number(row.base_amount || 0),
     salary_amount: Number(row.salary_amount || 0),
     per_attendee_amount: Number(row.per_attendee_amount || 0),
+    percentage_rate: Number(row.percentage_rate || 0),
     bonus_threshold: row.bonus_threshold === null ? null : Number(row.bonus_threshold),
     bonus_per_person: row.bonus_per_person === null ? null : Number(row.bonus_per_person),
   }));
@@ -244,6 +246,11 @@ function buildPayrollLine(slot, rules) {
     baseAmount = 0;
     bonusPeople = attendedCount;
     bonusAmount = roundMoney(attendedCount * Number(rule.per_attendee_amount || 0));
+  } else if (rule?.calculation_type === 'percentage') {
+    baseAmount = 0;
+    bonusPeople = attendedCount;
+    const grossAmount = roundMoney(Number(slot.service_price || 0) * attendedCount);
+    bonusAmount = roundMoney(grossAmount * (Number(rule.percentage_rate || 0) / 100));
   } else if (rule?.calculation_type === 'tiered') {
     const tier = (Array.isArray(rule.tiers) ? rule.tiers : []).find((item) => {
       const from = Number(item.from || 0);
@@ -287,6 +294,9 @@ function buildPayrollLine(slot, rules) {
     rule_id: rule?.id || null,
     rule_name: rule?.name || null,
     calculation_type: rule?.calculation_type || null,
+    percentage_rate: Number(rule?.percentage_rate || 0),
+    gross_amount: roundMoney(Number(slot.service_price || 0) * attendedCount),
+    gym_amount: roundMoney((Number(slot.service_price || 0) * attendedCount) - totalAmount),
     warnings,
   };
 }
@@ -308,10 +318,11 @@ router.post('/payroll/rules', async (req, res) => {
     const productIds = normalizeIdList(req.body?.product_ids);
     const allTrainers = req.body?.all_trainers === true;
     const allActivities = req.body?.all_activities === true;
-    const calculationType = ['fixed', 'per_attendee', 'tiered'].includes(req.body?.calculation_type) ? req.body.calculation_type : 'fixed';
+    const calculationType = ['fixed', 'per_attendee', 'tiered', 'percentage'].includes(req.body?.calculation_type) ? req.body.calculation_type : 'fixed';
     const salaryAmount = parseNonNegativeAmount(req.body?.salary_amount, 0);
     const baseAmount = parseNonNegativeAmount(req.body?.base_amount, 0);
     const perAttendeeAmount = parseNonNegativeAmount(req.body?.per_attendee_amount, 0);
+    const percentageRate = parseNonNegativeAmount(req.body?.percentage_rate, 0);
     const bonusThreshold = parseOptionalNonNegativeInteger(req.body?.bonus_threshold);
     const bonusPerPerson = parseNonNegativeAmount(req.body?.bonus_per_person, 0);
     const effectiveFrom = parseDate(req.body?.effective_from, null);
@@ -326,14 +337,14 @@ router.post('/payroll/rules', async (req, res) => {
     if (!allTrainers && trainerIds.length === 0) return res.status(422).json({ success: false, error: 'Выберите сотрудников' });
     if (!allActivities && trainingTypeIds.length === 0 && productIds.length === 0) return res.status(422).json({ success: false, error: 'Выберите занятия' });
     if (!effectiveFrom) return res.status(422).json({ success: false, error: 'Укажите дату начала действия' });
-    if ([salaryAmount, baseAmount, perAttendeeAmount, bonusPerPerson].some((value) => value === null) || Number.isNaN(bonusThreshold)) return res.status(422).json({ success: false, error: 'Проверьте суммы и пороги оплаты' });
+    if ([salaryAmount, baseAmount, perAttendeeAmount, percentageRate, bonusPerPerson].some((value) => value === null) || percentageRate > 100 || Number.isNaN(bonusThreshold)) return res.status(422).json({ success: false, error: 'Проверьте суммы и пороги оплаты' });
     if (calculationType === 'tiered' && (tiers.length === 0 || tiers.some((tier) => !Number.isInteger(tier.from) || tier.from < 0 || (tier.to !== null && (!Number.isInteger(tier.to) || tier.to < tier.from)) || tier.amount === null))) return res.status(422).json({ success: false, error: 'Проверьте диапазоны оплаты' });
 
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `INSERT INTO payroll_rules (name, all_trainers, all_activities, salary_amount, calculation_type, per_attendee_amount, tiers, base_amount, bonus_threshold, bonus_per_person, effective_from, comment, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13) RETURNING id`,
-      [name, allTrainers, allActivities, salaryAmount, calculationType, perAttendeeAmount, JSON.stringify(tiers), baseAmount, bonusThreshold, bonusPerPerson, effectiveFrom, comment, req.user?.id || null]
+      `INSERT INTO payroll_rules (name, all_trainers, all_activities, salary_amount, calculation_type, per_attendee_amount, percentage_rate, tiers, base_amount, bonus_threshold, bonus_per_person, effective_from, comment, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13,$14) RETURNING id`,
+      [name, allTrainers, allActivities, salaryAmount, calculationType, perAttendeeAmount, percentageRate, JSON.stringify(tiers), baseAmount, bonusThreshold, bonusPerPerson, effectiveFrom, comment, req.user?.id || null]
     );
     const ruleId = rows[0].id;
     for (const trainerId of trainerIds) await client.query('INSERT INTO payroll_rule_trainers (rule_id, trainer_id) VALUES ($1, $2)', [ruleId, trainerId]);
@@ -356,19 +367,20 @@ router.put('/payroll/rules/:id', async (req, res) => {
     const productIds = normalizeIdList(req.body?.product_ids);
     const allTrainers = req.body?.all_trainers === true;
     const allActivities = req.body?.all_activities === true;
-    const calculationType = ['fixed', 'per_attendee', 'tiered'].includes(req.body?.calculation_type) ? req.body.calculation_type : 'fixed';
+    const calculationType = ['fixed', 'per_attendee', 'tiered', 'percentage'].includes(req.body?.calculation_type) ? req.body.calculation_type : 'fixed';
     const salaryAmount = parseNonNegativeAmount(req.body?.salary_amount, 0);
     const baseAmount = parseNonNegativeAmount(req.body?.base_amount, 0);
     const perAttendeeAmount = parseNonNegativeAmount(req.body?.per_attendee_amount, 0);
+    const percentageRate = parseNonNegativeAmount(req.body?.percentage_rate, 0);
     const bonusThreshold = parseOptionalNonNegativeInteger(req.body?.bonus_threshold);
     const bonusPerPerson = parseNonNegativeAmount(req.body?.bonus_per_person, 0);
     const effectiveFrom = parseDate(req.body?.effective_from, null);
     const comment = asOptionalString(req.body?.comment);
     const tiers = Array.isArray(req.body?.tiers) ? req.body.tiers.map((tier) => ({ from: Number.parseInt(String(tier.from), 10), to: tier.to === null || tier.to === '' ? null : Number.parseInt(String(tier.to), 10), amount: parseNonNegativeAmount(tier.amount, null) })) : [];
     if (!Number.isInteger(id) || !name || (!allTrainers && trainerIds.length === 0) || (!allActivities && trainingTypeIds.length === 0 && productIds.length === 0) || !effectiveFrom) return res.status(422).json({ success: false, error: 'Заполните сотрудников, занятия и параметры правила' });
-    if ([salaryAmount, baseAmount, perAttendeeAmount, bonusPerPerson].some((value) => value === null) || Number.isNaN(bonusThreshold) || (calculationType === 'tiered' && (tiers.length === 0 || tiers.some((tier) => !Number.isInteger(tier.from) || tier.from < 0 || (tier.to !== null && (!Number.isInteger(tier.to) || tier.to < tier.from)) || tier.amount === null)))) return res.status(422).json({ success: false, error: 'Проверьте суммы и диапазоны оплаты' });
+    if ([salaryAmount, baseAmount, perAttendeeAmount, percentageRate, bonusPerPerson].some((value) => value === null) || percentageRate > 100 || Number.isNaN(bonusThreshold) || (calculationType === 'tiered' && (tiers.length === 0 || tiers.some((tier) => !Number.isInteger(tier.from) || tier.from < 0 || (tier.to !== null && (!Number.isInteger(tier.to) || tier.to < tier.from)) || tier.amount === null)))) return res.status(422).json({ success: false, error: 'Проверьте суммы и диапазоны оплаты' });
     await client.query('BEGIN');
-    const { rowCount } = await client.query(`UPDATE payroll_rules SET name=$2, all_trainers=$3, all_activities=$4, salary_amount=$5, calculation_type=$6, per_attendee_amount=$7, tiers=$8::jsonb, base_amount=$9, bonus_threshold=$10, bonus_per_person=$11, effective_from=$12, comment=$13, updated_at=NOW() WHERE id=$1`, [id,name,allTrainers,allActivities,salaryAmount,calculationType,perAttendeeAmount,JSON.stringify(tiers),baseAmount,bonusThreshold,bonusPerPerson,effectiveFrom,comment]);
+    const { rowCount } = await client.query(`UPDATE payroll_rules SET name=$2, all_trainers=$3, all_activities=$4, salary_amount=$5, calculation_type=$6, per_attendee_amount=$7, percentage_rate=$8, tiers=$9::jsonb, base_amount=$10, bonus_threshold=$11, bonus_per_person=$12, effective_from=$13, comment=$14, updated_at=NOW() WHERE id=$1`, [id,name,allTrainers,allActivities,salaryAmount,calculationType,perAttendeeAmount,percentageRate,JSON.stringify(tiers),baseAmount,bonusThreshold,bonusPerPerson,effectiveFrom,comment]);
     if (rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, error: 'Правило не найдено' }); }
     await client.query('DELETE FROM payroll_rule_trainers WHERE rule_id=$1',[id]);
     await client.query('DELETE FROM payroll_rule_items WHERE rule_id=$1',[id]);
@@ -404,7 +416,7 @@ async function calculatePayrollSnapshot(from, to) {
   const [rules, slotsResult] = await Promise.all([
     fetchPayrollRules(),
     pool.query(
-      `SELECT ss.id, ss.date::text AS date, ss.start_time, ss.slot_type, ss.training_type_id, ss.product_id, ss.trainer_id, tt.name AS training_type_name, p.name AS product_name, CONCAT_WS(' ', t.last_name, t.first_name) AS trainer_name, COALESCE(SUM(CASE WHEN b.status = 'attended' THEN b.places_count ELSE 0 END), 0)::INT AS attended_count, COALESCE(SUM(CASE WHEN b.status IN ('confirmed', 'attended') THEN b.places_count ELSE 0 END), 0)::INT AS confirmed_count FROM schedule_slots ss JOIN trainers t ON t.id = ss.trainer_id LEFT JOIN training_types tt ON tt.id = ss.training_type_id LEFT JOIN products p ON p.id = ss.product_id LEFT JOIN bookings b ON b.slot_id = ss.id WHERE ss.date >= $1::date AND ss.date <= $2::date AND ss.status <> 'cancelled' AND ss.trainer_id IS NOT NULL GROUP BY ss.id, tt.name, p.name, t.last_name, t.first_name ORDER BY ss.date DESC, ss.start_time DESC, ss.id DESC`,
+      `SELECT ss.id, ss.date::text AS date, ss.start_time, ss.slot_type, ss.training_type_id, ss.product_id, ss.trainer_id, tt.name AS training_type_name, p.name AS product_name, p.sale_price AS service_price, CONCAT_WS(' ', t.last_name, t.first_name) AS trainer_name, COALESCE(SUM(CASE WHEN b.status = 'attended' THEN b.places_count ELSE 0 END), 0)::INT AS attended_count, COALESCE(SUM(CASE WHEN b.status IN ('confirmed', 'attended') THEN b.places_count ELSE 0 END), 0)::INT AS confirmed_count FROM schedule_slots ss JOIN trainers t ON t.id = ss.trainer_id LEFT JOIN training_types tt ON tt.id = ss.training_type_id LEFT JOIN products p ON p.id = ss.product_id LEFT JOIN bookings b ON b.slot_id = ss.id WHERE ss.date >= $1::date AND ss.date <= $2::date AND ss.status <> 'cancelled' AND ss.trainer_id IS NOT NULL GROUP BY ss.id, tt.name, p.name, p.sale_price, t.last_name, t.first_name ORDER BY ss.date DESC, ss.start_time DESC, ss.id DESC`,
       [from, to]
     ),
   ]);
@@ -608,6 +620,7 @@ router.get('/payroll', async (req, res) => {
             ss.trainer_id,
             tt.name AS training_type_name,
             p.name AS product_name,
+            p.sale_price AS service_price,
             CONCAT_WS(' ', t.last_name, t.first_name) AS trainer_name,
             COALESCE(SUM(CASE WHEN b.status = 'attended' THEN b.places_count ELSE 0 END), 0)::INT AS attended_count,
             COALESCE(SUM(CASE WHEN b.status IN ('confirmed', 'attended') THEN b.places_count ELSE 0 END), 0)::INT AS confirmed_count
@@ -620,7 +633,7 @@ router.get('/payroll', async (req, res) => {
             AND ss.date <= $2::date
             AND ss.status <> 'cancelled'
             AND ss.trainer_id IS NOT NULL
-          GROUP BY ss.id, tt.name, p.name, t.last_name, t.first_name
+          GROUP BY ss.id, tt.name, p.name, p.sale_price, t.last_name, t.first_name
           ORDER BY ss.date DESC, ss.start_time DESC, ss.id DESC
         `,
         [from, to]
