@@ -115,8 +115,18 @@ export type PayrollRuleItem = {
   product_name: string | null;
 };
 
+export type PayrollTier = { from: number; to: number | null; amount: number };
+
 export type PayrollRule = {
   id: number;
+  name: string;
+  all_trainers: boolean;
+  all_activities: boolean;
+  salary_amount: number;
+  calculation_type: "fixed" | "per_attendee" | "tiered";
+  per_attendee_amount: number;
+  tiers: PayrollTier[];
+  is_active: boolean;
   base_amount: number;
   bonus_threshold: number | null;
   bonus_per_person: number | null;
@@ -126,8 +136,8 @@ export type PayrollRule = {
   created_at: string;
   updated_at: string;
   items: PayrollRuleItem[];
+  trainers: Array<{ trainer_id: number; trainer_name: string }>;
 };
-
 export type PayrollLine = {
   slot_id: number;
   date: string;
@@ -263,11 +273,19 @@ export async function fetchPayrollRules() {
 }
 
 export async function createPayrollRule(data: {
+  name: string;
+  trainer_ids: number[];
+  all_trainers: boolean;
   training_type_ids: number[];
   product_ids: number[];
+  all_activities: boolean;
+  salary_amount: number;
+  calculation_type: "fixed" | "per_attendee" | "tiered";
   base_amount: number;
+  per_attendee_amount: number;
   bonus_threshold?: number | null;
   bonus_per_person?: number | null;
+  tiers: Array<{ from: number; to: number | null; amount: number }>;
   effective_from: string;
   comment?: string | null;
 }) {
@@ -275,10 +293,15 @@ export async function createPayrollRule(data: {
     method: "POST",
     body: JSON.stringify(data),
   });
-
   return response.data;
 }
-
+export async function updatePayrollRule(id: number, data: Parameters<typeof createPayrollRule>[0]) {
+  const response = await apiFetch<ApiEnvelope<{ id: number }>>(`/analytics/payroll/rules/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
 export async function deletePayrollRule(id: number) {
   const response = await apiFetch<ApiEnvelope<{ id: number }>>(`/analytics/payroll/rules/${id}`, {
     method: "DELETE",

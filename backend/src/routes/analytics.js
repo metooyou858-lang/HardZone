@@ -166,6 +166,14 @@ async function fetchPayrollRules() {
   const { rows } = await pool.query(`
       SELECT
         pr.id,
+        pr.name,
+        pr.all_trainers,
+        pr.all_activities,
+        pr.salary_amount,
+        pr.calculation_type,
+        pr.per_attendee_amount,
+        pr.tiers,
+        pr.is_active,
         pr.base_amount,
         pr.bonus_threshold,
         pr.bonus_per_person,
@@ -186,7 +194,8 @@ async function fetchPayrollRules() {
           ORDER BY COALESCE(tt.name, p.name)
         ) FILTER (WHERE pri.id IS NOT NULL),
         '[]'
-      ) AS items
+      ) AS items,
+      COALESCE((SELECT json_agg(json_build_object('trainer_id', prt.trainer_id, 'trainer_name', CONCAT_WS(' ', tr.last_name, tr.first_name)) ORDER BY tr.last_name, tr.first_name) FROM payroll_rule_trainers prt JOIN trainers tr ON tr.id = prt.trainer_id WHERE prt.rule_id = pr.id), '[]') AS trainers
     FROM payroll_rules pr
     LEFT JOIN payroll_rule_items pri ON pri.rule_id = pr.id
     LEFT JOIN training_types tt ON tt.id = pri.training_type_id
@@ -198,6 +207,8 @@ async function fetchPayrollRules() {
   return rows.map((row) => ({
     ...row,
     base_amount: Number(row.base_amount || 0),
+    salary_amount: Number(row.salary_amount || 0),
+    per_attendee_amount: Number(row.per_attendee_amount || 0),
     bonus_threshold: row.bonus_threshold === null ? null : Number(row.bonus_threshold),
     bonus_per_person: row.bonus_per_person === null ? null : Number(row.bonus_per_person),
   }));
@@ -205,32 +216,44 @@ async function fetchPayrollRules() {
 
 function getRuleForSlot(slot, rules) {
   const slotDate = String(slot.date);
-  const productRule = rules.find((rule) =>
-    String(rule.effective_from) <= slotDate &&
-    rule.items.some((item) => item.product_id !== null && Number(item.product_id) === Number(slot.product_id))
-  );
-
-  if (productRule) return productRule;
-
-  return rules.find((rule) =>
-    String(rule.effective_from) <= slotDate &&
-    rule.items.some((item) => item.training_type_id !== null && Number(item.training_type_id) === Number(slot.training_type_id))
-  ) || null;
+  return rules.find((rule) => {
+    if (!rule.is_active || String(rule.effective_from) > slotDate) return false;
+    const trainerMatches = rule.all_trainers || rule.trainers.some((item) => Number(item.trainer_id) === Number(slot.trainer_id));
+    const activityMatches = rule.all_activities || rule.items.some((item) =>
+      (item.product_id !== null && Number(item.product_id) === Number(slot.product_id)) ||
+      (item.training_type_id !== null && Number(item.training_type_id) === Number(slot.training_type_id))
+    );
+    return trainerMatches && activityMatches;
+  }) || null;
 }
-
 function buildPayrollLine(slot, rules) {
   const rule = getRuleForSlot(slot, rules);
   const attendedCount = Number(slot.attended_count || 0);
   const confirmedCount = Number(slot.confirmed_count || 0);
-  const baseAmount = rule ? Number(rule.base_amount || 0) : 0;
+  let baseAmount = rule ? Number(rule.base_amount || 0) : 0;
   const threshold = rule?.bonus_threshold === null || rule?.bonus_threshold === undefined
     ? null
     : Number(rule.bonus_threshold);
   const bonusPerPerson = rule?.bonus_per_person === null || rule?.bonus_per_person === undefined
     ? 0
     : Number(rule.bonus_per_person);
-  const bonusPeople = threshold === null ? 0 : Math.max(0, attendedCount - threshold);
-  const bonusAmount = roundMoney(bonusPeople * bonusPerPerson);
+  let bonusPeople = threshold === null ? 0 : Math.max(0, attendedCount - threshold);
+  let bonusAmount = roundMoney(bonusPeople * bonusPerPerson);
+
+  if (rule?.calculation_type === 'per_attendee') {
+    baseAmount = 0;
+    bonusPeople = attendedCount;
+    bonusAmount = roundMoney(attendedCount * Number(rule.per_attendee_amount || 0));
+  } else if (rule?.calculation_type === 'tiered') {
+    const tier = (Array.isArray(rule.tiers) ? rule.tiers : []).find((item) => {
+      const from = Number(item.from || 0);
+      const to = item.to === null || item.to === undefined || item.to === '' ? Number.POSITIVE_INFINITY : Number(item.to);
+      return attendedCount >= from && attendedCount <= to;
+    });
+    baseAmount = 0;
+    bonusPeople = attendedCount;
+    bonusAmount = roundMoney(Number(tier?.amount || 0));
+  }
   const totalAmount = roundMoney(baseAmount + bonusAmount);
   const warnings = [];
 
@@ -262,6 +285,8 @@ function buildPayrollLine(slot, rules) {
     bonus_amount: bonusAmount,
     total_amount: totalAmount,
     rule_id: rule?.id || null,
+    rule_name: rule?.name || null,
+    calculation_type: rule?.calculation_type || null,
     warnings,
   };
 }
@@ -276,85 +301,87 @@ router.get('/payroll/rules', async (_req, res) => {
 
 router.post('/payroll/rules', async (req, res) => {
   const client = await pool.connect();
-
   try {
+    const name = asOptionalString(req.body?.name);
+    const trainerIds = normalizeIdList(req.body?.trainer_ids);
     const trainingTypeIds = normalizeIdList(req.body?.training_type_ids);
     const productIds = normalizeIdList(req.body?.product_ids);
+    const allTrainers = req.body?.all_trainers === true;
+    const allActivities = req.body?.all_activities === true;
+    const calculationType = ['fixed', 'per_attendee', 'tiered'].includes(req.body?.calculation_type) ? req.body.calculation_type : 'fixed';
+    const salaryAmount = parseNonNegativeAmount(req.body?.salary_amount, 0);
     const baseAmount = parseNonNegativeAmount(req.body?.base_amount, 0);
+    const perAttendeeAmount = parseNonNegativeAmount(req.body?.per_attendee_amount, 0);
     const bonusThreshold = parseOptionalNonNegativeInteger(req.body?.bonus_threshold);
     const bonusPerPerson = parseNonNegativeAmount(req.body?.bonus_per_person, 0);
     const effectiveFrom = parseDate(req.body?.effective_from, null);
     const comment = asOptionalString(req.body?.comment);
+    const tiers = Array.isArray(req.body?.tiers) ? req.body.tiers.map((tier) => ({
+      from: Number.parseInt(String(tier.from), 10),
+      to: tier.to === null || tier.to === '' ? null : Number.parseInt(String(tier.to), 10),
+      amount: parseNonNegativeAmount(tier.amount, null),
+    })) : [];
 
-    if (trainingTypeIds.length === 0 && productIds.length === 0) {
-      return res.status(422).json({ success: false, error: 'Выберите хотя бы одно занятие или услугу' });
-    }
-
-    if (baseAmount === null) {
-      return res.status(422).json({ success: false, error: 'Укажите корректную базовую сумму' });
-    }
-
-    if (Number.isNaN(bonusThreshold)) {
-      return res.status(422).json({ success: false, error: 'Укажите корректный порог доплаты' });
-    }
-
-    if (bonusPerPerson === null) {
-      return res.status(422).json({ success: false, error: 'Укажите корректную сумму доплаты' });
-    }
-
-    if (!effectiveFrom) {
-      return res.status(422).json({ success: false, error: 'Укажите дату начала действия' });
-    }
+    if (!name) return res.status(422).json({ success: false, error: 'Укажите название правила' });
+    if (!allTrainers && trainerIds.length === 0) return res.status(422).json({ success: false, error: 'Выберите сотрудников' });
+    if (!allActivities && trainingTypeIds.length === 0 && productIds.length === 0) return res.status(422).json({ success: false, error: 'Выберите занятия' });
+    if (!effectiveFrom) return res.status(422).json({ success: false, error: 'Укажите дату начала действия' });
+    if ([salaryAmount, baseAmount, perAttendeeAmount, bonusPerPerson].some((value) => value === null) || Number.isNaN(bonusThreshold)) return res.status(422).json({ success: false, error: 'Проверьте суммы и пороги оплаты' });
+    if (calculationType === 'tiered' && (tiers.length === 0 || tiers.some((tier) => !Number.isInteger(tier.from) || tier.from < 0 || (tier.to !== null && (!Number.isInteger(tier.to) || tier.to < tier.from)) || tier.amount === null))) return res.status(422).json({ success: false, error: 'Проверьте диапазоны оплаты' });
 
     await client.query('BEGIN');
-
     const { rows } = await client.query(
-      `INSERT INTO payroll_rules (
-         base_amount, bonus_threshold, bonus_per_person, effective_from, comment, created_by
-       )
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id`,
-      [
-        baseAmount.toFixed(2),
-        bonusThreshold,
-        bonusPerPerson.toFixed(2),
-        effectiveFrom,
-        comment,
-        req.user?.id || null,
-      ]
+      `INSERT INTO payroll_rules (name, all_trainers, all_activities, salary_amount, calculation_type, per_attendee_amount, tiers, base_amount, bonus_threshold, bonus_per_person, effective_from, comment, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13) RETURNING id`,
+      [name, allTrainers, allActivities, salaryAmount, calculationType, perAttendeeAmount, JSON.stringify(tiers), baseAmount, bonusThreshold, bonusPerPerson, effectiveFrom, comment, req.user?.id || null]
     );
     const ruleId = rows[0].id;
-
-    for (const trainingTypeId of trainingTypeIds) {
-      await client.query(
-        'INSERT INTO payroll_rule_items (rule_id, training_type_id) VALUES ($1, $2)',
-        [ruleId, trainingTypeId]
-      );
-    }
-
-    for (const productId of productIds) {
-      await client.query(
-        'INSERT INTO payroll_rule_items (rule_id, product_id) VALUES ($1, $2)',
-        [ruleId, productId]
-      );
-    }
-
+    for (const trainerId of trainerIds) await client.query('INSERT INTO payroll_rule_trainers (rule_id, trainer_id) VALUES ($1, $2)', [ruleId, trainerId]);
+    for (const trainingTypeId of trainingTypeIds) await client.query('INSERT INTO payroll_rule_items (rule_id, training_type_id) VALUES ($1, $2)', [ruleId, trainingTypeId]);
+    for (const productId of productIds) await client.query('INSERT INTO payroll_rule_items (rule_id, product_id) VALUES ($1, $2)', [ruleId, productId]);
     await client.query('COMMIT');
-
     return res.status(201).json({ success: true, data: { id: Number(ruleId) } });
   } catch (err) {
-    try {
-      await client.query('ROLLBACK');
-    } catch (rollbackError) {
-      console.error('Payroll rule rollback failed', rollbackError);
-    }
-
+    try { await client.query('ROLLBACK'); } catch (rollbackError) { console.error('Payroll rule rollback failed', rollbackError); }
     return sendInternalError(res, err, { route: 'analytics.payroll.rules.create' });
-  } finally {
-    client.release();
-  }
+  } finally { client.release(); }
 });
-
+router.put('/payroll/rules/:id', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const id = Number.parseInt(String(req.params.id), 10);
+    const name = asOptionalString(req.body?.name);
+    const trainerIds = normalizeIdList(req.body?.trainer_ids);
+    const trainingTypeIds = normalizeIdList(req.body?.training_type_ids);
+    const productIds = normalizeIdList(req.body?.product_ids);
+    const allTrainers = req.body?.all_trainers === true;
+    const allActivities = req.body?.all_activities === true;
+    const calculationType = ['fixed', 'per_attendee', 'tiered'].includes(req.body?.calculation_type) ? req.body.calculation_type : 'fixed';
+    const salaryAmount = parseNonNegativeAmount(req.body?.salary_amount, 0);
+    const baseAmount = parseNonNegativeAmount(req.body?.base_amount, 0);
+    const perAttendeeAmount = parseNonNegativeAmount(req.body?.per_attendee_amount, 0);
+    const bonusThreshold = parseOptionalNonNegativeInteger(req.body?.bonus_threshold);
+    const bonusPerPerson = parseNonNegativeAmount(req.body?.bonus_per_person, 0);
+    const effectiveFrom = parseDate(req.body?.effective_from, null);
+    const comment = asOptionalString(req.body?.comment);
+    const tiers = Array.isArray(req.body?.tiers) ? req.body.tiers.map((tier) => ({ from: Number.parseInt(String(tier.from), 10), to: tier.to === null || tier.to === '' ? null : Number.parseInt(String(tier.to), 10), amount: parseNonNegativeAmount(tier.amount, null) })) : [];
+    if (!Number.isInteger(id) || !name || (!allTrainers && trainerIds.length === 0) || (!allActivities && trainingTypeIds.length === 0 && productIds.length === 0) || !effectiveFrom) return res.status(422).json({ success: false, error: 'Заполните сотрудников, занятия и параметры правила' });
+    if ([salaryAmount, baseAmount, perAttendeeAmount, bonusPerPerson].some((value) => value === null) || Number.isNaN(bonusThreshold) || (calculationType === 'tiered' && (tiers.length === 0 || tiers.some((tier) => !Number.isInteger(tier.from) || tier.from < 0 || (tier.to !== null && (!Number.isInteger(tier.to) || tier.to < tier.from)) || tier.amount === null)))) return res.status(422).json({ success: false, error: 'Проверьте суммы и диапазоны оплаты' });
+    await client.query('BEGIN');
+    const { rowCount } = await client.query(`UPDATE payroll_rules SET name=$2, all_trainers=$3, all_activities=$4, salary_amount=$5, calculation_type=$6, per_attendee_amount=$7, tiers=$8::jsonb, base_amount=$9, bonus_threshold=$10, bonus_per_person=$11, effective_from=$12, comment=$13, updated_at=NOW() WHERE id=$1`, [id,name,allTrainers,allActivities,salaryAmount,calculationType,perAttendeeAmount,JSON.stringify(tiers),baseAmount,bonusThreshold,bonusPerPerson,effectiveFrom,comment]);
+    if (rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, error: 'Правило не найдено' }); }
+    await client.query('DELETE FROM payroll_rule_trainers WHERE rule_id=$1',[id]);
+    await client.query('DELETE FROM payroll_rule_items WHERE rule_id=$1',[id]);
+    for (const trainerId of trainerIds) await client.query('INSERT INTO payroll_rule_trainers (rule_id, trainer_id) VALUES ($1,$2)',[id,trainerId]);
+    for (const trainingTypeId of trainingTypeIds) await client.query('INSERT INTO payroll_rule_items (rule_id, training_type_id) VALUES ($1,$2)',[id,trainingTypeId]);
+    for (const productId of productIds) await client.query('INSERT INTO payroll_rule_items (rule_id, product_id) VALUES ($1,$2)',[id,productId]);
+    await client.query('COMMIT');
+    return res.json({ success: true, data: { id } });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (rollbackError) { console.error('Payroll rule rollback failed', rollbackError); }
+    return sendInternalError(res, err, { route: 'analytics.payroll.rules.update' });
+  } finally { client.release(); }
+});
 router.delete('/payroll/rules/:id', async (req, res) => {
   try {
     const id = Number.parseInt(String(req.params.id), 10);
@@ -407,6 +434,21 @@ async function calculatePayrollSnapshot(from, to) {
     current.warnings_count += line.warnings.length;
     current.lines.push(line);
     trainerMap.set(key, current);
+  }
+
+  for (const trainer of trainerMap.values()) {
+    const salaryRule = rules.find((rule) =>
+      rule.is_active && Number(rule.salary_amount || 0) > 0 && String(rule.effective_from) <= to &&
+      (rule.all_trainers || rule.trainers.some((item) => Number(item.trainer_id) === Number(trainer.trainer_id)))
+    );
+    if (salaryRule) {
+      const salaryAmount = roundMoney(salaryRule.salary_amount);
+      trainer.base_amount = roundMoney(trainer.base_amount + salaryAmount);
+      trainer.total_amount = roundMoney(trainer.total_amount + salaryAmount);
+      trainer.salary_amount = salaryAmount;
+      trainer.salary_rule_id = salaryRule.id;
+      trainer.salary_rule_name = salaryRule.name;
+    }
   }
 
   const trainers = Array.from(trainerMap.values()).sort((left, right) => right.total_amount - left.total_amount);
@@ -612,7 +654,22 @@ router.get('/payroll', async (req, res) => {
       trainerMap.set(key, current);
     }
 
-    const trainers = Array.from(trainerMap.values()).sort((left, right) => right.total_amount - left.total_amount);
+    for (const trainer of trainerMap.values()) {
+    const salaryRule = rules.find((rule) =>
+      rule.is_active && Number(rule.salary_amount || 0) > 0 && String(rule.effective_from) <= to &&
+      (rule.all_trainers || rule.trainers.some((item) => Number(item.trainer_id) === Number(trainer.trainer_id)))
+    );
+    if (salaryRule) {
+      const salaryAmount = roundMoney(salaryRule.salary_amount);
+      trainer.base_amount = roundMoney(trainer.base_amount + salaryAmount);
+      trainer.total_amount = roundMoney(trainer.total_amount + salaryAmount);
+      trainer.salary_amount = salaryAmount;
+      trainer.salary_rule_id = salaryRule.id;
+      trainer.salary_rule_name = salaryRule.name;
+    }
+  }
+
+  const trainers = Array.from(trainerMap.values()).sort((left, right) => right.total_amount - left.total_amount);
     const summary = {
       trainers_count: trainers.length,
       slots_count: lines.length,

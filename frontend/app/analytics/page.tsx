@@ -14,6 +14,7 @@ import {
   fetchPayrollRules,
   fetchPayrollRuns,
   payPayrollRunEmployee,
+  updatePayrollRule,
   type AnalyticsCheck,
   type AnalyticsExternalExpense,
   type AnalyticsReport,
@@ -25,6 +26,7 @@ import {
 } from "@/lib/api/analytics";
 import { fetchProducts, type Product } from "@/lib/api/products";
 import { fetchTrainingTypes, type TrainingType } from "@/lib/api/training-types";
+import { fetchTrainers, type Trainer } from "@/lib/api/trainers";
 
 type Tab = "overview" | "checks" | "products" | "services" | "expenses" | "visits" | "payroll";
 type AnalyticsSection = "analytics" | "finance";
@@ -489,192 +491,92 @@ function todayDateValue() {
   return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
 }
 
-function PayrollRulesPanel({
-  rules,
-  trainingTypes,
-  services,
-  busy,
-  onCreate,
-  onDelete,
-}: {
+function PayrollRulesPanel({ rules, trainers, trainingTypes, services, busy, onCreate, onUpdate, onDelete }: {
   rules: PayrollRule[];
+  trainers: Trainer[];
   trainingTypes: TrainingType[];
   services: Product[];
   busy: boolean;
-  onCreate: (data: {
-    training_type_ids: number[];
-    product_ids: number[];
-    base_amount: number;
-    bonus_threshold?: number | null;
-    bonus_per_person?: number | null;
-    effective_from: string;
-    comment?: string | null;
-  }) => Promise<void>;
+  onCreate: (data: Parameters<typeof createPayrollRule>[0]) => Promise<void>;
+  onUpdate: (id: number, data: Parameters<typeof createPayrollRule>[0]) => Promise<void>;
   onDelete: (rule: PayrollRule) => Promise<void>;
 }) {
-  const [selectedTrainingTypes, setSelectedTrainingTypes] = useState<number[]>([]);
-  const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [name, setName] = useState("");
+  const [allTrainers, setAllTrainers] = useState(true);
+  const [trainerIds, setTrainerIds] = useState<number[]>([]);
+  const [allActivities, setAllActivities] = useState(false);
+  const [trainingTypeIds, setTrainingTypeIds] = useState<number[]>([]);
+  const [productIds, setProductIds] = useState<number[]>([]);
+  const [salaryAmount, setSalaryAmount] = useState("");
+  const [calculationType, setCalculationType] = useState<"fixed" | "per_attendee" | "tiered">("fixed");
   const [baseAmount, setBaseAmount] = useState("");
   const [bonusThreshold, setBonusThreshold] = useState("");
   const [bonusPerPerson, setBonusPerPerson] = useState("");
+  const [perAttendeeAmount, setPerAttendeeAmount] = useState("");
+  const [tiers, setTiers] = useState([{ from: "1", to: "", amount: "" }]);
   const [effectiveFrom, setEffectiveFrom] = useState(todayDateValue);
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  function toggleId(list: number[], id: number) {
-    return list.includes(id) ? list.filter((item) => item !== id) : [...list, id];
-  }
+  const toggle = (list: number[], id: number) => list.includes(id) ? list.filter((value) => value !== id) : [...list, id];
+  const money = (value: string) => Number.parseFloat(value.replace(",", ".")) || 0;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-
-    const parsedBase = Number.parseFloat(baseAmount.replace(",", "."));
-    const parsedBonusThreshold = bonusThreshold.trim() ? Number.parseInt(bonusThreshold, 10) : null;
-    const parsedBonus = bonusPerPerson.trim() ? Number.parseFloat(bonusPerPerson.replace(",", ".")) : null;
-
-    if (selectedTrainingTypes.length === 0 && selectedProducts.length === 0) {
-      setError("Выберите хотя бы одно занятие или услугу");
-      return;
-    }
-
-    if (!Number.isFinite(parsedBase) || parsedBase < 0) {
-      setError("Укажите базовую сумму");
-      return;
-    }
-
-    if (parsedBonusThreshold !== null && (!Number.isInteger(parsedBonusThreshold) || parsedBonusThreshold < 0)) {
-      setError("Порог доплаты должен быть целым числом");
-      return;
-    }
-
-    if (parsedBonus !== null && (!Number.isFinite(parsedBonus) || parsedBonus < 0)) {
-      setError("Укажите корректную доплату");
-      return;
-    }
-
-    await onCreate({
-      training_type_ids: selectedTrainingTypes,
-      product_ids: selectedProducts,
-      base_amount: parsedBase,
-      bonus_threshold: parsedBonusThreshold,
-      bonus_per_person: parsedBonus,
-      effective_from: effectiveFrom,
-      comment: comment.trim() || null,
-    });
-
-    setSelectedTrainingTypes([]);
-    setSelectedProducts([]);
-    setBaseAmount("");
-    setBonusThreshold("");
-    setBonusPerPerson("");
-    setComment("");
+    if (!name.trim()) return setError("Укажите название правила");
+    if (!allTrainers && trainerIds.length === 0) return setError("Выберите сотрудников");
+    if (!allActivities && trainingTypeIds.length === 0 && productIds.length === 0) return setError("Выберите занятия");
+    const parsedTiers = tiers.map((tier) => ({ from: Number(tier.from), to: tier.to === "" ? null : Number(tier.to), amount: money(tier.amount) }));
+    if (calculationType === "tiered" && parsedTiers.some((tier) => !Number.isInteger(tier.from) || (tier.to !== null && (!Number.isInteger(tier.to) || tier.to < tier.from)))) return setError("Проверьте диапазоны посетителей");
+    const payload = { name: name.trim(), trainer_ids: trainerIds, all_trainers: allTrainers, training_type_ids: trainingTypeIds, product_ids: productIds, all_activities: allActivities, salary_amount: money(salaryAmount), calculation_type: calculationType, base_amount: money(baseAmount), per_attendee_amount: money(perAttendeeAmount), bonus_threshold: bonusThreshold ? Number(bonusThreshold) : null, bonus_per_person: money(bonusPerPerson), tiers: parsedTiers, effective_from: effectiveFrom, comment: comment.trim() || null };
+    if (editingId === null) await onCreate(payload); else await onUpdate(editingId, payload);
+    setEditingId(null);
+    setName(""); setTrainerIds([]); setTrainingTypeIds([]); setProductIds([]); setSalaryAmount(""); setBaseAmount(""); setBonusThreshold(""); setBonusPerPerson(""); setPerAttendeeAmount(""); setTiers([{ from: "1", to: "", amount: "" }]); setComment("");
   }
 
-  return (
-    <div className="space-y-4">
-      <form onSubmit={submit} className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-4">
-        <SectionTitle label="payroll rules" title="Правило оплаты занятий" />
+  function startEdit(rule: PayrollRule) { setEditingId(rule.id); setName(rule.name); setAllTrainers(rule.all_trainers); setTrainerIds(rule.trainers.map((t)=>Number(t.trainer_id))); setAllActivities(rule.all_activities); setTrainingTypeIds(rule.items.filter((i)=>i.training_type_id!==null).map((i)=>Number(i.training_type_id))); setProductIds(rule.items.filter((i)=>i.product_id!==null).map((i)=>Number(i.product_id))); setSalaryAmount(String(rule.salary_amount || "")); setCalculationType(rule.calculation_type); setBaseAmount(String(rule.base_amount || "")); setBonusThreshold(rule.bonus_threshold===null?"":String(rule.bonus_threshold)); setBonusPerPerson(String(rule.bonus_per_person || "")); setPerAttendeeAmount(String(rule.per_attendee_amount || "")); setTiers(rule.tiers.length ? rule.tiers.map((t)=>({from:String(t.from),to:t.to===null?"":String(t.to),amount:String(t.amount)})) : [{from:"1",to:"",amount:""}]); setEffectiveFrom(rule.effective_from); setComment(rule.comment || ""); window.scrollTo({top:0,behavior:"smooth"}); }
 
-        <div className="mt-4 grid gap-4 xl:grid-cols-[1.3fr_1fr]">
-          <div className="space-y-3">
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">Типы тренировок</p>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {trainingTypes.map((item) => {
-                const id = Number(item.id);
-                const checked = selectedTrainingTypes.includes(id);
+  function ruleFormula(rule: PayrollRule) {
+    if (rule.calculation_type === "per_attendee") return `${formatMoney(rule.per_attendee_amount)} за каждого пришедшего`;
+    if (rule.calculation_type === "tiered") return rule.tiers.map((tier) => `${tier.from}–${tier.to ?? "∞"}: ${formatMoney(tier.amount)}`).join(" · ");
+    return `${formatMoney(rule.base_amount)} за занятие${rule.bonus_threshold === null ? "" : ` · свыше ${rule.bonus_threshold}: +${formatMoney(rule.bonus_per_person || 0)}`}`;
+  }
 
-                return (
-                  <label key={item.id} className={`flex items-center gap-2 rounded-[8px] border px-3 py-2 text-sm ${checked ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]" : "border-[var(--line-soft)] text-[var(--text-main)]"}`}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => setSelectedTrainingTypes((list) => toggleId(list, id))}
-                    />
-                    <span className="min-w-0 truncate">{item.name}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
+  return <div className="space-y-4">
+    <form onSubmit={submit} className="rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.58)] p-4 backdrop-blur-[3px]">
+      <SectionTitle label="payroll rules" title={editingId === null ? "Новое правило оплаты" : "Редактирование правила"} />
+      <div className="mt-4 grid gap-3 lg:grid-cols-[1.4fr_0.7fr_1fr]">
+        <label className="grid gap-1 text-xs text-[var(--text-muted)]">Название<input value={name} onChange={(e) => setName(e.target.value)} placeholder="Например, групповые занятия" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)]" /></label>
+        <label className="grid gap-1 text-xs text-[var(--text-muted)]">Действует с<input value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} type="date" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)]" /></label>
+        <label className="grid gap-1 text-xs text-[var(--text-muted)]">Комментарий<input value={comment} onChange={(e) => setComment(e.target.value)} className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)]" /></label>
+      </div>
 
-          <div className="space-y-3">
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">Услуги</p>
-            <div className="grid max-h-[220px] gap-2 overflow-auto pr-1">
-              {services.map((item) => {
-                const id = Number(item.id);
-                const checked = selectedProducts.includes(id);
+      <div className="mt-5 grid gap-5 xl:grid-cols-2">
+        <fieldset className="rounded-[8px] border border-[var(--line-soft)] p-3"><legend className="px-2 text-sm font-medium text-[var(--text-main)]">Сотрудники</legend>
+          <label className="mb-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={allTrainers} onChange={(e) => setAllTrainers(e.target.checked)} /> Все сотрудники</label>
+          {!allTrainers && <div className="grid gap-2 sm:grid-cols-2">{trainers.filter((t) => t.is_active).map((trainer) => { const id=Number(trainer.id); return <label key={trainer.id} className={`flex items-center gap-2 rounded-[8px] border px-3 py-2 text-sm ${trainerIds.includes(id) ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--line-soft)]"}`}><input type="checkbox" checked={trainerIds.includes(id)} onChange={() => setTrainerIds((list) => toggle(list,id))} />{trainer.last_name} {trainer.first_name}</label>; })}</div>}
+        </fieldset>
+        <fieldset className="rounded-[8px] border border-[var(--line-soft)] p-3"><legend className="px-2 text-sm font-medium text-[var(--text-main)]">Занятия</legend>
+          <label className="mb-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={allActivities} onChange={(e) => setAllActivities(e.target.checked)} /> Все занятия</label>
+          {!allActivities && <div className="grid max-h-56 gap-2 overflow-auto sm:grid-cols-2">{trainingTypes.map((item) => { const id=Number(item.id); return <label key={`t-${id}`} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={trainingTypeIds.includes(id)} onChange={() => setTrainingTypeIds((list) => toggle(list,id))} />{item.name}</label>; })}{services.map((item) => { const id=Number(item.id); return <label key={`p-${id}`} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={productIds.includes(id)} onChange={() => setProductIds((list) => toggle(list,id))} />{item.name}</label>; })}</div>}
+        </fieldset>
+      </div>
 
-                return (
-                  <label key={item.id} className={`flex items-center gap-2 rounded-[8px] border px-3 py-2 text-sm ${checked ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]" : "border-[var(--line-soft)] text-[var(--text-main)]"}`}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => setSelectedProducts((list) => toggleId(list, id))}
-                    />
-                    <span className="min-w-0 truncate">{item.name}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+      <div className="mt-5 rounded-[8px] border border-[var(--line-soft)] p-3">
+        <div className="grid gap-3 md:grid-cols-[0.8fr_1fr]"><label className="grid gap-1 text-xs text-[var(--text-muted)]">Оклад за расчётный период<input value={salaryAmount} onChange={(e) => setSalaryAmount(e.target.value)} inputMode="decimal" placeholder="0" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm" /></label><label className="grid gap-1 text-xs text-[var(--text-muted)]">Расчёт за проведённое занятие<select value={calculationType} onChange={(e) => setCalculationType(e.target.value as typeof calculationType)} className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm"><option value="fixed">Фиксированная сумма</option><option value="per_attendee">За каждого пришедшего</option><option value="tiered">По диапазонам посетителей</option></select></label></div>
+        {calculationType === "fixed" && <div className="mt-3 grid gap-3 sm:grid-cols-3"><label className="grid gap-1 text-xs text-[var(--text-muted)]">Сумма за занятие<input value={baseAmount} onChange={(e)=>setBaseAmount(e.target.value)} className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm" /></label><label className="grid gap-1 text-xs text-[var(--text-muted)]">Доплата после, чел.<input value={bonusThreshold} onChange={(e)=>setBonusThreshold(e.target.value)} className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm" /></label><label className="grid gap-1 text-xs text-[var(--text-muted)]">Доплата за человека<input value={bonusPerPerson} onChange={(e)=>setBonusPerPerson(e.target.value)} className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm" /></label></div>}
+        {calculationType === "per_attendee" && <label className="mt-3 grid max-w-xs gap-1 text-xs text-[var(--text-muted)]">Сумма за пришедшего<input value={perAttendeeAmount} onChange={(e)=>setPerAttendeeAmount(e.target.value)} className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm" /></label>}
+        {calculationType === "tiered" && <div className="mt-3 space-y-2">{tiers.map((tier,index)=><div key={index} className="grid gap-2 sm:grid-cols-[0.7fr_0.7fr_1fr_auto]"><input value={tier.from} onChange={(e)=>setTiers((list)=>list.map((v,i)=>i===index?{...v,from:e.target.value}:v))} placeholder="От" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm"/><input value={tier.to} onChange={(e)=>setTiers((list)=>list.map((v,i)=>i===index?{...v,to:e.target.value}:v))} placeholder="До (пусто = ∞)" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm"/><input value={tier.amount} onChange={(e)=>setTiers((list)=>list.map((v,i)=>i===index?{...v,amount:e.target.value}:v))} placeholder="Сумма за занятие" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm"/><button type="button" onClick={()=>setTiers((list)=>list.filter((_,i)=>i!==index))} className="px-3 text-xs text-[var(--danger)]">Удалить</button></div>)}<button type="button" onClick={()=>setTiers((list)=>[...list,{from:"",to:"",amount:""}])} className="text-sm text-[var(--accent)]">+ Добавить диапазон</button></div>}
+      </div>
+      {error && <p className="mt-3 text-sm text-[var(--danger)]">{error}</p>}
+      <button disabled={busy} className="mt-4 h-10 rounded-[8px] border border-[var(--accent)] bg-[var(--accent-soft)] px-4 text-sm font-medium text-[var(--accent)] disabled:opacity-60">{busy ? "Сохраняю..." : editingId === null ? "Сохранить правило" : "Сохранить изменения"}</button>
+    </form>
 
-        <div className="mt-4 grid gap-3 lg:grid-cols-[0.8fr_0.8fr_0.8fr_0.9fr_1.3fr_auto] lg:items-end">
-          <label className="grid gap-1 text-xs text-[var(--text-muted)]">
-            База
-            <input value={baseAmount} onChange={(event) => setBaseAmount(event.target.value)} inputMode="decimal" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none" />
-          </label>
-          <label className="grid gap-1 text-xs text-[var(--text-muted)]">
-            Порог
-            <input value={bonusThreshold} onChange={(event) => setBonusThreshold(event.target.value)} inputMode="numeric" placeholder="10" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]" />
-          </label>
-          <label className="grid gap-1 text-xs text-[var(--text-muted)]">
-            Доплата
-            <input value={bonusPerPerson} onChange={(event) => setBonusPerPerson(event.target.value)} inputMode="decimal" placeholder="50" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted)]" />
-          </label>
-          <label className="grid gap-1 text-xs text-[var(--text-muted)]">
-            Действует с
-            <input value={effectiveFrom} onChange={(event) => setEffectiveFrom(event.target.value)} type="date" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none" />
-          </label>
-          <label className="grid gap-1 text-xs text-[var(--text-muted)]">
-            Комментарий
-            <input value={comment} onChange={(event) => setComment(event.target.value)} className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none" />
-          </label>
-          <button disabled={busy} className="h-10 rounded-[8px] border border-[var(--accent)] bg-[var(--accent-soft)] px-4 text-sm font-medium text-[var(--accent)] transition hover:bg-[rgba(94,244,216,0.18)] disabled:opacity-60">
-            {busy ? "Сохраняю" : "Сохранить"}
-          </button>
-        </div>
-
-        {error && <p className="mt-3 text-sm text-[var(--danger)]">{error}</p>}
-      </form>
-
-      <section className="overflow-hidden rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)]">
-        {rules.length === 0 ? (
-          <div className="px-6 py-10 text-center text-sm text-[var(--text-muted)]">Правил оплаты пока нет</div>
-        ) : (
-          rules.map((rule, index) => (
-            <div key={rule.id} className={`grid gap-3 px-4 py-4 text-sm lg:grid-cols-[1.4fr_0.7fr_0.9fr_0.8fr_auto] lg:items-center ${index < rules.length - 1 ? "border-b border-[var(--line-soft)]" : ""}`}>
-              <div className="min-w-0">
-                <p className="font-medium text-[var(--text-main)]">{rule.items.map((item) => item.training_type_name || item.product_name).filter(Boolean).join(", ")}</p>
-                {rule.comment && <p className="mt-1 text-xs text-[var(--text-muted)]">{rule.comment}</p>}
-              </div>
-              <p className="font-medium text-[var(--text-main)]">{formatMoney(rule.base_amount)}</p>
-              <p className="text-xs text-[var(--text-muted)]">
-                {rule.bonus_threshold === null ? "без доплаты" : `свыше ${rule.bonus_threshold}: +${formatMoney(rule.bonus_per_person || 0)}`}
-              </p>
-              <p className="text-xs text-[var(--text-muted)]">с {formatPeriodDate(rule.effective_from)}</p>
-              <button onClick={() => void onDelete(rule)} className="rounded-[8px] border border-[rgba(255,116,57,0.35)] px-3 py-2 text-xs font-medium text-[var(--danger)] transition hover:bg-[rgba(255,116,57,0.1)]">
-                Удалить
-              </button>
-            </div>
-          ))
-        )}
-      </section>
-    </div>
-  );
+    <section className="space-y-3">{rules.length === 0 ? <EmptyState text="Правил оплаты пока нет" /> : rules.map((rule)=><article key={rule.id} className="rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.58)] p-4 backdrop-blur-[3px]"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-[var(--text-main)]">{rule.name}</p><p className="mt-1 text-xs text-[var(--text-muted)]">{rule.all_trainers ? "Все сотрудники" : rule.trainers.map((t)=>t.trainer_name).join(", ")} · {rule.all_activities ? "Все занятия" : rule.items.map((i)=>i.training_type_name||i.product_name).filter(Boolean).join(", ")}</p></div><div className="flex gap-3"><button type="button" onClick={()=>startEdit(rule)} className="text-xs text-[var(--accent)]">Редактировать</button><button type="button" onClick={()=>void onDelete(rule)} className="text-xs text-[var(--danger)]">Удалить</button></div></div><div className="mt-3 grid gap-2 text-sm sm:grid-cols-[0.6fr_1.8fr_0.7fr]"><span>Оклад: {formatMoney(rule.salary_amount)}</span><span>{ruleFormula(rule)}</span><span>с {formatPeriodDate(rule.effective_from)}</span></div>{rule.comment && <p className="mt-2 text-xs text-[var(--text-muted)]">{rule.comment}</p>}</article>)}</section>
+  </div>;
 }
-
 function PayrollCalculation({ report }: { report: PayrollReport }) {
   const [expandedTrainerId, setExpandedTrainerId] = useState<number | null>(null);
 
@@ -914,6 +816,7 @@ function PayrollTab() {
   const [to, setTo] = useState(initialRange.to);
   const [report, setReport] = useState<PayrollReport | null>(null);
   const [rules, setRules] = useState<PayrollRule[]>([]);
+  const [trainers, setTrainers] = useState<Trainer[]>([]);
   const [trainingTypes, setTrainingTypes] = useState<TrainingType[]>([]);
   const [services, setServices] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -929,9 +832,10 @@ function PayrollTab() {
       setError(null);
 
       try {
-        const [nextReport, nextRules, nextTrainingTypes, nextServices] = await Promise.all([
+        const [nextReport, nextRules, nextTrainers, nextTrainingTypes, nextServices] = await Promise.all([
           fetchPayrollReport({ from, to }),
           fetchPayrollRules(),
+          fetchTrainers(),
           fetchTrainingTypes({ include_inactive: true }),
           fetchProducts({ type: "service", includeArchived: true }),
         ]);
@@ -939,6 +843,7 @@ function PayrollTab() {
         if (!cancelled) {
           setReport(nextReport);
           setRules(nextRules);
+          setTrainers(nextTrainers);
           setTrainingTypes(nextTrainingTypes);
           setServices(nextServices);
         }
@@ -975,6 +880,12 @@ function PayrollTab() {
     }
   }
 
+  async function handleUpdateRule(id: number, data: Parameters<typeof createPayrollRule>[0]) {
+    setRulesBusy(true); setError(null);
+    try { await updatePayrollRule(id, data); setReloadToken((value) => value + 1); }
+    catch (updateError) { setError(updateError instanceof Error ? updateError.message : "Не удалось обновить правило"); throw updateError; }
+    finally { setRulesBusy(false); }
+  }
   async function handleDeleteRule(rule: PayrollRule) {
     if (!window.confirm("Удалить правило оплаты? Прошлые расчёты по этому правилу перестанут находить ставку.")) {
       return;
@@ -1049,10 +960,12 @@ function PayrollTab() {
       ) : mode === "rules" ? (
         <PayrollRulesPanel
           rules={rules}
+          trainers={trainers}
           trainingTypes={trainingTypes}
           services={services}
           busy={rulesBusy}
           onCreate={handleCreateRule}
+          onUpdate={handleUpdateRule}
           onDelete={handleDeleteRule}
         />
       ) : report ? (
