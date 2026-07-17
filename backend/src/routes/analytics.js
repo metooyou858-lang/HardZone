@@ -559,6 +559,24 @@ router.post('/payroll/runs/:id/approve', async (req, res) => {
   }
 });
 
+router.delete('/payroll/runs/:id', async (req, res) => {
+  try {
+    const id = Number.parseInt(String(req.params.id), 10);
+    const { rowCount } = await pool.query(
+      "DELETE FROM payroll_runs WHERE id = $1 AND status = 'draft'",
+      [id]
+    );
+
+    if (rowCount === 0) {
+      return res.status(409).json({ success: false, error: 'Удалить можно только существующий черновик ведомости' });
+    }
+
+    return res.json({ success: true, data: { id } });
+  } catch (err) {
+    return sendInternalError(res, err, { route: 'analytics.payroll.runs.delete' });
+  }
+});
+
 router.post('/payroll/runs/:runId/employees/:employeeId/pay', async (req, res) => {
   try {
     const runId = Number.parseInt(String(req.params.runId), 10);

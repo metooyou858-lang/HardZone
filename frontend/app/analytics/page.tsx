@@ -8,6 +8,7 @@ import {
   createPayrollRule,
   createPayrollRun,
   deleteAnalyticsExpense,
+  deletePayrollRun,
   deletePayrollRule,
   fetchAnalyticsReport,
   fetchPayrollReport,
@@ -721,6 +722,22 @@ function PayrollRunsPanel() {
     }
   }
 
+  async function deleteRun(id: number) {
+    if (!window.confirm("Удалить черновик ведомости? Его можно будет сформировать заново.")) return;
+
+    setBusy(true);
+    setError(null);
+
+    try {
+      await deletePayrollRun(id);
+      await loadRuns();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Не удалось удалить черновик");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function payEmployee(runId: number, employeeId: number) {
     setBusy(true);
     setError(null);
@@ -776,9 +793,14 @@ function PayrollRunsPanel() {
                 </p>
               </div>
               {run.status === "draft" ? (
-                <button onClick={() => void approveRun(run.id)} disabled={busy} className="rounded-[8px] border border-[var(--accent)] px-3 py-2 text-xs font-medium text-[var(--accent)] disabled:opacity-60">
-                  Утвердить
-                </button>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => void deleteRun(run.id)} disabled={busy} className="rounded-[8px] border border-[var(--line-soft)] px-3 py-2 text-xs font-medium text-[var(--text-muted)] disabled:opacity-60">
+                    Удалить черновик
+                  </button>
+                  <button onClick={() => void approveRun(run.id)} disabled={busy} className="rounded-[8px] border border-[var(--accent)] px-3 py-2 text-xs font-medium text-[var(--accent)] disabled:opacity-60">
+                    Утвердить
+                  </button>
+                </div>
               ) : (
                 <span className="text-xs font-medium text-[var(--success)]">Утверждена</span>
               )}
