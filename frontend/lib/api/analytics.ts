@@ -122,7 +122,6 @@ export type PayrollRule = {
   name: string;
   all_trainers: boolean;
   all_activities: boolean;
-  salary_amount: number;
   calculation_type: "fixed" | "per_attendee" | "tiered" | "percentage";
   per_attendee_amount: number;
   percentage_rate: number;
@@ -288,7 +287,6 @@ export async function createPayrollRule(data: {
   training_type_ids: number[];
   product_ids: number[];
   all_activities: boolean;
-  salary_amount: number;
   calculation_type: "fixed" | "per_attendee" | "tiered" | "percentage";
   base_amount: number;
   per_attendee_amount: number;
