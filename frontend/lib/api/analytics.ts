@@ -12,6 +12,7 @@ export type AnalyticsSummary = {
   purchase_expenses: number;
   writeoff_expenses: number;
   external_expenses: number;
+  payroll_expenses: number;
   gross_profit: number;
   cash_profit: number;
   checks_count: number;
@@ -162,6 +163,33 @@ export type PayrollTrainerSummary = {
   lines: PayrollLine[];
 };
 
+export type PayrollRunEmployee = {
+  id: number;
+  trainer_id: number | null;
+  trainer_name: string;
+  slots_count: number;
+  attended_count: number;
+  base_amount: number;
+  bonus_amount: number;
+  total_amount: number;
+  payment_status: "pending" | "paid";
+  paid_date: string | null;
+  paid_at: string | null;
+  calculation_snapshot: PayrollTrainerSummary;
+};
+
+export type PayrollRun = {
+  id: number;
+  date_from: string;
+  date_to: string;
+  status: "draft" | "approved";
+  total_amount: number;
+  employees_count: number;
+  paid_count: number;
+  created_at: string;
+  approved_at: string | null;
+  employees: PayrollRunEmployee[];
+};
 export type PayrollReport = {
   range: { from: string; to: string };
   summary: {
@@ -185,6 +213,7 @@ export type AnalyticsReport = {
   purchases: AnalyticsPurchase[];
   writeoffs: AnalyticsWriteoff[];
   external_expenses: AnalyticsExternalExpense[];
+  payroll_expenses: Array<{ id: number; run_id: number; trainer_id: number | null; trainer_name: string; amount: number; expense_date: string; date_from: string; date_to: string }>;
   visits: AnalyticsVisit[];
 };
 
@@ -258,6 +287,33 @@ export async function deletePayrollRule(id: number) {
   return response.data;
 }
 
+export async function fetchPayrollRuns() {
+  const response = await apiFetch<ApiEnvelope<PayrollRun[]>>("/analytics/payroll/runs");
+  return response.data;
+}
+
+export async function createPayrollRun(data: { from: string; to: string }) {
+  const response = await apiFetch<ApiEnvelope<{ id: number }>>("/analytics/payroll/runs", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function approvePayrollRun(id: number) {
+  const response = await apiFetch<ApiEnvelope<{ id: number }>>("/analytics/payroll/runs/" + id + "/approve", {
+    method: "POST",
+  });
+  return response.data;
+}
+
+export async function payPayrollRunEmployee(runId: number, employeeId: number, paidDate: string) {
+  const response = await apiFetch<ApiEnvelope<{ id: number }>>("/analytics/payroll/runs/" + runId + "/employees/" + employeeId + "/pay", {
+    method: "POST",
+    body: JSON.stringify({ paid_date: paidDate }),
+  });
+  return response.data;
+}
 export async function fetchPayrollReport(params: { from: string; to: string }) {
   const search = new URLSearchParams();
   search.set("from", params.from);

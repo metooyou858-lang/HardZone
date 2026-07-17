@@ -373,6 +373,180 @@ router.delete('/payroll/rules/:id', async (req, res) => {
   }
 });
 
+async function calculatePayrollSnapshot(from, to) {
+  const [rules, slotsResult] = await Promise.all([
+    fetchPayrollRules(),
+    pool.query(
+      `SELECT ss.id, ss.date::text AS date, ss.start_time, ss.slot_type, ss.training_type_id, ss.product_id, ss.trainer_id, tt.name AS training_type_name, p.name AS product_name, CONCAT_WS(' ', t.last_name, t.first_name) AS trainer_name, COALESCE(SUM(CASE WHEN b.status = 'attended' THEN b.places_count ELSE 0 END), 0)::INT AS attended_count, COALESCE(SUM(CASE WHEN b.status IN ('confirmed', 'attended') THEN b.places_count ELSE 0 END), 0)::INT AS confirmed_count FROM schedule_slots ss JOIN trainers t ON t.id = ss.trainer_id LEFT JOIN training_types tt ON tt.id = ss.training_type_id LEFT JOIN products p ON p.id = ss.product_id LEFT JOIN bookings b ON b.slot_id = ss.id WHERE ss.date >= $1::date AND ss.date <= $2::date AND ss.status <> 'cancelled' AND ss.trainer_id IS NOT NULL GROUP BY ss.id, tt.name, p.name, t.last_name, t.first_name ORDER BY ss.date DESC, ss.start_time DESC, ss.id DESC`,
+      [from, to]
+    ),
+  ]);
+
+  const lines = slotsResult.rows.map((slot) => buildPayrollLine(slot, rules));
+  const trainerMap = new Map();
+
+  for (const line of lines) {
+    const key = String(line.trainer_id);
+    const current = trainerMap.get(key) || {
+      trainer_id: line.trainer_id,
+      trainer_name: line.trainer_name,
+      slots_count: 0,
+      attended_count: 0,
+      base_amount: 0,
+      bonus_amount: 0,
+      total_amount: 0,
+      warnings_count: 0,
+      lines: [],
+    };
+
+    current.slots_count += 1;
+    current.attended_count += line.attended_count;
+    current.base_amount = roundMoney(current.base_amount + line.base_amount);
+    current.bonus_amount = roundMoney(current.bonus_amount + line.bonus_amount);
+    current.total_amount = roundMoney(current.total_amount + line.total_amount);
+    current.warnings_count += line.warnings.length;
+    current.lines.push(line);
+    trainerMap.set(key, current);
+  }
+
+  const trainers = Array.from(trainerMap.values()).sort((left, right) => right.total_amount - left.total_amount);
+
+  return {
+    range: { from, to },
+    summary: {
+      trainers_count: trainers.length,
+      slots_count: lines.length,
+      attended_count: lines.reduce((sum, line) => sum + line.attended_count, 0),
+      base_amount: roundMoney(lines.reduce((sum, line) => sum + line.base_amount, 0)),
+      bonus_amount: roundMoney(lines.reduce((sum, line) => sum + line.bonus_amount, 0)),
+      total_amount: roundMoney(lines.reduce((sum, line) => sum + line.total_amount, 0)),
+      warnings_count: lines.reduce((sum, line) => sum + line.warnings.length, 0),
+    },
+    trainers,
+  };
+}
+
+async function fetchPayrollRuns() {
+  const { rows } = await pool.query(
+    `SELECT pr.id, pr.date_from::text AS date_from, pr.date_to::text AS date_to, pr.status, pr.created_at, pr.approved_at, COALESCE(SUM(pre.total_amount), 0) AS total_amount, COUNT(pre.id)::INT AS employees_count, COUNT(pre.id) FILTER (WHERE pre.payment_status = 'paid')::INT AS paid_count, COALESCE(json_agg(json_build_object('id', pre.id, 'trainer_id', pre.trainer_id, 'trainer_name', pre.trainer_name, 'slots_count', pre.slots_count, 'attended_count', pre.attended_count, 'base_amount', pre.base_amount, 'bonus_amount', pre.bonus_amount, 'total_amount', pre.total_amount, 'payment_status', pre.payment_status, 'paid_date', pre.paid_date, 'paid_at', pre.paid_at, 'calculation_snapshot', pre.calculation_snapshot) ORDER BY pre.trainer_name) FILTER (WHERE pre.id IS NOT NULL), '[]') AS employees FROM payroll_runs pr LEFT JOIN payroll_run_employees pre ON pre.run_id = pr.id GROUP BY pr.id ORDER BY pr.date_from DESC, pr.id DESC`
+  );
+
+  return rows.map((row) => ({
+    ...row,
+    total_amount: Number(row.total_amount || 0),
+    employees: row.employees.map((employee) => ({
+      ...employee,
+      base_amount: Number(employee.base_amount || 0),
+      bonus_amount: Number(employee.bonus_amount || 0),
+      total_amount: Number(employee.total_amount || 0),
+    })),
+  }));
+}
+
+router.get('/payroll/runs', async (_req, res) => {
+  try {
+    return res.json({ success: true, data: await fetchPayrollRuns() });
+  } catch (err) {
+    return sendInternalError(res, err, { route: 'analytics.payroll.runs' });
+  }
+});
+
+router.post('/payroll/runs', async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const from = parseDate(req.body?.from, null);
+    const to = parseDate(req.body?.to, null);
+
+    if (!from || !to || to < from) {
+      return res.status(422).json({ success: false, error: 'Укажите корректный период расчёта' });
+    }
+
+    const snapshot = await calculatePayrollSnapshot(from, to);
+    if (snapshot.trainers.length === 0) {
+      return res.status(422).json({ success: false, error: 'За выбранный период нет занятий сотрудников' });
+    }
+
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      'INSERT INTO payroll_runs (date_from, date_to, created_by) VALUES ($1, $2, $3) RETURNING id',
+      [from, to, req.user?.id || null]
+    );
+    const runId = rows[0].id;
+
+    for (const trainer of snapshot.trainers) {
+      await client.query(
+        'INSERT INTO payroll_run_employees (run_id, trainer_id, trainer_name, slots_count, attended_count, base_amount, bonus_amount, total_amount, calculation_snapshot) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)',
+        [
+          runId,
+          trainer.trainer_id,
+          trainer.trainer_name,
+          trainer.slots_count,
+          trainer.attended_count,
+          trainer.base_amount,
+          trainer.bonus_amount,
+          trainer.total_amount,
+          JSON.stringify(trainer),
+        ]
+      );
+    }
+
+    await client.query('COMMIT');
+    return res.status(201).json({ success: true, data: { id: Number(runId) } });
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('Payroll run rollback failed', rollbackError);
+    }
+    return sendInternalError(res, err, { route: 'analytics.payroll.runs.create' });
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/payroll/runs/:id/approve', async (req, res) => {
+  try {
+    const id = Number.parseInt(String(req.params.id), 10);
+    const { rowCount } = await pool.query(
+      `UPDATE payroll_runs SET status = 'approved', approved_by = $2, approved_at = NOW() WHERE id = $1 AND status = 'draft'`,
+      [id, req.user?.id || null]
+    );
+
+    if (rowCount === 0) {
+      return res.status(409).json({ success: false, error: 'Ведомость уже утверждена или не найдена' });
+    }
+
+    return res.json({ success: true, data: { id } });
+  } catch (err) {
+    return sendInternalError(res, err, { route: 'analytics.payroll.runs.approve' });
+  }
+});
+
+router.post('/payroll/runs/:runId/employees/:employeeId/pay', async (req, res) => {
+  try {
+    const runId = Number.parseInt(String(req.params.runId), 10);
+    const employeeId = Number.parseInt(String(req.params.employeeId), 10);
+    const paidDate = parseDate(req.body?.paid_date, null);
+
+    if (!paidDate) {
+      return res.status(422).json({ success: false, error: 'Укажите дату выплаты' });
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE payroll_run_employees pre SET payment_status = 'paid', paid_date = $3, paid_by = $4, paid_at = NOW() FROM payroll_runs pr WHERE pre.id = $2 AND pre.run_id = $1 AND pr.id = pre.run_id AND pr.status = 'approved' AND pre.payment_status = 'pending' RETURNING pre.id`,
+      [runId, employeeId, paidDate, req.user?.id || null]
+    );
+
+    if (rows.length === 0) {
+      return res.status(409).json({ success: false, error: 'Сначала утвердите ведомость или сотрудник уже оплачен' });
+    }
+
+    return res.json({ success: true, data: { id: Number(rows[0].id) } });
+  } catch (err) {
+    return sendInternalError(res, err, { route: 'analytics.payroll.runs.pay' });
+  }
+});
 router.get('/payroll', async (req, res) => {
   try {
     const defaults = getDefaultRange();
@@ -598,6 +772,10 @@ router.get('/', async (req, res) => {
       ),
     ]);
 
+    const payrollExpensesResult = await pool.query(
+      "SELECT pre.id, pre.run_id, pre.trainer_id, pre.trainer_name, pre.total_amount AS amount, pre.paid_date AS expense_date, pre.paid_at, pr.date_from, pr.date_to FROM payroll_run_employees pre JOIN payroll_runs pr ON pr.id = pre.run_id WHERE pre.payment_status = 'paid' AND pre.paid_date >= $1::date AND pre.paid_date <= $2::date ORDER BY pre.paid_date DESC, pre.id DESC",
+      [from, to]
+    );
     const checks = ordersResult.rows.map(buildOrderAnalytics);
     const legacyProductSales = legacySalesResult.rows.map((sale) => {
       const revenue = roundMoney(Number(sale.sale_price_at_sale || 0) * Number(sale.quantity || 0));
@@ -625,10 +803,11 @@ router.get('/', async (req, res) => {
     const purchaseExpenses = roundMoney(receiptsResult.rows.reduce((sum, row) => sum + Number(row.total_cost || 0), 0));
     const writeoffExpenses = roundMoney(writeoffsResult.rows.reduce((sum, row) => sum + Number(row.total_cost || 0), 0));
     const externalExpenses = roundMoney(externalExpensesResult.rows.reduce((sum, row) => sum + Number(row.amount || 0), 0));
+    const payrollExpenses = roundMoney(payrollExpensesResult.rows.reduce((sum, row) => sum + Number(row.amount || 0), 0));
     const revenue = roundMoney(orderRevenue + legacyRevenue);
     const costOfSoldGoods = roundMoney(orderCost + legacyCost);
     const grossProfit = roundMoney(revenue - costOfSoldGoods);
-    const cashProfit = roundMoney(revenue - purchaseExpenses - writeoffExpenses - externalExpenses);
+    const cashProfit = roundMoney(revenue - purchaseExpenses - writeoffExpenses - externalExpenses - payrollExpenses);
 
     const productLines = checks
       .flatMap((check) =>
@@ -685,6 +864,7 @@ router.get('/', async (req, res) => {
           purchase_expenses: purchaseExpenses,
           writeoff_expenses: writeoffExpenses,
           external_expenses: externalExpenses,
+          payroll_expenses: payrollExpenses,
           gross_profit: grossProfit,
           cash_profit: cashProfit,
           checks_count: checks.length,
@@ -722,6 +902,7 @@ router.get('/', async (req, res) => {
           ...row,
           amount: Number(row.amount || 0),
         })),
+        payroll_expenses: payrollExpensesResult.rows.map((row) => ({ ...row, amount: Number(row.amount || 0) })),
         visits: visitsResult.rows.map((row) => ({
           ...row,
           client_name: [row.last_name, row.first_name, row.middle_name].filter(Boolean).join(' '),

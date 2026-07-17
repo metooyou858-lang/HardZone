@@ -3,19 +3,24 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import {
+  approvePayrollRun,
   createAnalyticsExpense,
   createPayrollRule,
+  createPayrollRun,
   deleteAnalyticsExpense,
   deletePayrollRule,
   fetchAnalyticsReport,
   fetchPayrollReport,
   fetchPayrollRules,
+  fetchPayrollRuns,
+  payPayrollRunEmployee,
   type AnalyticsCheck,
   type AnalyticsExternalExpense,
   type AnalyticsReport,
   type AnalyticsSaleLine,
   type PayrollReport,
   type PayrollRule,
+  type PayrollRun,
   type PayrollTrainerSummary,
 } from "@/lib/api/analytics";
 import { fetchProducts, type Product } from "@/lib/api/products";
@@ -274,6 +279,7 @@ function Overview({ report }: { report: AnalyticsReport }) {
           <StatCard label="Закупки склада" value={formatMoney(summary.purchase_expenses)} hint={`${report.purchases.length} приходных операций`} tone="warn" />
           <StatCard label="Списания" value={formatMoney(summary.writeoff_expenses)} hint={`${report.writeoffs.length} складских списаний по себестоимости`} tone="warn" />
           <StatCard label="Внешние расходы" value={formatMoney(summary.external_expenses)} hint={`${report.external_expenses.length} ручных позиций`} tone="warn" />
+          <StatCard label="Зарплаты" value={formatMoney(summary.payroll_expenses)} hint={formatNumber(report.payroll_expenses.length) + " выплат сотрудникам"} tone="warn" />
           <StatCard label="Себестоимость продаж" value={formatMoney(summary.cost_of_sold_goods)} hint="Себестоимость товарных позиций в чеках" />
         </div>
       </section>
@@ -748,9 +754,162 @@ function PayrollTrainerDetails({ trainer }: { trainer: PayrollTrainerSummary }) 
   );
 }
 
+function PayrollRunsPanel() {
+  const [runs, setRuns] = useState<PayrollRun[]>([]);
+  const [from, setFrom] = useState(() => getMonthRange(currentMonthValue()).from);
+  const [to, setTo] = useState(() => todayDateValue());
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadRuns() {
+    setLoading(true);
+    setError(null);
+
+    try {
+      setRuns(await fetchPayrollRuns());
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить ведомости");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadRuns();
+  }, []);
+
+  async function createRun() {
+    setBusy(true);
+    setError(null);
+
+    try {
+      await createPayrollRun({ from, to });
+      await loadRuns();
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "Не удалось сформировать ведомость");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function approveRun(id: number) {
+    setBusy(true);
+    setError(null);
+
+    try {
+      await approvePayrollRun(id);
+      await loadRuns();
+    } catch (approveError) {
+      setError(approveError instanceof Error ? approveError.message : "Не удалось утвердить ведомость");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function payEmployee(runId: number, employeeId: number) {
+    setBusy(true);
+    setError(null);
+
+    try {
+      await payPayrollRunEmployee(runId, employeeId, todayDateValue());
+      await loadRuns();
+    } catch (payError) {
+      setError(payError instanceof Error ? payError.message : "Не удалось отметить выплату");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.58)] p-4 backdrop-blur-[3px]">
+        <SectionTitle label="payroll statement" title="Сформировать расчётную ведомость" />
+        <p className="mt-2 text-sm text-[var(--text-muted)]">
+          После формирования суммы сохраняются снимком и больше не зависят от изменений правил.
+        </p>
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          <label className="grid gap-1 text-xs text-[var(--text-muted)]">
+            С
+            <input value={from} onChange={(event) => setFrom(event.target.value)} type="date" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none" />
+          </label>
+          <label className="grid gap-1 text-xs text-[var(--text-muted)]">
+            По
+            <input value={to} onChange={(event) => setTo(event.target.value)} type="date" className="h-10 rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 text-sm text-[var(--text-main)] outline-none" />
+          </label>
+          <button onClick={() => void createRun()} disabled={busy} className="h-10 rounded-[8px] border border-[var(--accent)] bg-[var(--accent-soft)] px-4 text-sm font-medium text-[var(--accent)] disabled:opacity-60">
+            {busy ? "Формирую..." : "Сформировать"}
+          </button>
+        </div>
+      </section>
+
+      {error && <div className="rounded-[8px] border border-[rgba(255,116,57,0.35)] bg-[rgba(255,116,57,0.1)] px-4 py-3 text-sm text-[var(--danger)]">{error}</div>}
+
+      {loading ? (
+        <EmptyState text="Загрузка ведомостей..." />
+      ) : runs.length === 0 ? (
+        <EmptyState text="Расчётных ведомостей пока нет" />
+      ) : (
+        runs.map((run) => (
+          <section key={run.id} className="overflow-hidden rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.58)] backdrop-blur-[3px]">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line-soft)] px-4 py-4">
+              <div>
+                <p className="text-sm font-semibold text-[var(--text-main)]">
+                  Ведомость #{run.id} · {formatPeriodDate(run.date_from)} — {formatPeriodDate(run.date_to)}
+                </p>
+                <p className="mt-1 text-xs text-[var(--text-muted)]">
+                  {run.employees_count} сотрудников · выплачено {run.paid_count} · всего {formatMoney(run.total_amount)}
+                </p>
+              </div>
+              {run.status === "draft" ? (
+                <button onClick={() => void approveRun(run.id)} disabled={busy} className="rounded-[8px] border border-[var(--accent)] px-3 py-2 text-xs font-medium text-[var(--accent)] disabled:opacity-60">
+                  Утвердить
+                </button>
+              ) : (
+                <span className="text-xs font-medium text-[var(--success)]">Утверждена</span>
+              )}
+            </div>
+
+            {run.employees.map((employee, index) => (
+              <details key={employee.id} className={index < run.employees.length - 1 ? "border-b border-[var(--line-soft)]" : ""}>
+                <summary className="grid cursor-pointer list-none gap-3 px-4 py-4 sm:grid-cols-[1.4fr_0.8fr_0.8fr_auto] sm:items-center">
+                  <div>
+                    <p className="font-medium text-[var(--text-main)]">{employee.trainer_name}</p>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">{employee.slots_count} занятий · {employee.attended_count} посещений</p>
+                  </div>
+                  <p className="text-sm text-[var(--text-muted)]">База {formatMoney(employee.base_amount)} · доплаты {formatMoney(employee.bonus_amount)}</p>
+                  <p className="text-base font-semibold text-[var(--text-main)]">{formatMoney(employee.total_amount)}</p>
+                  {employee.payment_status === "paid" ? (
+                    <span className="text-xs font-medium text-[var(--success)]">Выплачено {employee.paid_date ? formatPeriodDate(employee.paid_date) : ""}</span>
+                  ) : run.status === "approved" ? (
+                    <button onClick={(event) => { event.preventDefault(); void payEmployee(run.id, employee.id); }} disabled={busy} className="rounded-[8px] border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-xs font-medium text-[var(--accent)] disabled:opacity-60">
+                      Выплачено
+                    </button>
+                  ) : (
+                    <span className="text-xs text-[var(--text-muted)]">Ожидает утверждения</span>
+                  )}
+                </summary>
+                <div className="space-y-2 bg-[rgba(17,21,32,0.62)] px-4 py-3">
+                  {employee.calculation_snapshot.lines.map((line) => (
+                    <div key={line.slot_id} className="grid gap-2 text-xs text-[var(--text-muted)] sm:grid-cols-[0.8fr_1.4fr_0.5fr_0.7fr]">
+                      <span>{formatPeriodDate(line.date)} · {String(line.start_time).slice(0, 5)}</span>
+                      <span className="text-[var(--text-main)]">{line.training_type_name}</span>
+                      <span>пришло {line.attended_count}</span>
+                      <span className="font-medium text-[var(--text-main)]">{formatMoney(line.total_amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            ))}
+          </section>
+        ))
+      )}
+    </div>
+  );
+}
 function PayrollTab() {
   const initialRange = getMonthRange(currentMonthValue());
-  const [mode, setMode] = useState<"calculation" | "rules">("calculation");
+  const [mode, setMode] = useState<"runs" | "calculation" | "rules">("runs");
   const [from, setFrom] = useState(initialRange.from);
   const [to, setTo] = useState(initialRange.to);
   const [report, setReport] = useState<PayrollReport | null>(null);
@@ -835,8 +994,9 @@ function PayrollTab() {
       <section className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)] p-4">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <SectionTitle label="payroll" title="Зарплаты за период" />
+            <SectionTitle label="payroll" title="Зарплаты" />
           </div>
+          {mode !== "runs" && (
           <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
             <label className="grid gap-1 text-xs text-[var(--text-muted)]">
               С
@@ -850,16 +1010,18 @@ function PayrollTab() {
               Рассчитать
             </button>
           </div>
+          )}
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
           {[
-            ["calculation", "Расчёт"],
+            ["runs", "Ведомости"],
+            ["calculation", "Предварительный расчёт"],
             ["rules", "Правила оплаты"],
           ].map(([id, label]) => (
             <button
               key={id}
-              onClick={() => setMode(id as "calculation" | "rules")}
+              onClick={() => setMode(id as "runs" | "calculation" | "rules")}
               className={`rounded-[8px] border px-3 py-2 text-sm font-medium transition ${
                 mode === id
                   ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
@@ -872,13 +1034,15 @@ function PayrollTab() {
         </div>
       </section>
 
-      {error && (
+      {mode !== "runs" && error && (
         <div className="rounded-[8px] border border-[rgba(255,116,57,0.35)] bg-[rgba(255,116,57,0.1)] px-4 py-3 text-sm text-[var(--danger)]">
           {error}
         </div>
       )}
 
-      {loading ? (
+      {mode === "runs" ? (
+        <PayrollRunsPanel />
+      ) : loading ? (
         <div className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-6 py-16 text-center text-sm text-[var(--text-muted)]">
           Загрузка зарплат...
         </div>
@@ -964,7 +1128,16 @@ export function AnalyticsWorkspace({ section }: { section: AnalyticsSection }) {
         date: item.created_at,
         external: null,
       })),
-      ...report.external_expenses.map((item) => ({
+      ...report.payroll_expenses.map((item) => ({
+        id: "payroll-" + item.id,
+        source: "payroll" as const,
+        type: "Зарплата",
+        name: item.trainer_name,
+        detail: "Ведомость #" + item.run_id + " · " + formatPeriodDate(item.date_from) + "—" + formatPeriodDate(item.date_to),
+        amount: item.amount,
+        date: item.expense_date,
+        external: null,
+      })),      ...report.external_expenses.map((item) => ({
         id: `external-${item.id}`,
         source: "external" as const,
         type: "Внешний расход",
