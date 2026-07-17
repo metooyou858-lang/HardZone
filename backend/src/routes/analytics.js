@@ -440,7 +440,7 @@ async function calculatePayrollSnapshot(from, to) {
               COALESCE(p.sale_price, 0)
                 * COALESCE(SUM(CASE WHEN b.status = 'attended' THEN b.places_count ELSE 0 END), 0),
               0
-            ) AS service_gross_amount, CONCAT_WS(' ', t.last_name, t.first_name) AS trainer_name, COALESCE(SUM(CASE WHEN b.status = 'attended' THEN b.places_count ELSE 0 END), 0)::INT AS attended_count, COALESCE(SUM(CASE WHEN b.status IN ('confirmed', 'attended') THEN b.places_count ELSE 0 END), 0)::INT AS confirmed_count FROM schedule_slots ss JOIN trainers t ON t.id = ss.trainer_id LEFT JOIN training_types tt ON tt.id = ss.training_type_id LEFT JOIN products p ON p.id = ss.product_id LEFT JOIN bookings b ON b.slot_id = ss.id WHERE ss.date >= $1::date AND ss.date <= $2::date AND ss.status <> 'cancelled' AND ss.trainer_id IS NOT NULL GROUP BY ss.id, tt.name, p.name, p.sale_price, t.last_name, t.first_name ORDER BY ss.date DESC, ss.start_time DESC, ss.id DESC`,
+            ) AS service_gross_amount, CONCAT_WS(' ', t.last_name, t.first_name) AS trainer_name, COALESCE(SUM(CASE WHEN b.status = 'attended' THEN b.places_count ELSE 0 END), 0)::INT AS attended_count, COALESCE(SUM(CASE WHEN b.status IN ('confirmed', 'attended') THEN b.places_count ELSE 0 END), 0)::INT AS confirmed_count FROM schedule_slots ss JOIN trainers t ON t.id = ss.trainer_id LEFT JOIN training_types tt ON tt.id = ss.training_type_id LEFT JOIN products p ON p.id = ss.product_id LEFT JOIN bookings b ON b.slot_id = ss.id WHERE ss.date >= $1::date AND ss.date <= $2::date AND ((ss.date + ss.start_time) AT TIME ZONE 'Asia/Vladivostok') <= NOW() AND ss.status <> 'cancelled' AND ss.trainer_id IS NOT NULL GROUP BY ss.id, tt.name, p.name, p.sale_price, t.last_name, t.first_name ORDER BY ss.date DESC, ss.start_time DESC, ss.id DESC`,
       [from, to]
     ),
   ]);
@@ -704,7 +704,7 @@ router.get('/payroll', async (req, res) => {
           LEFT JOIN products p ON p.id = ss.product_id
           LEFT JOIN bookings b ON b.slot_id = ss.id
           WHERE ss.date >= $1::date
-            AND ss.date <= $2::date
+            AND ss.date <= $2::date AND ((ss.date + ss.start_time) AT TIME ZONE 'Asia/Vladivostok') <= NOW()
             AND ss.status <> 'cancelled'
             AND ss.trainer_id IS NOT NULL
           GROUP BY ss.id, tt.name, p.name, p.sale_price, t.last_name, t.first_name
