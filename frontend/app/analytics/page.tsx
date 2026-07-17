@@ -15,6 +15,7 @@ import {
   fetchPayrollRules,
   fetchPayrollRuns,
   payPayrollRunEmployee,
+  revokePayrollRunApproval,
   updatePayrollRule,
   type AnalyticsCheck,
   type AnalyticsExternalExpense,
@@ -722,6 +723,22 @@ function PayrollRunsPanel() {
     }
   }
 
+  async function revokeApproval(id: number) {
+    if (!window.confirm("Отменить утверждение ведомости? Она снова станет черновиком.")) return;
+
+    setBusy(true);
+    setError(null);
+
+    try {
+      await revokePayrollRunApproval(id);
+      await loadRuns();
+    } catch (revokeError) {
+      setError(revokeError instanceof Error ? revokeError.message : "Не удалось отменить утверждение");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function deleteRun(id: number) {
     if (!window.confirm("Удалить черновик ведомости? Его можно будет сформировать заново.")) return;
 
@@ -782,11 +799,11 @@ function PayrollRunsPanel() {
         <EmptyState text="Расчётных ведомостей пока нет" />
       ) : (
         runs.map((run) => (
-          <section key={run.id} className="overflow-hidden rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.58)] backdrop-blur-[3px]">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line-soft)] px-4 py-4">
+          <details key={run.id} className="group overflow-hidden rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.58)] backdrop-blur-[3px]">
+            <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-4 py-4 group-open:border-b group-open:border-[var(--line-soft)]">
               <div>
                 <p className="text-sm font-semibold text-[var(--text-main)]">
-                  Ведомость #{run.id} · {formatPeriodDate(run.date_from)} — {formatPeriodDate(run.date_to)}
+                  Ведомость #{run.id} · {formatPeriodDate(run.date_from)} — {formatPeriodDate(run.date_to)} <span aria-hidden="true" className="ml-1 inline-block text-[var(--text-muted)] transition-transform group-open:rotate-180">⌄</span>
                 </p>
                 <p className="mt-1 text-xs text-[var(--text-muted)]">
                   {run.employees_count} сотрудников · выплачено {run.paid_count} · всего {formatMoney(run.total_amount)}
@@ -794,19 +811,24 @@ function PayrollRunsPanel() {
               </div>
               {run.status === "draft" ? (
                 <div className="flex items-center gap-2">
-                  <button onClick={() => void deleteRun(run.id)} disabled={busy} className="rounded-[8px] border border-[var(--line-soft)] px-3 py-2 text-xs font-medium text-[var(--text-muted)] disabled:opacity-60">
+                  <button onClick={(event) => { event.preventDefault(); event.stopPropagation(); void deleteRun(run.id); }} disabled={busy} className="rounded-[8px] border border-[var(--line-soft)] px-3 py-2 text-xs font-medium text-[var(--text-muted)] disabled:opacity-60">
                     Удалить черновик
                   </button>
-                  <button onClick={() => void approveRun(run.id)} disabled={busy} className="rounded-[8px] border border-[var(--accent)] px-3 py-2 text-xs font-medium text-[var(--accent)] disabled:opacity-60">
+                  <button onClick={(event) => { event.preventDefault(); event.stopPropagation(); void approveRun(run.id); }} disabled={busy} className="rounded-[8px] border border-[var(--accent)] px-3 py-2 text-xs font-medium text-[var(--accent)] disabled:opacity-60">
                     Утвердить
                   </button>
                 </div>
+              ) : run.paid_count === 0 ? (
+                <button onClick={(event) => { event.preventDefault(); event.stopPropagation(); void revokeApproval(run.id); }} disabled={busy} className="rounded-[8px] border border-[var(--line-soft)] px-3 py-2 text-xs font-medium text-[var(--text-muted)] disabled:opacity-60">
+                  Отменить утверждение
+                </button>
               ) : (
                 <span className="text-xs font-medium text-[var(--success)]">Утверждена</span>
               )}
-            </div>
+            </summary>
 
-            {run.employees.map((employee, index) => (
+            <div>
+              {run.employees.map((employee, index) => (
               <details key={employee.id} className={index < run.employees.length - 1 ? "border-b border-[var(--line-soft)]" : ""}>
                 <summary className="grid cursor-pointer list-none gap-3 px-4 py-4 sm:grid-cols-[1.4fr_0.8fr_0.8fr_auto] sm:items-center">
                   <div>
@@ -837,7 +859,8 @@ function PayrollRunsPanel() {
                 </div>
               </details>
             ))}
-          </section>
+            </div>
+          </details>
         ))
       )}
     </div>

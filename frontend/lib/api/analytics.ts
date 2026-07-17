@@ -338,6 +338,13 @@ export async function approvePayrollRun(id: number) {
   return response.data;
 }
 
+export async function revokePayrollRunApproval(id: number) {
+  const response = await apiFetch<ApiEnvelope<{ id: number }>>("/analytics/payroll/runs/" + id + "/approve", {
+    method: "DELETE",
+  });
+  return response.data;
+}
+
 export async function deletePayrollRun(id: number) {
   const response = await apiFetch<ApiEnvelope<{ id: number }>>("/analytics/payroll/runs/" + id, {
     method: "DELETE",

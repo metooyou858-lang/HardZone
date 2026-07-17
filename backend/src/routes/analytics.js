@@ -559,6 +559,30 @@ router.post('/payroll/runs/:id/approve', async (req, res) => {
   }
 });
 
+router.delete('/payroll/runs/:id/approve', async (req, res) => {
+  try {
+    const id = Number.parseInt(String(req.params.id), 10);
+    const { rowCount } = await pool.query(
+      `UPDATE payroll_runs pr
+       SET status = 'draft', approved_by = NULL, approved_at = NULL
+       WHERE pr.id = $1
+         AND pr.status = 'approved'
+         AND NOT EXISTS (
+           SELECT 1 FROM payroll_run_employees pre
+           WHERE pre.run_id = pr.id AND pre.payment_status = 'paid'
+         )`,
+      [id]
+    );
+
+    if (rowCount === 0) {
+      return res.status(409).json({ success: false, error: 'Нельзя отменить утверждение: ведомость не найдена или по ней уже есть выплаты' });
+    }
+
+    return res.json({ success: true, data: { id } });
+  } catch (err) {
+    return sendInternalError(res, err, { route: 'analytics.payroll.runs.revoke_approval' });
+  }
+});
 router.delete('/payroll/runs/:id', async (req, res) => {
   try {
     const id = Number.parseInt(String(req.params.id), 10);
