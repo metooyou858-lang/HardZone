@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import {
@@ -17,10 +18,13 @@ import {
   payPayrollRunEmployee,
   revokePayrollRunApproval,
   updatePayrollRule,
+  type AnalyticsAttentionClient,
+  type AnalyticsBusinessDetail,
   type AnalyticsCheck,
   type AnalyticsExternalExpense,
   type AnalyticsReport,
   type AnalyticsSaleLine,
+  type AnalyticsVisitDetail,
   type PayrollReport,
   type PayrollRule,
   type PayrollRun,
@@ -30,7 +34,7 @@ import { fetchProducts, type Product } from "@/lib/api/products";
 import { fetchTrainingTypes, type TrainingType } from "@/lib/api/training-types";
 import { fetchTrainers, type Trainer } from "@/lib/api/trainers";
 
-type Tab = "overview" | "checks" | "products" | "services" | "expenses" | "visits" | "payroll";
+type Tab = "overview" | "checks" | "products" | "services" | "expenses" | "payroll";
 type AnalyticsSection = "analytics" | "finance";
 
 const financeTabs: { id: Tab; label: string }[] = [
@@ -44,7 +48,6 @@ const financeTabs: { id: Tab; label: string }[] = [
 
 const analyticsTabs: { id: Tab; label: string }[] = [
   { id: "overview", label: "Обзор" },
-  { id: "visits", label: "Посещения" },
 ];
 
 const paymentLabels: Record<string, string> = {
@@ -172,23 +175,244 @@ function shortId(value: string | null | undefined) {
   return value ? value.slice(0, 8) : "—";
 }
 
-function StatCard({ label, value, hint, tone = "neutral" }: { label: string; value: string; hint: string; tone?: "neutral" | "good" | "warn" }) {
+function StatCard({
+  label,
+  value,
+  hint,
+  tone = "neutral",
+  onClick,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  tone?: "neutral" | "good" | "warn";
+  onClick?: () => void;
+}) {
   const toneClass =
     tone === "good"
       ? "border-[rgba(63,185,80,0.24)] bg-[rgba(63,185,80,0.08)]"
       : tone === "warn"
         ? "border-[rgba(255,116,57,0.25)] bg-[rgba(255,116,57,0.08)]"
         : "border-[var(--line-soft)] bg-[rgba(22,27,39,0.68)]";
-
-  return (
-    <article className={`rounded-[8px] border p-4 ${toneClass}`}>
+  const content = (
+    <>
       <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-muted)]">{label}</p>
       <p className="mt-3 text-2xl font-semibold text-[var(--text-main)]">{value}</p>
       <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">{hint}</p>
-    </article>
+    </>
+  );
+
+  return onClick ? (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`Открыть детализацию: ${label}`}
+      className={`min-h-11 rounded-[8px] border p-4 text-left transition-colors hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${toneClass}`}
+    >
+      {content}
+    </button>
+  ) : (
+    <article className={`rounded-[8px] border p-4 ${toneClass}`}>{content}</article>
+  );
+}
+function formatShortRange(range: { from: string; to: string }) {
+  const months = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+  const [, fromMonth, fromDay] = range.from.split("-").map(Number);
+  const [, toMonth, toDay] = range.to.split("-").map(Number);
+
+  if (fromMonth === toMonth) {
+    return fromDay === toDay
+      ? `${toDay} ${months[toMonth - 1]}`
+      : `${fromDay}–${toDay} ${months[toMonth - 1]}`;
+  }
+
+  return `${fromDay} ${months[fromMonth - 1]} – ${toDay} ${months[toMonth - 1]}`;
+}
+
+function ComparisonCard({
+  label,
+  value,
+  previous,
+  comparisonLabel,
+  hint,
+  inverse = false,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  previous: number;
+  comparisonLabel: string;
+  hint: string;
+  inverse?: boolean;
+  onClick: () => void;
+}) {
+  const difference = value - previous;
+  const favorable = inverse ? difference < 0 : difference > 0;
+  const unfavorable = inverse ? difference > 0 : difference < 0;
+  const comparisonClass = favorable
+    ? "text-[var(--success)]"
+    : unfavorable
+      ? "text-[var(--danger)]"
+      : "text-[var(--text-muted)]";
+  const differenceText = formatNumber(Math.abs(difference));
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`Открыть детализацию: ${label}`}
+      className="min-h-11 rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.68)] p-4 text-left transition-colors hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+    >
+      <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-muted)]">{label}</p>
+      <p className="mt-3 text-2xl font-semibold text-[var(--text-main)]">{formatNumber(value)}</p>
+      <p className={`mt-2 flex items-center gap-1 text-xs font-medium ${comparisonClass}`}>
+        {difference === 0 ? "Без изменений" : (
+          <>
+            <span className="sr-only">{difference > 0 ? "Рост" : "Снижение"} на </span>
+            <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              {difference > 0
+                ? <path d="M3 13 11 5m0 0H5m6 0v6" />
+                : <path d="m3 5 8 8m0 0H5m6 0V7" />}
+            </svg>
+            <span>{differenceText}</span>
+          </>
+        )}
+        <span>к {comparisonLabel}</span>
+      </p>
+      <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">{hint}</p>
+    </button>
   );
 }
 
+type BusinessDrilldownMetric = keyof AnalyticsReport["business_health"]["details"];
+type VisitDrilldownMetric = "visits" | "group" | "personal" | "open_gym";
+type DrilldownMetric = BusinessDrilldownMetric | VisitDrilldownMetric;
+
+const drilldownTitles: Record<DrilldownMetric, string> = {
+  active_clients: "Активные клиенты",
+  new_clients: "Новые клиенты",
+  renewed_clients: "Повторные клиенты",
+  lapsed_clients: "Без продления",
+  lost_clients: "Потерянные клиенты",
+  visits: "Все посещения",
+  group: "Групповые посещения",
+  personal: "Персональные посещения",
+  open_gym: "Open Gym",
+};
+
+function AnalyticsDrilldown({ metric, report, onClose }: { metric: DrilldownMetric; report: AnalyticsReport; onClose: () => void }) {
+  const businessMetric = metric.endsWith("_clients") ? metric as BusinessDrilldownMetric : null;
+  const visitMetric = businessMetric ? null : metric as VisitDrilldownMetric;
+  const businessRows: AnalyticsBusinessDetail[] = businessMetric ? report.business_health.details[businessMetric] : [];
+  const visitRows: AnalyticsVisitDetail[] = visitMetric
+    ? report.business_health.visit_details.filter((row) => visitMetric === "visits" || row[visitMetric] > 0)
+    : [];
+  const visitCount = metric === "visits"
+    ? report.business_health.current.visits_count
+    : metric === "group"
+      ? report.summary.group_visits
+      : metric === "personal"
+        ? report.summary.personal_visits
+        : metric === "open_gym"
+          ? report.summary.open_gym_visits
+          : 0;
+  const summary = businessMetric
+    ? metric === "lost_clients"
+      ? `${businessRows.length} клиентов · На ${formatPeriodDate(report.business_health.period.to)}`
+      : `${businessRows.length} клиентов`
+    : `${visitCount} посещений · ${visitRows.length} клиентов`;
+  const dateLabel = metric === "active_clients"
+    ? "Действует до"
+    : metric === "lapsed_clients"
+      ? "Закончился"
+      : metric === "lost_clients"
+        ? "Последний визит"
+        : "Дата покупки";
+  const itemLabel = metric === "new_clients" || metric === "renewed_clients"
+    ? "Услуга"
+    : metric === "lost_clients"
+      ? "Причина"
+      : "Абонемент";
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[100] flex justify-end bg-[#03060b]/65 backdrop-blur-[3px]" onMouseDown={onClose}>
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="analytics-drilldown-title"
+        className="h-full w-full max-w-[720px] overflow-y-auto border-l border-[var(--line-soft)] bg-[var(--bg-panel)] shadow-[-30px_0_90px_rgba(0,0,0,.45)]"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[var(--line-soft)] bg-[var(--bg-panel)] px-5 py-5 sm:px-7">
+          <div>
+            <h2 id="analytics-drilldown-title" className="text-xl font-semibold text-[var(--text-main)]">{drilldownTitles[metric]}</h2>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">{summary} · {formatShortRange(report.business_health.period)}</p>
+          </div>
+          <button type="button" onClick={onClose} autoFocus aria-label="Закрыть детализацию" className="grid h-11 w-11 shrink-0 place-items-center rounded-[8px] border border-[var(--line-soft)] text-xl text-[var(--text-muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text-main)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]">
+            ×
+          </button>
+        </header>
+
+        <div className="p-5 sm:p-7">
+          {businessMetric ? (
+            businessRows.length === 0 ? (
+              <EmptyState text="В выбранном периоде клиентов по этому показателю нет" />
+            ) : (
+              <div className="overflow-hidden rounded-[8px] border border-[var(--line-soft)]">
+                <div className="hidden grid-cols-[1.2fr_1.2fr_0.7fr] gap-4 border-b border-[var(--line-soft)] bg-[var(--bg-card)] px-4 py-3 text-xs font-medium text-[var(--text-muted)] sm:grid">
+                  <span>Клиент</span><span>{itemLabel}</span><span>{dateLabel}</span>
+                </div>
+                {businessRows.map((row, index) => (
+                  <div key={row.client_id} className={`grid gap-2 px-4 py-4 text-sm sm:grid-cols-[1.2fr_1.2fr_0.7fr] sm:items-center sm:gap-4 ${index < businessRows.length - 1 ? "border-b border-[var(--line-soft)]" : ""}`}>
+                    <Link href={`/clients/${row.client_id}`} className="font-medium text-[var(--text-main)] underline-offset-4 hover:text-[var(--accent)] hover:underline">
+                      {row.client_name}
+                    </Link>
+                    <p className="text-[var(--text-muted)]">{row.subscription_name}</p>
+                    <p className="text-xs text-[var(--text-muted)]">{row.date ? formatPeriodDate(row.date) : metric === "lost_clients" ? "В текущей CRM не было" : "Без срока"}</p>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : visitRows.length === 0 ? (
+            <EmptyState text="В выбранном периоде посещений этого типа нет" />
+          ) : (
+            <div className="overflow-x-auto rounded-[8px] border border-[var(--line-soft)]">
+              <div className="min-w-[560px]">
+                <div className="grid grid-cols-[1.6fr_repeat(4,0.55fr)] gap-3 border-b border-[var(--line-soft)] bg-[var(--bg-card)] px-4 py-3 text-xs font-medium text-[var(--text-muted)]">
+                  <span>Клиент</span><span>Группа</span><span>Персон.</span><span>Open Gym</span><span>Всего</span>
+                </div>
+                {visitRows.map((row, index) => (
+                  <div key={row.client_id} className={`grid grid-cols-[1.6fr_repeat(4,0.55fr)] gap-3 px-4 py-4 text-sm ${index < visitRows.length - 1 ? "border-b border-[var(--line-soft)]" : ""}`}>
+                    <Link href={`/clients/${row.client_id}`} className="font-medium text-[var(--text-main)] underline-offset-4 hover:text-[var(--accent)] hover:underline">
+                      {row.client_name}
+                    </Link>
+                    <span className="text-[var(--text-muted)]">{row.group}</span>
+                    <span className="text-[var(--text-muted)]">{row.personal}</span>
+                    <span className="text-[var(--text-muted)]">{row.open_gym}</span>
+                    <span className="font-semibold text-[var(--text-main)]">{row.total}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
 function EmptyState({ text }: { text: string }) {
   return (
     <div className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)] px-6 py-12 text-center text-sm text-[var(--text-muted)]">
@@ -335,18 +559,172 @@ function Overview({ report }: { report: AnalyticsReport }) {
   );
 }
 
+type TrendMetricKey = "active_clients" | "new_clients" | "renewed_clients" | "lapsed_clients" | "lost_clients" | "visits_count";
+
+const trendMetricRows: Array<{ key: TrendMetricKey; label: string; color: string }> = [
+  { key: "active_clients", label: "Активные", color: "var(--accent)" },
+  { key: "new_clients", label: "Новые", color: "var(--success)" },
+  { key: "renewed_clients", label: "Повторные", color: "#7aa2f7" },
+  { key: "lapsed_clients", label: "Без продления", color: "#f2a65a" },
+  { key: "lost_clients", label: "Потерянные", color: "var(--danger)" },
+  { key: "visits_count", label: "Посещения", color: "var(--text-muted)" },
+];
+
+function formatTrendLabel(range: { from: string; to: string }) {
+  const [, month] = range.from.split("-").map(Number);
+  const toDay = Number(range.to.slice(8, 10));
+  const monthEnd = new Date(Number(range.from.slice(0, 4)), month, 0).getDate();
+  const shortMonth = monthLabels[month - 1].slice(0, 3);
+
+  return toDay < monthEnd ? `${shortMonth} · по ${toDay}` : shortMonth;
+}
+
+function TrendTable({ trend }: { trend: AnalyticsReport["business_health"]["trend"] }) {
+  if (trend.length === 0) {
+    return <EmptyState text="Для динамики пока недостаточно данных" />;
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-[8px] border border-[var(--line-soft)]">
+      <div className="min-w-[720px]">
+        <div className="grid grid-cols-[150px_repeat(6,minmax(82px,1fr))] border-b border-[var(--line-soft)] bg-[var(--bg-card)] px-4 py-3 text-xs text-[var(--text-muted)]">
+          <span>Показатель</span>
+          {trend.map((point) => <span key={point.from} className="text-center">{formatTrendLabel(point)}</span>)}
+        </div>
+        {trendMetricRows.map((metric, metricIndex) => {
+          const maximum = Math.max(...trend.map((point) => point[metric.key]), 1);
+
+          return (
+            <div key={metric.key} className={`grid grid-cols-[150px_repeat(6,minmax(82px,1fr))] items-end px-4 py-3 ${metricIndex < trendMetricRows.length - 1 ? "border-b border-[var(--line-soft)]" : ""}`}>
+              <span className="self-center text-sm font-medium text-[var(--text-main)]">{metric.label}</span>
+              {trend.map((point) => {
+                const value = point[metric.key];
+                const height = Math.max(6, Math.round((value / maximum) * 40));
+
+                return (
+                  <div key={point.from} title={formatShortRange(point)} className="flex flex-col items-center justify-end gap-1">
+                    <span className="text-xs font-medium text-[var(--text-main)]">{formatNumber(value)}</span>
+                    <span className="flex h-10 items-end">
+                      <span className="block w-5 rounded-t-[3px]" style={{ height, backgroundColor: metric.color }} />
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+type AttentionKind = "expiring" | "inactive" | "lapsed";
+
+function attentionDateLabel(row: AnalyticsAttentionClient, kind: AttentionKind) {
+  if (kind === "inactive") {
+    return row.last_visit ? `Последний визит ${formatPeriodDate(row.last_visit)}` : "Посещений ещё не было";
+  }
+
+  if (!row.date) return "Дата не указана";
+  return kind === "expiring" ? `Действует до ${formatPeriodDate(row.date)}` : `Закончился ${formatPeriodDate(row.date)}`;
+}
+
+function AttentionRow({ row, kind, snap = false }: { row: AnalyticsAttentionClient; kind: AttentionKind; snap?: boolean }) {
+  return (
+    <div className={`min-h-[94px] border-t border-[var(--line-soft)] px-4 py-3 first:border-0 ${snap ? "snap-start snap-always" : ""}`}>
+      <Link href={`/clients/${row.client_id}`} className="text-sm font-medium text-[var(--text-main)] underline-offset-4 hover:text-[var(--accent)] hover:underline">
+        {row.client_name}
+      </Link>
+      <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">{row.subscription_name}</p>
+      <p className="mt-1 text-xs text-[var(--text-muted)]">{attentionDateLabel(row, kind)}</p>
+    </div>
+  );
+}
+
+function AttentionGroup({
+  title,
+  hint,
+  rows,
+  kind,
+}: {
+  title: string;
+  hint: string;
+  rows: AnalyticsAttentionClient[];
+  kind: AttentionKind;
+}) {
+  const scrollable = rows.length > 5;
+
+  return (
+    <section className="overflow-hidden rounded-[8px] border border-[var(--line-soft)] bg-[rgba(22,27,39,0.48)]">
+      <header className="px-4 py-4">
+        <h3 className="text-sm font-semibold text-[var(--text-main)]">{title} · {rows.length}</h3>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">{hint}</p>
+      </header>
+      {rows.length === 0 ? (
+        <p className="border-t border-[var(--line-soft)] px-4 py-6 text-sm text-[var(--text-muted)]">Клиентов нет</p>
+      ) : (
+        <div className={scrollable ? "max-h-[470px] overflow-y-auto overscroll-contain scroll-smooth [scroll-snap-type:y_mandatory] [scrollbar-color:var(--line-soft)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin]" : ""}>
+          {rows.map((row) => <AttentionRow key={row.client_id} row={row} kind={kind} snap={scrollable} />)}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function AnalyticsOverview({ report }: { report: AnalyticsReport }) {
+  const [selectedMetric, setSelectedMetric] = useState<DrilldownMetric | null>(null);
   const { summary } = report;
-  const uniqueClients = new Set(report.visits.map((visit) => visit.client_name)).size;
+  const { business_health: health } = report;
+  const comparisonLabel = formatShortRange(health.comparison_period);
+  const periodEndLabel = formatShortRange({ from: health.period.to, to: health.period.to });
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Посещения" value={formatNumber(summary.visits_count)} hint="Всего посещений за период" />
-        <StatCard label="Групповые" value={formatNumber(summary.group_visits)} hint="Посещения групповых тренировок" />
-        <StatCard label="Open Gym" value={formatNumber(summary.open_gym_visits)} hint="Самостоятельные тренировки" />
-        <StatCard label="Клиенты" value={formatNumber(uniqueClients)} hint="Уникальные посетители за период" />
-      </div>
+      <section>
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <SectionTitle title="Состояние клуба" />
+          <p className="text-xs text-[var(--text-muted)]">Сравнение с {comparisonLabel}</p>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <ComparisonCard label="Активные клиенты" value={health.current.active_clients} previous={health.previous.active_clients} comparisonLabel={comparisonLabel} hint={`На ${periodEndLabel}`} onClick={() => setSelectedMetric("active_clients")} />
+          <ComparisonCard label="Новые клиенты" value={health.current.new_clients} previous={health.previous.new_clients} comparisonLabel={comparisonLabel} hint="Первая оплаченная покупка услуги" onClick={() => setSelectedMetric("new_clients")} />
+          <ComparisonCard label="Повторные клиенты" value={health.current.renewed_clients} previous={health.previous.renewed_clients} comparisonLabel={comparisonLabel} hint="Уже покупали услуги раньше" onClick={() => setSelectedMetric("renewed_clients")} />
+          <ComparisonCard label="Без продления" value={health.current.lapsed_clients} previous={health.previous.lapsed_clients} comparisonLabel={comparisonLabel} hint="Абонемент закончился не более 90 дней назад, нового нет" inverse onClick={() => setSelectedMetric("lapsed_clients")} />
+          <ComparisonCard label="Потерянные" value={health.current.lost_clients} previous={health.previous.lost_clients} comparisonLabel={comparisonLabel} hint="Не посещали клуб более 90 дней" inverse onClick={() => setSelectedMetric("lost_clients")} />
+          <ComparisonCard label="Посещения" value={health.current.visits_count} previous={health.previous.visits_count} comparisonLabel={comparisonLabel} hint={`${formatNumber(health.current.visitors_count)} посетителей · ${formatNumber(health.current.average_visits)} на клиента`} onClick={() => setSelectedMetric("visits")} />
+        </div>
+      </section>
+
+      <section>
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <SectionTitle title="Требуют внимания" />
+          <p className="text-xs text-[var(--text-muted)]">На {formatPeriodDate(health.attention.as_of)}</p>
+        </div>
+        <div className="mt-4 grid items-start gap-3 lg:grid-cols-3">
+          <AttentionGroup title="Заканчиваются" hint={`В ближайшие ${health.attention.expiry_days} дней`} rows={health.attention.expiring} kind="expiring" />
+          <AttentionGroup title="Давно не были" hint={`${health.attention.inactivity_days} дней и больше`} rows={health.attention.inactive} kind="inactive" />
+          <AttentionGroup title="Не продлили" hint={`За последние ${health.attention.lapsed_days} дней`} rows={health.attention.lapsed} kind="lapsed" />
+        </div>
+      </section>
+
+      <section>
+        <SectionTitle title="Динамика за 6 месяцев" />
+        <p className="mt-1 text-xs text-[var(--text-muted)]">Текущий незавершённый месяц сравнивается по тем же календарным дням</p>
+        <div className="mt-4">
+          <TrendTable trend={health.trend} />
+        </div>
+      </section>
+
+      <section>
+        <SectionTitle title="Структура посещений" />
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <StatCard label="Групповые" value={formatNumber(summary.group_visits)} hint="Посещения групповых тренировок" onClick={() => setSelectedMetric("group")} />
+          <StatCard label="Персональные" value={formatNumber(summary.personal_visits)} hint="Посещения персональных тренировок" onClick={() => setSelectedMetric("personal")} />
+          <StatCard label="Open Gym" value={formatNumber(summary.open_gym_visits)} hint="Самостоятельные тренировки" onClick={() => setSelectedMetric("open_gym")} />
+        </div>
+      </section>
+
+      {selectedMetric && <AnalyticsDrilldown metric={selectedMetric} report={report} onClose={() => setSelectedMetric(null)} />}
     </div>
   );
 }
@@ -1294,21 +1672,6 @@ export function AnalyticsWorkspace({ section }: { section: AnalyticsSection }) {
                 </section>
               )}
             </div>
-          )}
-          {tab === "visits" && (
-            report.visits.length === 0 ? (
-              <EmptyState text="Посещений за выбранный период нет" />
-            ) : (
-              <section className="overflow-hidden rounded-[8px] border border-[var(--line-soft)] bg-[var(--bg-card)]">
-                {report.visits.map((visit, index) => (
-                  <div key={visit.id} className={`grid gap-3 px-4 py-4 text-sm sm:grid-cols-[1.5fr_0.8fr_1fr] sm:items-center ${index < report.visits.length - 1 ? "border-b border-[var(--line-soft)]" : ""}`}>
-                    <p className="font-medium text-[var(--text-main)]">{visit.client_name}</p>
-                    <p className="text-[var(--text-muted)]">{visit.visit_type === "open_gym" ? "Open Gym" : "Группа"}</p>
-                    <p className="text-xs text-[var(--text-muted)]">{formatDate(visit.visited_at)}</p>
-                  </div>
-                ))}
-              </section>
-            )
           )}
         </>
       )}

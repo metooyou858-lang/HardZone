@@ -1,6 +1,7 @@
 const express = require('express');
 
 const { pool } = require('../db');
+const { CLUB_TIME_ZONE } = require('../services/subscription-validity');
 const { sendInternalError } = require('../utils/http-response');
 
 const router = express.Router();
@@ -57,6 +58,75 @@ function getDefaultRange() {
     from: from.toISOString().slice(0, 10),
     to: to.toISOString().slice(0, 10),
   };
+}
+
+function formatDateOnly(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function parseDateOnly(value) {
+  return new Date(`${value}T00:00:00.000Z`);
+}
+
+function addDateOnlyDays(value, days) {
+  const date = parseDateOnly(value);
+  date.setUTCDate(date.getUTCDate() + days);
+  return formatDateOnly(date);
+}
+
+function shiftDateOnlyMonth(value, months) {
+  const source = parseDateOnly(value);
+  const day = source.getUTCDate();
+  const shifted = new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth() + months, 1));
+  const lastDay = new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, 0)).getUTCDate();
+  shifted.setUTCDate(Math.min(day, lastDay));
+  return formatDateOnly(shifted);
+}
+
+function getClubDate() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: CLUB_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function getComparisonRange(from, to) {
+  const today = getClubDate();
+  const effectiveTo = from <= today && today < to ? today : to;
+  const previousFrom = shiftDateOnlyMonth(from, -1);
+  const previousMaximumTo = shiftDateOnlyMonth(to, -1);
+  const elapsedDays = Math.max(0, Math.round((parseDateOnly(effectiveTo) - parseDateOnly(from)) / 86400000));
+  const comparableTo = addDateOnlyDays(previousFrom, elapsedDays);
+
+  return {
+    effectiveTo,
+    previousFrom,
+    previousTo: comparableTo < previousMaximumTo ? comparableTo : previousMaximumTo,
+  };
+}
+
+function getMonthEnd(value) {
+  const source = parseDateOnly(value);
+  return formatDateOnly(new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth() + 1, 0)));
+}
+
+function getTrendRanges(from, to, effectiveTo) {
+  const elapsedDays = Math.max(0, Math.round((parseDateOnly(effectiveTo) - parseDateOnly(from)) / 86400000));
+
+  return Array.from({ length: 6 }, (_, index) => {
+    const dateFrom = shiftDateOnlyMonth(from, index - 5);
+    const monthEnd = getMonthEnd(dateFrom);
+    const comparableTo = addDateOnlyDays(dateFrom, elapsedDays);
+
+    return {
+      from: dateFrom,
+      to: effectiveTo < to && comparableTo < monthEnd ? comparableTo : monthEnd,
+    };
+  });
 }
 
 function roundMoney(value) {
@@ -770,8 +840,10 @@ router.get('/', async (req, res) => {
     const defaults = getDefaultRange();
     const from = parseDate(req.query.from, defaults.from);
     const to = parseDate(req.query.to, defaults.to);
+    const comparisonRange = getComparisonRange(from, to);
+    const trendRanges = getTrendRanges(from, to, comparisonRange.effectiveTo);
 
-    const [ordersResult, receiptsResult, writeoffsResult, visitsResult, legacySalesResult, externalExpensesResult] = await Promise.all([
+    const [ordersResult, receiptsResult, writeoffsResult, visitsResult, legacySalesResult, externalExpensesResult, businessMetricsResult, businessDetailsResult, attentionResult] = await Promise.all([
       pool.query(
         `
           SELECT
@@ -842,7 +914,11 @@ router.get('/', async (req, res) => {
             cv.id,
             cv.client_id,
             cv.subscription_id,
-            cv.visit_type,
+            CASE
+              WHEN cv.visit_type = 'open_gym' THEN 'open_gym'
+              WHEN s.slot_type = 'personal' THEN 'personal'
+              ELSE 'group'
+            END AS visit_type,
             cv.visited_at,
             cv.created_by,
             c.first_name,
@@ -850,11 +926,12 @@ router.get('/', async (req, res) => {
             c.middle_name
           FROM client_visits cv
           JOIN clients c ON c.id = cv.client_id
-          WHERE cv.visited_at >= $1::date
-            AND cv.visited_at < ($2::date + INTERVAL '1 day')
+          LEFT JOIN schedule_slots s ON s.id = cv.slot_id
+          WHERE (cv.visited_at AT TIME ZONE $3)::date >= $1::date
+            AND (cv.visited_at AT TIME ZONE $3)::date <= $2::date
           ORDER BY cv.visited_at DESC
         `,
-        [from, to]
+        [from, to, CLUB_TIME_ZONE]
       ),
       pool.query(
         `
@@ -898,6 +975,469 @@ router.get('/', async (req, res) => {
           ORDER BY ee.expense_date DESC, ee.id DESC
         `,
         [from, to]
+      ),
+      pool.query(
+        `
+          WITH periods(label, date_from, date_to) AS (
+            VALUES
+              ('current', $1::date, $2::date),
+              ('previous', $3::date, $4::date),
+              ('trend_0', $5::date, $6::date),
+              ('trend_1', $7::date, $8::date),
+              ('trend_2', $9::date, $10::date),
+              ('trend_3', $11::date, $12::date),
+              ('trend_4', $13::date, $14::date),
+              ('trend_5', $15::date, $16::date)
+          ),
+          subscription_period_state AS (
+            SELECT p.label, p.date_to, cs.id, cs.client_id, cs.product_id, cs.type, cs.started_at,
+              cs.expires_at, cs.status, cs.updated_at, cs.visits_left,
+              COUNT(cv.id) FILTER (
+                WHERE (cv.visited_at AT TIME ZONE $17)::date > p.date_to
+              )::int AS visits_after_period
+            FROM periods p
+            JOIN client_subscriptions cs
+              ON (cs.created_at AT TIME ZONE $17)::date <= p.date_to
+            LEFT JOIN client_visits cv ON cv.subscription_id = cs.id
+            GROUP BY p.label, p.date_to, cs.id
+          ),
+          active_memberships AS (
+            SELECT DISTINCT s.label, s.client_id
+            FROM subscription_period_state s
+            WHERE s.started_at IS NOT NULL
+              AND s.started_at <= s.date_to
+              AND (s.expires_at IS NULL OR s.expires_at >= s.date_to)
+              AND NOT (s.status = 'cancelled' AND (s.updated_at AT TIME ZONE $17)::date <= s.date_to)
+              AND (
+                s.type NOT IN ('single', 'visits')
+                OR COALESCE(s.visits_left, 0) + s.visits_after_period > 0
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM subscription_freezes sf
+                WHERE sf.subscription_id = s.id
+                  AND sf.frozen_at <= s.date_to
+                  AND (sf.unfrozen_at IS NULL OR sf.unfrozen_at > s.date_to)
+              )
+          ),
+          active_real_memberships AS (
+            SELECT DISTINCT s.label, s.client_id
+            FROM subscription_period_state s
+            LEFT JOIN product_subscription_params psp ON psp.product_id = s.product_id
+            WHERE s.started_at IS NOT NULL
+              AND s.started_at <= s.date_to
+              AND (s.expires_at IS NULL OR s.expires_at >= s.date_to)
+              AND NOT (s.status = 'cancelled' AND (s.updated_at AT TIME ZONE $17)::date <= s.date_to)
+              AND (s.type <> 'visits' OR COALESCE(s.visits_left, 0) + s.visits_after_period > 0)
+              AND s.type <> 'single'
+              AND NOT COALESCE(psp.allow_personal_training, false)
+              AND NOT EXISTS (
+                SELECT 1 FROM subscription_freezes sf
+                WHERE sf.subscription_id = s.id
+                  AND sf.frozen_at <= s.date_to
+                  AND (sf.unfrozen_at IS NULL OR sf.unfrozen_at > s.date_to)
+              )
+          ),
+          paid_subscriptions AS (
+            SELECT cs.id, cs.client_id,
+              (COALESCE(o.confirmed_at, cs.created_at) AT TIME ZONE $17)::date AS sold_on
+            FROM client_subscriptions cs
+            JOIN orders o ON o.id = cs.order_id
+            LEFT JOIN product_subscription_params psp ON psp.product_id = cs.product_id
+            WHERE o.status IN ('confirmed', 'partially_refunded')
+              AND cs.legacy_source IS NULL
+              AND cs.type <> 'single'
+              AND NOT COALESCE(psp.allow_personal_training, false)
+          ),
+          paid_service_purchases AS (
+            SELECT DISTINCT o.id, o.client_id,
+              (COALESCE(o.confirmed_at, o.created_at) AT TIME ZONE $17)::date AS sold_on
+            FROM orders o
+            JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.client_id IS NOT NULL
+              AND o.status IN ('confirmed', 'partially_refunded')
+              AND oi.kind IN ('service', 'subscription')
+              AND oi.quantity > COALESCE(oi.refunded_quantity, 0)
+          ),
+          period_membership_clients AS (
+            SELECT DISTINCT p.label, psp.client_id,
+              EXISTS (
+                SELECT 1 FROM paid_service_purchases earlier
+                WHERE earlier.client_id = psp.client_id
+                  AND earlier.sold_on < p.date_from
+              ) AS is_renewal
+            FROM periods p
+            JOIN paid_service_purchases psp ON psp.sold_on BETWEEN p.date_from AND p.date_to
+          ),
+          subscription_ends AS (
+            SELECT cs.id, cs.client_id,
+              CASE
+                WHEN cs.status = 'cancelled' THEN (cs.updated_at AT TIME ZONE $17)::date
+                WHEN cs.type IN ('single', 'visits') AND COALESCE(cs.visits_left, 0) <= 0
+                  THEN (
+                    SELECT MAX((cv.visited_at AT TIME ZONE $17)::date)
+                    FROM client_visits cv WHERE cv.subscription_id = cs.id
+                  )
+                ELSE cs.expires_at
+              END AS ended_on
+            FROM client_subscriptions cs
+            LEFT JOIN product_subscription_params psp ON psp.product_id = cs.product_id
+            WHERE cs.type <> 'single'
+              AND NOT COALESCE(psp.allow_personal_training, false)
+          ),
+          client_activity AS (
+            SELECT p.label, p.date_to, c.id AS client_id,
+              (c.created_at AT TIME ZONE $17)::date AS created_on,
+              MAX((cv.visited_at AT TIME ZONE $17)::date) FILTER (
+                WHERE (cv.visited_at AT TIME ZONE $17)::date <= p.date_to
+              ) AS last_visit
+            FROM periods p
+            JOIN clients c ON (c.created_at AT TIME ZONE $17)::date <= p.date_to
+            LEFT JOIN client_visits cv ON cv.client_id = c.id
+            GROUP BY p.label, p.date_to, c.id
+          ),
+          lost_clients AS (
+            SELECT ca.label, ca.client_id
+            FROM client_activity ca
+            WHERE COALESCE(ca.last_visit, ca.created_on) < ca.date_to - 90
+          ),
+          lapsed_clients AS (
+            SELECT p.label, COUNT(DISTINCT se.client_id)::int AS value
+            FROM periods p
+            JOIN subscription_ends se ON se.ended_on BETWEEN p.date_to - 90 AND p.date_to
+            WHERE NOT EXISTS (
+              SELECT 1 FROM active_real_memberships am
+              WHERE am.label = p.label AND am.client_id = se.client_id
+            )
+              AND NOT EXISTS (
+                SELECT 1 FROM lost_clients lost
+                WHERE lost.label = p.label AND lost.client_id = se.client_id
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM paid_subscriptions later
+                WHERE later.client_id = se.client_id
+                  AND later.sold_on <= p.date_to
+                  AND (
+                    later.sold_on > se.ended_on
+                    OR (later.sold_on = se.ended_on AND later.id > se.id)
+                  )
+              )
+            GROUP BY p.label
+          ),
+          active_counts AS (
+            SELECT label, COUNT(DISTINCT client_id)::int AS value
+            FROM active_memberships
+            GROUP BY label
+          ),
+          purchase_counts AS (
+            SELECT label,
+              COUNT(DISTINCT client_id) FILTER (WHERE NOT is_renewal)::int AS new_value,
+              COUNT(DISTINCT client_id) FILTER (WHERE is_renewal)::int AS renewed_value
+            FROM period_membership_clients
+            GROUP BY label
+          ),
+          lost_counts AS (
+            SELECT label, COUNT(DISTINCT client_id)::int AS value
+            FROM lost_clients
+            GROUP BY label
+          ),
+          visit_stats AS (
+            SELECT p.label, COUNT(cv.id)::int AS visits_count,
+              COUNT(DISTINCT cv.client_id)::int AS visitors_count
+            FROM periods p
+            LEFT JOIN client_visits cv
+              ON (cv.visited_at AT TIME ZONE $17)::date BETWEEN p.date_from AND p.date_to
+            GROUP BY p.label
+          )
+          SELECT p.label,
+            COALESCE(ac.value, 0)::int AS active_clients,
+            COALESCE(pc.new_value, 0)::int AS new_clients,
+            COALESCE(pc.renewed_value, 0)::int AS renewed_clients,
+            COALESCE(lc.value, 0)::int AS lapsed_clients,
+            COALESCE(lost.value, 0)::int AS lost_clients,
+            vs.visits_count, vs.visitors_count,
+            COALESCE(ROUND(vs.visits_count::numeric / NULLIF(vs.visitors_count, 0), 1), 0) AS average_visits
+          FROM periods p
+          LEFT JOIN active_counts ac ON ac.label = p.label
+          LEFT JOIN purchase_counts pc ON pc.label = p.label
+          LEFT JOIN lapsed_clients lc ON lc.label = p.label
+          LEFT JOIN lost_counts lost ON lost.label = p.label
+          JOIN visit_stats vs ON vs.label = p.label
+        `,
+        [
+          from,
+          comparisonRange.effectiveTo,
+          comparisonRange.previousFrom,
+          comparisonRange.previousTo,
+          ...trendRanges.flatMap((range) => [range.from, range.to]),
+          CLUB_TIME_ZONE,
+        ]
+      ),
+      pool.query(
+        `
+          WITH params AS (SELECT $1::date AS date_from, $2::date AS date_to),
+          subscription_period_state AS (
+            SELECT cs.id, cs.client_id, cs.product_id, cs.type, cs.started_at, cs.expires_at,
+              cs.status, cs.updated_at, cs.visits_left,
+              COUNT(cv.id) FILTER (WHERE (cv.visited_at AT TIME ZONE $3)::date > p.date_to)::int AS visits_after_period
+            FROM params p
+            JOIN client_subscriptions cs ON (cs.created_at AT TIME ZONE $3)::date <= p.date_to
+            LEFT JOIN client_visits cv ON cv.subscription_id = cs.id
+            GROUP BY cs.id
+          ),
+          active_membership_rows AS (
+            SELECT s.client_id, s.product_id, s.type, s.expires_at
+            FROM subscription_period_state s CROSS JOIN params p
+            WHERE s.started_at IS NOT NULL AND s.started_at <= p.date_to
+              AND (s.expires_at IS NULL OR s.expires_at >= p.date_to)
+              AND NOT (s.status = 'cancelled' AND (s.updated_at AT TIME ZONE $3)::date <= p.date_to)
+              AND (s.type NOT IN ('single', 'visits') OR COALESCE(s.visits_left, 0) + s.visits_after_period > 0)
+              AND NOT EXISTS (
+                SELECT 1 FROM subscription_freezes sf
+                WHERE sf.subscription_id = s.id AND sf.frozen_at <= p.date_to
+                  AND (sf.unfrozen_at IS NULL OR sf.unfrozen_at > p.date_to)
+              )
+          ),
+          active_clients AS (
+            SELECT am.client_id,
+              STRING_AGG(DISTINCT COALESCE(pr.name, 'Абонемент без услуги'), ', ') AS subscription_name,
+              MAX(am.expires_at) AS event_date
+            FROM active_membership_rows am LEFT JOIN products pr ON pr.id = am.product_id
+            GROUP BY am.client_id
+          ),
+          active_real_memberships AS (
+            SELECT DISTINCT am.client_id
+            FROM active_membership_rows am
+            LEFT JOIN product_subscription_params psp ON psp.product_id = am.product_id
+            WHERE am.type <> 'single'
+              AND NOT COALESCE(psp.allow_personal_training, false)
+          ),
+          paid_subscriptions AS (
+            SELECT cs.id, cs.client_id, cs.product_id,
+              (COALESCE(o.confirmed_at, cs.created_at) AT TIME ZONE $3)::date AS sold_on
+            FROM client_subscriptions cs
+            JOIN orders o ON o.id = cs.order_id
+            LEFT JOIN product_subscription_params psp ON psp.product_id = cs.product_id
+            WHERE o.status IN ('confirmed', 'partially_refunded')
+              AND cs.legacy_source IS NULL
+              AND cs.type <> 'single'
+              AND NOT COALESCE(psp.allow_personal_training, false)
+          ),
+          paid_service_purchase_lines AS (
+            SELECT o.id AS order_id, o.client_id, oi.name AS service_name,
+              (COALESCE(o.confirmed_at, o.created_at) AT TIME ZONE $3)::date AS sold_on
+            FROM orders o
+            JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.client_id IS NOT NULL
+              AND o.status IN ('confirmed', 'partially_refunded')
+              AND oi.kind IN ('service', 'subscription')
+              AND oi.quantity > COALESCE(oi.refunded_quantity, 0)
+          ),
+          period_membership_clients AS (
+            SELECT psp.client_id,
+              EXISTS (
+                SELECT 1 FROM paid_service_purchase_lines earlier
+                WHERE earlier.client_id = psp.client_id AND earlier.sold_on < p.date_from
+              ) AS is_renewal,
+              STRING_AGG(DISTINCT psp.service_name, ', ') AS subscription_name,
+              MIN(psp.sold_on) AS event_date
+            FROM params p
+            JOIN paid_service_purchase_lines psp ON psp.sold_on BETWEEN p.date_from AND p.date_to
+            GROUP BY psp.client_id, p.date_from
+          ),
+          subscription_ends AS (
+            SELECT cs.id, cs.client_id, cs.product_id,
+              CASE WHEN cs.status = 'cancelled' THEN (cs.updated_at AT TIME ZONE $3)::date
+                WHEN cs.type IN ('single', 'visits') AND COALESCE(cs.visits_left, 0) <= 0
+                  THEN (SELECT MAX((cv.visited_at AT TIME ZONE $3)::date) FROM client_visits cv WHERE cv.subscription_id = cs.id)
+                ELSE cs.expires_at END AS ended_on
+            FROM client_subscriptions cs
+            LEFT JOIN product_subscription_params psp ON psp.product_id = cs.product_id
+            WHERE cs.type <> 'single'
+              AND NOT COALESCE(psp.allow_personal_training, false)
+          ),
+          client_activity AS (
+            SELECT c.id AS client_id, (c.created_at AT TIME ZONE $3)::date AS created_on,
+              MAX((cv.visited_at AT TIME ZONE $3)::date) FILTER (
+                WHERE (cv.visited_at AT TIME ZONE $3)::date <= p.date_to
+              ) AS last_visit
+            FROM params p
+            JOIN clients c ON (c.created_at AT TIME ZONE $3)::date <= p.date_to
+            LEFT JOIN client_visits cv ON cv.client_id = c.id
+            GROUP BY c.id
+          ),
+          lost_clients AS (
+            SELECT ca.client_id, ca.last_visit
+            FROM client_activity ca CROSS JOIN params p
+            WHERE COALESCE(ca.last_visit, ca.created_on) < p.date_to - 90
+          ),
+          lapsed_candidates AS (
+            SELECT se.client_id, se.product_id, se.ended_on,
+              ROW_NUMBER() OVER (PARTITION BY se.client_id ORDER BY se.ended_on DESC, se.id DESC) AS row_number
+            FROM params p JOIN subscription_ends se ON se.ended_on BETWEEN p.date_to - 90 AND p.date_to
+            WHERE NOT EXISTS (SELECT 1 FROM active_real_memberships am WHERE am.client_id = se.client_id)
+              AND NOT EXISTS (SELECT 1 FROM lost_clients lost WHERE lost.client_id = se.client_id)
+              AND NOT EXISTS (
+                SELECT 1 FROM paid_subscriptions later
+                WHERE later.client_id = se.client_id AND later.sold_on <= p.date_to
+                  AND (later.sold_on > se.ended_on OR (later.sold_on = se.ended_on AND later.id > se.id))
+              )
+          ),
+          detail_rows AS (
+            SELECT 'active_clients'::text AS metric, ac.client_id, ac.subscription_name, ac.event_date FROM active_clients ac
+            UNION ALL
+            SELECT CASE WHEN pmc.is_renewal THEN 'renewed_clients' ELSE 'new_clients' END,
+              pmc.client_id, pmc.subscription_name, pmc.event_date FROM period_membership_clients pmc
+            UNION ALL
+            SELECT 'lapsed_clients', lc.client_id, COALESCE(pr.name, 'Абонемент без услуги'), lc.ended_on
+            FROM lapsed_candidates lc LEFT JOIN products pr ON pr.id = lc.product_id WHERE lc.row_number = 1
+            UNION ALL
+            SELECT 'lost_clients', lost.client_id,
+              CASE WHEN lost.last_visit IS NULL
+                THEN 'Посещений в текущей CRM не было'
+                ELSE 'Нет посещений более 90 дней'
+              END,
+              lost.last_visit
+            FROM lost_clients lost
+          )
+          SELECT dr.metric, dr.client_id, CONCAT_WS(' ', c.last_name, c.first_name, c.middle_name) AS client_name,
+            dr.subscription_name, dr.event_date
+          FROM detail_rows dr JOIN clients c ON c.id = dr.client_id
+          ORDER BY dr.metric, dr.event_date DESC NULLS LAST, client_name
+        `,
+        [from, comparisonRange.effectiveTo, CLUB_TIME_ZONE]
+      ),
+      pool.query(
+        `
+          WITH params AS (
+            SELECT (NOW() AT TIME ZONE $1)::date AS today
+          ),
+          active_subscription_rows AS (
+            SELECT cs.id, cs.client_id, cs.type, cs.started_at, cs.expires_at,
+              (cs.type <> 'single' AND NOT COALESCE(psp.allow_personal_training, false)) AS is_membership,
+              CONCAT_WS(' ', c.last_name, c.first_name, c.middle_name) AS client_name,
+              COALESCE(p.name, 'Абонемент без услуги') AS subscription_name,
+              (
+                SELECT MAX((cv.visited_at AT TIME ZONE $1)::date)
+                FROM client_visits cv
+                WHERE cv.client_id = cs.client_id
+              ) AS last_visit
+            FROM client_subscriptions cs
+            JOIN clients c ON c.id = cs.client_id
+            LEFT JOIN products p ON p.id = cs.product_id
+            LEFT JOIN product_subscription_params psp ON psp.product_id = cs.product_id
+            CROSS JOIN params pa
+            WHERE cs.status = 'active'
+              AND cs.started_at IS NOT NULL
+              AND cs.started_at <= pa.today
+              AND (cs.expires_at IS NULL OR cs.expires_at >= pa.today)
+              AND (cs.type NOT IN ('single', 'visits') OR COALESCE(cs.visits_left, 0) > 0)
+              AND NOT EXISTS (
+                SELECT 1 FROM subscription_freezes sf
+                WHERE sf.subscription_id = cs.id
+                  AND sf.frozen_at <= pa.today
+                  AND (sf.unfrozen_at IS NULL OR sf.unfrozen_at > pa.today)
+              )
+          ),
+          active_clients AS (
+            SELECT asr.client_id, asr.client_name,
+              STRING_AGG(DISTINCT asr.subscription_name, ', ') AS subscription_name,
+              MIN(asr.started_at) AS started_at,
+              MAX(asr.last_visit) AS last_visit,
+              BOOL_OR(asr.is_membership) AS has_membership
+            FROM active_subscription_rows asr
+            GROUP BY asr.client_id, asr.client_name
+          ),
+          expiring_clients AS (
+            SELECT asr.client_id, asr.client_name,
+              STRING_AGG(DISTINCT asr.subscription_name, ', ') AS subscription_name,
+              MIN(asr.expires_at) AS event_date
+            FROM active_subscription_rows asr CROSS JOIN params pa
+            WHERE asr.expires_at BETWEEN pa.today AND pa.today + 7
+            GROUP BY asr.client_id, asr.client_name
+          ),
+          paid_subscriptions AS (
+            SELECT cs.id, cs.client_id,
+              (COALESCE(o.confirmed_at, cs.created_at) AT TIME ZONE $1)::date AS sold_on
+            FROM client_subscriptions cs
+            JOIN orders o ON o.id = cs.order_id
+            LEFT JOIN product_subscription_params psp ON psp.product_id = cs.product_id
+            WHERE o.status IN ('confirmed', 'partially_refunded')
+              AND cs.legacy_source IS NULL
+              AND cs.type <> 'single'
+              AND NOT COALESCE(psp.allow_personal_training, false)
+          ),
+          subscription_ends AS (
+            SELECT cs.id, cs.client_id, cs.product_id,
+              CASE
+                WHEN cs.status = 'cancelled' THEN (cs.updated_at AT TIME ZONE $1)::date
+                WHEN cs.type IN ('single', 'visits') AND COALESCE(cs.visits_left, 0) <= 0
+                  THEN (
+                    SELECT MAX((cv.visited_at AT TIME ZONE $1)::date)
+                    FROM client_visits cv WHERE cv.subscription_id = cs.id
+                  )
+                ELSE cs.expires_at
+              END AS ended_on
+            FROM client_subscriptions cs
+            LEFT JOIN product_subscription_params psp ON psp.product_id = cs.product_id
+            WHERE cs.type <> 'single'
+              AND NOT COALESCE(psp.allow_personal_training, false)
+          ),
+          lost_clients AS (
+            SELECT c.id AS client_id,
+              MAX((cv.visited_at AT TIME ZONE $1)::date) AS last_visit,
+              (c.created_at AT TIME ZONE $1)::date AS created_on
+            FROM clients c
+            LEFT JOIN client_visits cv ON cv.client_id = c.id
+            GROUP BY c.id
+            HAVING COALESCE(
+              MAX((cv.visited_at AT TIME ZONE $1)::date),
+              (c.created_at AT TIME ZONE $1)::date
+            ) < (SELECT today - 90 FROM params)
+          ),
+          lapsed_candidates AS (
+            SELECT se.id, se.client_id,
+              CONCAT_WS(' ', c.last_name, c.first_name, c.middle_name) AS client_name,
+              COALESCE(p.name, 'Абонемент без услуги') AS subscription_name,
+              se.ended_on,
+              ROW_NUMBER() OVER (PARTITION BY se.client_id ORDER BY se.ended_on DESC, se.id DESC) AS row_number
+            FROM subscription_ends se
+            JOIN clients c ON c.id = se.client_id
+            LEFT JOIN products p ON p.id = se.product_id
+            CROSS JOIN params pa
+            WHERE se.ended_on BETWEEN pa.today - 90 AND pa.today
+              AND NOT EXISTS (
+                SELECT 1 FROM active_clients ac WHERE ac.client_id = se.client_id AND ac.has_membership
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM lost_clients lost WHERE lost.client_id = se.client_id
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM paid_subscriptions later
+                WHERE later.client_id = se.client_id
+                  AND later.sold_on <= pa.today
+                  AND (
+                    later.sold_on > se.ended_on
+                    OR (later.sold_on = se.ended_on AND later.id > se.id)
+                  )
+              )
+          )
+          SELECT 'expiring'::text AS category, ec.client_id, ec.client_name,
+            ec.subscription_name, ec.event_date, NULL::date AS last_visit
+          FROM expiring_clients ec
+          UNION ALL
+          SELECT 'inactive', ac.client_id, ac.client_name, ac.subscription_name,
+            NULL::date, ac.last_visit
+          FROM active_clients ac CROSS JOIN params pa
+          WHERE ac.started_at <= pa.today - 14
+            AND (ac.last_visit IS NULL OR ac.last_visit < pa.today - 14)
+          UNION ALL
+          SELECT 'lapsed', lc.client_id, lc.client_name, lc.subscription_name,
+            lc.ended_on, NULL::date
+          FROM lapsed_candidates lc
+          WHERE lc.row_number = 1
+          ORDER BY category, event_date NULLS FIRST, client_name
+        `,
+        [CLUB_TIME_ZONE]
       ),
     ]);
 
@@ -978,11 +1518,84 @@ router.get('/', async (req, res) => {
       },
       {}
     );
+    const businessMetrics = Object.fromEntries(
+      businessMetricsResult.rows.map((row) => [row.label, {
+        active_clients: Number(row.active_clients || 0),
+        new_clients: Number(row.new_clients || 0),
+        renewed_clients: Number(row.renewed_clients || 0),
+        lapsed_clients: Number(row.lapsed_clients || 0),
+        lost_clients: Number(row.lost_clients || 0),
+        visits_count: Number(row.visits_count || 0),
+        visitors_count: Number(row.visitors_count || 0),
+        average_visits: Number(row.average_visits || 0),
+      }])
+    );
+    const businessDetails = {
+      active_clients: [],
+      new_clients: [],
+      renewed_clients: [],
+      lapsed_clients: [],
+      lost_clients: [],
+    };
+    businessDetailsResult.rows.forEach((row) => {
+      businessDetails[row.metric].push({
+        client_id: Number(row.client_id),
+        client_name: row.client_name,
+        subscription_name: row.subscription_name,
+        date: row.event_date,
+      });
+    });
+    const attention = {
+      as_of: getClubDate(),
+      expiry_days: 7,
+      inactivity_days: 14,
+      lapsed_days: 90,
+      expiring: [],
+      inactive: [],
+      lapsed: [],
+    };
+    attentionResult.rows.forEach((row) => {
+      attention[row.category].push({
+        client_id: Number(row.client_id),
+        client_name: row.client_name,
+        subscription_name: row.subscription_name,
+        date: row.event_date,
+        last_visit: row.last_visit,
+      });
+    });
+    const visitDetails = [...visitsResult.rows.reduce((details, row) => {
+      const clientId = Number(row.client_id);
+      const existing = details.get(clientId) || {
+        client_id: clientId,
+        client_name: [row.last_name, row.first_name, row.middle_name].filter(Boolean).join(' '),
+        total: 0,
+        group: 0,
+        personal: 0,
+        open_gym: 0,
+      };
+      existing.total += 1;
+      existing[row.visit_type] += 1;
+      details.set(clientId, existing);
+      return details;
+    }, new Map()).values()].sort((left, right) => right.total - left.total || left.client_name.localeCompare(right.client_name, 'ru'));
 
     res.json({
       success: true,
       data: {
         range: { from, to },
+        business_health: {
+          period: { from, to: comparisonRange.effectiveTo },
+          comparison_period: { from: comparisonRange.previousFrom, to: comparisonRange.previousTo },
+          current: businessMetrics.current,
+          previous: businessMetrics.previous,
+          trend: trendRanges.map((range, index) => ({
+            ...range,
+            ...businessMetrics[`trend_${index}`],
+          })),
+          attention,
+          details: businessDetails,
+          visit_details: visitDetails,
+        },
         summary: {
           revenue,
           order_revenue: orderRevenue,
@@ -1001,6 +1614,7 @@ router.get('/', async (req, res) => {
           visits_count: visitsResult.rows.length,
           open_gym_visits: visitsByType.open_gym || 0,
           group_visits: visitsByType.group || 0,
+          personal_visits: visitsByType.personal || 0,
         },
         checks,
         product_sales: productLines,

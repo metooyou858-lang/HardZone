@@ -20,6 +20,7 @@ export type AnalyticsSummary = {
   visits_count: number;
   open_gym_visits: number;
   group_visits: number;
+  personal_visits: number;
 };
 
 export type AnalyticsCheckItem = {
@@ -101,7 +102,7 @@ export type AnalyticsVisit = {
   id: number;
   client_id: number;
   subscription_id: number | null;
-  visit_type: "group" | "open_gym";
+  visit_type: "group" | "personal" | "open_gym";
   visited_at: string;
   created_by: string | null;
   client_name: string;
@@ -222,8 +223,72 @@ export type PayrollReport = {
   trainers: PayrollTrainerSummary[];
 };
 
+export type AnalyticsBusinessDetail = {
+  client_id: number;
+  client_name: string;
+  subscription_name: string;
+  date: string | null;
+};
+
+export type AnalyticsVisitDetail = {
+  client_id: number;
+  client_name: string;
+  total: number;
+  group: number;
+  personal: number;
+  open_gym: number;
+};
+
+export type AnalyticsBusinessMetrics = {
+  active_clients: number;
+  new_clients: number;
+  renewed_clients: number;
+  lapsed_clients: number;
+  lost_clients: number;
+  visits_count: number;
+  visitors_count: number;
+  average_visits: number;
+};
+
+export type AnalyticsTrendPoint = AnalyticsBusinessMetrics & {
+  from: string;
+  to: string;
+};
+
+export type AnalyticsAttentionClient = {
+  client_id: number;
+  client_name: string;
+  subscription_name: string;
+  date: string | null;
+  last_visit: string | null;
+};
+
 export type AnalyticsReport = {
   range: { from: string; to: string };
+  business_health: {
+    period: { from: string; to: string };
+    comparison_period: { from: string; to: string };
+    current: AnalyticsBusinessMetrics;
+    previous: AnalyticsBusinessMetrics;
+    trend: AnalyticsTrendPoint[];
+    attention: {
+      as_of: string;
+      expiry_days: number;
+      inactivity_days: number;
+      lapsed_days: number;
+      expiring: AnalyticsAttentionClient[];
+      inactive: AnalyticsAttentionClient[];
+      lapsed: AnalyticsAttentionClient[];
+    };
+    details: {
+      active_clients: AnalyticsBusinessDetail[];
+      new_clients: AnalyticsBusinessDetail[];
+      renewed_clients: AnalyticsBusinessDetail[];
+      lapsed_clients: AnalyticsBusinessDetail[];
+      lost_clients: AnalyticsBusinessDetail[];
+    };
+    visit_details: AnalyticsVisitDetail[];
+  };
   summary: AnalyticsSummary;
   checks: AnalyticsCheck[];
   product_sales: AnalyticsSaleLine[];
