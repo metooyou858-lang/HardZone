@@ -63,6 +63,28 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-soft) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--line-soft);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(236, 237, 246, 0.18);
 }
 
 html {
@@ -175,7 +197,7 @@ select {
 
 .sidebar-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: rgba(139, 148, 158, 0.2) transparent;
+  scrollbar-color: var(--line-soft) transparent;
 }
 
 @media (min-width: 1281px) {
