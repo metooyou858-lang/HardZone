@@ -155,6 +155,7 @@ schedule_clients
 schedule_attendance
 schedule_gym
 analytics
+marketing
 users_manage
 ```
 
@@ -194,6 +195,7 @@ schedule_clients
 schedule_attendance
 schedule_gym
 analytics
+marketing
 users_manage
 ```
 
@@ -226,6 +228,7 @@ warehouse
 ```text
 users_manage
 analytics
+marketing
 clients_update
 clients_import
 schedule_edit_groups

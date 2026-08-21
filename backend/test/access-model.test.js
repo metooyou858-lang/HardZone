@@ -61,6 +61,7 @@ test('duty trainer module set revokes system, refunds, recovery, and cancellatio
   assert.equal(access.module_revokes.includes('schedule_edit_groups'), true);
   assert.equal(access.module_revokes.includes('schedule_edit_personal'), true);
   assert.equal(access.module_revokes.includes('schedule_gym'), true);
+  assert.equal(access.module_revokes.includes('marketing'), true);
 });
 
 test('staff without users_manage cannot pass system diagnostics guard', () => {

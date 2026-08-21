@@ -79,6 +79,20 @@ function FinanceIcon() {
     </svg>
   );
 }
+function MarketingIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
+      <path
+        d="M3.75 9.167v1.666l2.917.834 6.666 3.75V4.583l-6.666 3.75-2.917.834Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path d="m6.667 11.667.833 4.166h2.083l-.833-3.125" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function SettingsIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true">
@@ -140,6 +154,7 @@ const navItems: Array<{ href: string; label: string; icon: React.ReactNode; perm
   { href: "/clients", label: "Клиенты", icon: <ClientsIcon />, permission: "clients" },
   { href: "/schedule", label: "Расписание", icon: <ScheduleIcon />, permission: "schedule" },
   { href: "/analytics", label: "Аналитика", icon: <AnalyticsIcon />, permission: "analytics" },
+  { href: "/marketing", label: "Маркетинг", icon: <MarketingIcon />, permission: "marketing" },
   { href: "/finance", label: "Финансы", icon: <FinanceIcon />, permission: "analytics" },
 ];
 

@@ -22,6 +22,7 @@ export type AuthModulePermission =
   | "schedule_attendance"
   | "schedule_gym"
   | "analytics"
+  | "marketing"
   | "users_manage";
 
 export const ALL_MODULE_PERMISSIONS: AuthModulePermission[] = [
@@ -46,6 +47,7 @@ export const ALL_MODULE_PERMISSIONS: AuthModulePermission[] = [
   "schedule_attendance",
   "schedule_gym",
   "analytics",
+  "marketing",
   "users_manage",
 ];
 
@@ -100,6 +102,7 @@ export const moduleLabels: Record<AuthModulePermission, string> = {
   schedule_attendance: "Отметка посещаемости",
   schedule_gym: "Зал (open gym)",
   analytics: "Аналитика",
+  marketing: "Маркетинг",
   users_manage: "Сотрудники и доступы",
 };
 

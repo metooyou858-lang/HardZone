@@ -20,6 +20,7 @@ const ALL_MODULES = [
   'schedule_attendance',
   'schedule_gym',
   'analytics',
+  'marketing',
   'users_manage',
 ];
 

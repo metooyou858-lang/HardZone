@@ -29,6 +29,7 @@ const staffRouter = require('./routes/staff');
 const clubSettingsRouter = require('./routes/club-settings');
 const analyticsRouter = require('./routes/analytics');
 const dashboardRouter = require('./routes/dashboard');
+const marketingRouter = require('./routes/marketing');
 const { startDelayedAqsiSyncScheduler } = require('./services/order-sync');
 const { markMissedBookings } = require('./jobs/schedule-cleanup');
 const { ensureBootstrapUser } = require('./services/user-auth');
@@ -96,6 +97,7 @@ app.use('/api/system', authMiddleware, systemRouter);
 app.use('/api/club-settings', authMiddleware, clubSettingsRouter);
 app.use('/api/analytics', authMiddleware, requireModule('analytics'), analyticsRouter);
 app.use('/api/dashboard', authMiddleware, dashboardRouter);
+app.use('/api/marketing', authMiddleware, requireModule('marketing'), marketingRouter);
 
 app.use((req, res) => {
   res.status(404).json({
