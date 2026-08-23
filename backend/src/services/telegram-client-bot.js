@@ -37,6 +37,11 @@ const CONTACT_LINK_FIELDS = [
 const WEEKDAY_LABELS = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
 
 function getClientMiniAppUrl() {
+  const explicitUrl = String(process.env.TELEGRAM_CLIENT_MINIAPP_URL || '').trim();
+  if (explicitUrl) {
+    return explicitUrl;
+  }
+
   const baseUrl = process.env.FRONTEND_BASE_URL || process.env.APP_BASE_URL || 'https://hardzone.space';
   return `${String(baseUrl).replace(/\/+$/, '')}/telegram/client`;
 }

@@ -1,0 +1,68 @@
+.hz-test-client {
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  font-family: Inter, sans-serif;
+  font-size: 16px;
+  line-height: 1.2;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.hz-test-client button,
+.hz-test-client input,
+.hz-test-client textarea {
+  font-family: inherit;
+}
+
+.hz-test-client button {
+  line-height: 1;
+}
+
+.hz-scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+.hz-mini-action-sm {
+  font-size: 10px !important;
+  line-height: 10px !important;
+  letter-spacing: 0 !important;
+}
+
+.hz-mini-action-md {
+  font-size: 12px !important;
+  line-height: 12px !important;
+  letter-spacing: 0 !important;
+}
+
+.hz-mini-action-lg {
+  font-size: 16px !important;
+  line-height: 18px !important;
+  letter-spacing: 0 !important;
+}
+
+.hz-mini-caption {
+  font-size: 9px !important;
+  line-height: 11px !important;
+}
+
+.hz-mini-date-weekday {
+  font-size: 10px !important;
+  line-height: 12px !important;
+}
+
+.hz-mini-date-number {
+  font-size: 19px !important;
+  line-height: 20px !important;
+}
+
+.hz-mini-date-month {
+  font-size: 8px !important;
+  line-height: 9px !important;
+}
+
+.hz-mini-nav-label {
+  font-size: 9px !important;
+  line-height: 10px !important;
+  letter-spacing: 0 !important;
+}

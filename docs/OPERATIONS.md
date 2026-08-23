@@ -106,6 +106,8 @@ ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "su - app -c 'pm2 status'
 
 ## Telegram Bots
 
+Изолированный клиентский тестовый бот, его отдельный токен, PM2-процессы, маршруты и правила работы с реальными данными описаны в `docs/TELEGRAM_TEST_CLIENT.md`.
+
 The staff bot can be served by the production backend webhook:
 
 ```text

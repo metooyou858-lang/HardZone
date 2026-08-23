@@ -1,0 +1,4874 @@
+{
+  "version": "2.17",
+  "children": [
+    {
+      "type": "frame",
+      "id": "bi8Au",
+      "x": 0,
+      "y": 0,
+      "name": "Главная — клиент",
+      "clip": true,
+      "width": 390,
+      "height": 844,
+      "fill": "$bg",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "homeBg",
+          "x": -12,
+          "y": 9,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "radial",
+            "enabled": true,
+            "rotation": 0,
+            "size": {
+              "width": 0.85,
+              "height": 0.65
+            },
+            "colors": [
+              {
+                "color": "#202619",
+                "position": 0
+              },
+              {
+                "color": "$bg",
+                "position": 1
+              }
+            ],
+            "center": {
+              "x": 0.14,
+              "y": 0.07
+            }
+          },
+          "width": 390,
+          "height": 844
+        },
+        {
+          "type": "text",
+          "id": "homeClock",
+          "x": 18,
+          "y": 12,
+          "fill": "$text",
+          "content": "20:37",
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "700"
+        },
+        {
+          "type": "icon",
+          "id": "homeSignal",
+          "x": 304,
+          "y": 13,
+          "width": 15,
+          "height": 15,
+          "icon": "signal",
+          "library": "lucide",
+          "fill": "$text"
+        },
+        {
+          "type": "icon",
+          "id": "homeWifi",
+          "x": 329,
+          "y": 13,
+          "width": 16,
+          "height": 16,
+          "icon": "wifi",
+          "library": "lucide",
+          "fill": "$text"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 3,
+          "id": "homeBattery",
+          "x": 357,
+          "y": 14,
+          "fill": "#B8B8B8",
+          "width": 22,
+          "height": 11
+        },
+        {
+          "type": "text",
+          "id": "homeHello",
+          "x": 18,
+          "y": 45,
+          "fill": "$text",
+          "content": "Привет,",
+          "fontFamily": "$font-body",
+          "fontSize": 23,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "homeName",
+          "x": 113,
+          "y": 45,
+          "fill": "$accent",
+          "content": "Григорий!",
+          "fontFamily": "$font-body",
+          "fontSize": 23,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "homeHelloSub",
+          "x": 18,
+          "y": 74,
+          "fill": "$muted",
+          "content": "Готов к новой тренировке?",
+          "fontFamily": "$font-body",
+          "fontSize": 13,
+          "fontWeight": "500"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 18,
+          "id": "homeBellBg",
+          "x": 339,
+          "y": 43,
+          "fill": "#0C0E0F",
+          "width": 35,
+          "height": 35,
+          "stroke": "#343738",
+          "strokeWidth": 1
+        },
+        {
+          "type": "icon",
+          "id": "homeBell",
+          "x": 348,
+          "y": 51,
+          "width": 18,
+          "height": 18,
+          "icon": "bell",
+          "library": "lucide",
+          "fill": "$text"
+        },
+        {
+          "type": "ellipse",
+          "id": "homeBellDot",
+          "x": 365,
+          "y": 47,
+          "fill": "$accent",
+          "width": 7,
+          "height": 7
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 13,
+          "id": "homeMemberCard",
+          "x": 16,
+          "y": 108,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "linear",
+            "enabled": true,
+            "rotation": 90,
+            "size": {
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "$card-hi",
+                "position": 0
+              },
+              {
+                "color": "$card-lo",
+                "position": 1
+              }
+            ]
+          },
+          "width": 358,
+          "height": 92,
+          "stroke": "$card-border",
+          "strokeWidth": 1
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 11,
+          "id": "homeMemberIconBg",
+          "x": 31,
+          "y": 125,
+          "fill": "#1D250B",
+          "width": 44,
+          "height": 58
+        },
+        {
+          "type": "icon",
+          "id": "homeMemberIcon",
+          "x": 42,
+          "y": 142,
+          "width": 23,
+          "height": 23,
+          "icon": "badge",
+          "library": "lucide",
+          "fill": "$accent"
+        },
+        {
+          "type": "text",
+          "id": "homeMemberActive",
+          "x": 88,
+          "y": 121,
+          "fill": "$accent",
+          "content": "АБОНЕМЕНТ АКТИВЕН",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "homeMemberTitle",
+          "x": 88,
+          "y": 139,
+          "fill": "$text",
+          "content": "Разовое посещение в open gym",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "homeMemberCount",
+          "x": 88,
+          "y": 160,
+          "fill": "$muted",
+          "content": "Осталось 1 посещение",
+          "fontFamily": "$font-body",
+          "fontSize": 11,
+          "fontWeight": "500"
+        },
+        {
+          "type": "text",
+          "id": "homeMemberUntil",
+          "x": 88,
+          "y": 179,
+          "fill": "$muted",
+          "content": "Действует до 25 августа",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "500"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 10,
+          "id": "homePassBg",
+          "x": 270,
+          "y": 130,
+          "fill": "$card-lo",
+          "width": 89,
+          "height": 49,
+          "stroke": "$accent",
+          "strokeWidth": 1
+        },
+        {
+          "type": "text",
+          "id": "homePassText",
+          "x": 280,
+          "y": 142,
+          "fill": "$accent",
+          "content": "Открыть\nпропуск",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "700"
+        },
+        {
+          "type": "icon",
+          "id": "homePassQr",
+          "x": 330,
+          "y": 143,
+          "width": 20,
+          "height": 20,
+          "icon": "qr-code",
+          "library": "lucide",
+          "fill": "$accent"
+        },
+        {
+          "type": "frame",
+          "id": "homeNextCard",
+          "x": 16,
+          "y": 214,
+          "clip": true,
+          "width": 358,
+          "height": 226,
+          "fill": {
+            "type": "image",
+            "enabled": true,
+            "url": "design-assets/telegram-miniapp/home-training-hero-v1.png",
+            "mode": "fill"
+          },
+          "cornerRadius": 13,
+          "layout": "none",
+          "children": [
+            {
+              "type": "rectangle",
+              "id": "homeNextShade",
+              "x": 0,
+              "y": 0,
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": 90,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#050505F7",
+                    "position": 0
+                  },
+                  {
+                    "color": "#050505A8",
+                    "position": 0.52
+                  },
+                  {
+                    "color": "#0505054D",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 358,
+              "height": 226
+            },
+            {
+              "type": "text",
+              "id": "homeNextEyebrow",
+              "x": 16,
+              "y": 15,
+              "fill": "$text",
+              "content": "БЛИЖАЙШАЯ ТРЕНИРОВКА",
+              "fontFamily": "$font-body",
+              "fontSize": 9,
+              "fontWeight": "700"
+            },
+            {
+              "type": "rectangle",
+              "cornerRadius": 14,
+              "id": "homeTodayBg",
+              "x": 16,
+              "y": 40,
+              "fill": "#0B0D0ED9",
+              "width": 84,
+              "height": 27,
+              "stroke": "#3A3D3F",
+              "strokeWidth": 1
+            },
+            {
+              "type": "icon",
+              "id": "homeTodayIcon",
+              "x": 27,
+              "y": 47,
+              "width": 13,
+              "height": 13,
+              "icon": "calendar-days",
+              "library": "lucide",
+              "fill": "$text"
+            },
+            {
+              "type": "text",
+              "id": "homeTodayText",
+              "x": 48,
+              "y": 48,
+              "fill": "$text",
+              "content": "Сегодня",
+              "fontFamily": "$font-body",
+              "fontSize": 9,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "homeNextTime",
+              "x": 16,
+              "y": 82,
+              "fill": "$accent",
+              "content": "19:00",
+              "fontFamily": "$font-body",
+              "fontSize": 14,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "homeNextTitle",
+              "x": 16,
+              "y": 106,
+              "fill": "$text",
+              "content": "CrossFit",
+              "fontFamily": "$font-body",
+              "fontSize": 26,
+              "fontWeight": "700"
+            },
+            {
+              "type": "icon",
+              "id": "homeCoachIcon",
+              "x": 16,
+              "y": 142,
+              "width": 14,
+              "height": 14,
+              "icon": "user-round",
+              "library": "lucide",
+              "fill": "$muted"
+            },
+            {
+              "type": "text",
+              "id": "homeCoachText",
+              "x": 38,
+              "y": 143,
+              "fill": "$muted",
+              "content": "Григорий Волк",
+              "fontFamily": "$font-body",
+              "fontSize": 10,
+              "fontWeight": "500"
+            },
+            {
+              "type": "icon",
+              "id": "homeDurationIcon",
+              "x": 16,
+              "y": 163,
+              "width": 14,
+              "height": 14,
+              "icon": "clock-3",
+              "library": "lucide",
+              "fill": "$muted"
+            },
+            {
+              "type": "text",
+              "id": "homeDurationText",
+              "x": 38,
+              "y": 164,
+              "fill": "$muted",
+              "content": "60 минут",
+              "fontFamily": "$font-body",
+              "fontSize": 10,
+              "fontWeight": "500"
+            },
+            {
+              "type": "rectangle",
+              "cornerRadius": 8,
+              "id": "homeDetailsBg",
+              "x": 16,
+              "y": 190,
+              "fill": "$accent",
+              "width": 158,
+              "height": 28
+            },
+            {
+              "type": "text",
+              "id": "homeDetailsText",
+              "x": 34,
+              "y": 199,
+              "fill": "$bg",
+              "content": "Подробнее",
+              "fontFamily": "$font-body",
+              "fontSize": 10,
+              "fontWeight": "700"
+            },
+            {
+              "type": "icon",
+              "id": "homeDetailsArrow",
+              "x": 147,
+              "y": 197,
+              "width": 15,
+              "height": 15,
+              "icon": "arrow-right",
+              "library": "lucide",
+              "fill": "$bg"
+            },
+            {
+              "type": "rectangle",
+              "cornerRadius": 14,
+              "id": "homeBookedBg",
+              "x": 190,
+              "y": 190,
+              "fill": "$card-lo",
+              "width": 151,
+              "height": 28,
+              "stroke": "#414446",
+              "strokeWidth": 1
+            },
+            {
+              "type": "ellipse",
+              "id": "homeBookedDot",
+              "x": 204,
+              "y": 200,
+              "fill": "$accent",
+              "width": 8,
+              "height": 8
+            },
+            {
+              "type": "text",
+              "id": "homeBookedText",
+              "x": 222,
+              "y": 198,
+              "fill": "$text",
+              "content": "Вы записаны",
+              "fontFamily": "$font-body",
+              "fontSize": 10,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 13,
+          "id": "homeProgressCard",
+          "x": 16,
+          "y": 455,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "linear",
+            "enabled": true,
+            "rotation": 90,
+            "size": {
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "$card-hi",
+                "position": 0
+              },
+              {
+                "color": "$card-lo",
+                "position": 1
+              }
+            ]
+          },
+          "width": 358,
+          "height": 123,
+          "stroke": "$card-border",
+          "strokeWidth": 1
+        },
+        {
+          "type": "text",
+          "id": "homeProgressTitle",
+          "x": 31,
+          "y": 470,
+          "fill": "$text",
+          "content": "Мой прогресс",
+          "fontFamily": "$font-body",
+          "fontSize": 16,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "homeProgressAll",
+          "x": 287,
+          "y": 473,
+          "fill": "$accent",
+          "content": "Смотреть все",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "600"
+        },
+        {
+          "type": "icon",
+          "id": "homeProgressArrow",
+          "x": 352,
+          "y": 471,
+          "width": 14,
+          "height": 14,
+          "icon": "chevron-right",
+          "library": "lucide",
+          "fill": "$accent"
+        },
+        {
+          "type": "rectangle",
+          "id": "homeProgressLine1",
+          "x": 116,
+          "y": 504,
+          "fill": "#343738",
+          "width": 1,
+          "height": 48
+        },
+        {
+          "type": "rectangle",
+          "id": "homeProgressLine2",
+          "x": 220,
+          "y": 504,
+          "fill": "#343738",
+          "width": 1,
+          "height": 48
+        },
+        {
+          "type": "icon",
+          "id": "homeProgressIcon1",
+          "x": 28,
+          "y": 506,
+          "width": 16,
+          "height": 16,
+          "icon": "chart-no-axes-column-increasing",
+          "library": "lucide",
+          "fill": "$accent"
+        },
+        {
+          "type": "text",
+          "id": "homeProgressValue1",
+          "x": 28,
+          "y": 526,
+          "fill": "$text",
+          "content": "8",
+          "fontFamily": "$font-body",
+          "fontSize": 19,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "homeProgressLabel1",
+          "x": 28,
+          "y": 548,
+          "fill": "$muted",
+          "content": "тренировок\nв этом месяце",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "500"
+        },
+        {
+          "type": "icon",
+          "id": "homeProgressIcon2",
+          "x": 134,
+          "y": 506,
+          "width": 16,
+          "height": 16,
+          "icon": "flame",
+          "library": "lucide",
+          "fill": "$accent"
+        },
+        {
+          "type": "text",
+          "id": "homeProgressValue2",
+          "x": 134,
+          "y": 526,
+          "fill": "$text",
+          "content": "2",
+          "fontFamily": "$font-body",
+          "fontSize": 19,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "homeProgressLabel2",
+          "x": 134,
+          "y": 548,
+          "fill": "$muted",
+          "content": "недели подряд",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "500"
+        },
+        {
+          "type": "icon",
+          "id": "homeProgressIcon3",
+          "x": 238,
+          "y": 506,
+          "width": 16,
+          "height": 16,
+          "icon": "calendar-days",
+          "library": "lucide",
+          "fill": "$accent"
+        },
+        {
+          "type": "text",
+          "id": "homeProgressLastLabel",
+          "x": 264,
+          "y": 507,
+          "fill": "$muted",
+          "content": "Последняя тренировка",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "500"
+        },
+        {
+          "type": "text",
+          "id": "homeProgressLast",
+          "x": 238,
+          "y": 528,
+          "fill": "$text",
+          "content": "25.07 · CrossFit",
+          "fontFamily": "$font-body",
+          "fontSize": 11,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "homeProgressLastMeta",
+          "x": 238,
+          "y": 549,
+          "fill": "$muted",
+          "content": "60 мин · Григорий",
+          "fontFamily": "$font-body",
+          "fontSize": 8,
+          "fontWeight": "500"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 13,
+          "id": "homeAvailableCard",
+          "x": 16,
+          "y": 589,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "linear",
+            "enabled": true,
+            "rotation": 90,
+            "size": {
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "$card-hi",
+                "position": 0
+              },
+              {
+                "color": "$card-lo",
+                "position": 1
+              }
+            ]
+          },
+          "width": 358,
+          "height": 94,
+          "stroke": "$card-border",
+          "strokeWidth": 1
+        },
+        {
+          "type": "text",
+          "id": "homeAvailableTitle",
+          "x": 31,
+          "y": 605,
+          "fill": "$text",
+          "content": "Ближайшее свободное занятие",
+          "fontFamily": "$font-body",
+          "fontSize": 13,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "homeAvailableAll",
+          "x": 307,
+          "y": 607,
+          "fill": "$accent",
+          "content": "Все занятия",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "600"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 10,
+          "id": "homeAvailableIconBg",
+          "x": 31,
+          "y": 630,
+          "fill": "#1D250B",
+          "width": 42,
+          "height": 39
+        },
+        {
+          "type": "icon",
+          "id": "homeAvailableIcon",
+          "x": 42,
+          "y": 640,
+          "width": 20,
+          "height": 20,
+          "icon": "dumbbell",
+          "library": "lucide",
+          "fill": "$accent"
+        },
+        {
+          "type": "text",
+          "id": "homeAvailableName",
+          "x": 87,
+          "y": 629,
+          "fill": "$text",
+          "content": "Гибридный фитнес",
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "homeAvailableMeta",
+          "x": 87,
+          "y": 651,
+          "fill": "$muted",
+          "content": "Завтра · 09:30 · Николай",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "500"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 16,
+          "id": "homeAvailableBtn",
+          "x": 276,
+          "y": 634,
+          "fill": "#0A0C0D",
+          "width": 83,
+          "height": 31,
+          "stroke": "$accent",
+          "strokeWidth": 1
+        },
+        {
+          "type": "text",
+          "id": "homeAvailableBtnText",
+          "x": 288,
+          "y": 644,
+          "fill": "$accent",
+          "content": "Записаться",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "700"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 13,
+          "id": "homeReferralCard",
+          "x": 16,
+          "y": 697,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "linear",
+            "enabled": true,
+            "rotation": 90,
+            "size": {
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "$card-hi",
+                "position": 0
+              },
+              {
+                "color": "$card-lo",
+                "position": 1
+              }
+            ]
+          },
+          "width": 358,
+          "height": 62,
+          "stroke": "$card-border",
+          "strokeWidth": 1
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 9,
+          "id": "homeReferralIconBg",
+          "x": 31,
+          "y": 709,
+          "fill": "#202224",
+          "width": 38,
+          "height": 38
+        },
+        {
+          "type": "icon",
+          "id": "homeReferralIcon",
+          "x": 41,
+          "y": 718,
+          "width": 19,
+          "height": 19,
+          "icon": "gift",
+          "library": "lucide",
+          "fill": "$text"
+        },
+        {
+          "type": "text",
+          "id": "homeReferralTitle",
+          "x": 82,
+          "y": 711,
+          "fill": "$text",
+          "content": "Приведи друга — тренируйтесь выгоднее",
+          "fontFamily": "$font-body",
+          "fontSize": 11,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "homeReferralSub",
+          "x": 82,
+          "y": 732,
+          "fill": "$muted",
+          "content": "7 дней заморозки за каждого друга",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "500"
+        },
+        {
+          "type": "icon",
+          "id": "homeReferralArrow",
+          "x": 338,
+          "y": 720,
+          "width": 18,
+          "height": 18,
+          "icon": "arrow-right",
+          "library": "lucide",
+          "fill": "$text"
+        },
+        {
+          "type": "rectangle",
+          "id": "homeNavBg",
+          "x": 0,
+          "y": 782,
+          "fill": "$surface",
+          "width": 390,
+          "height": 62,
+          "stroke": "$line",
+          "strokeWidth": 1
+        },
+        {
+          "type": "icon",
+          "id": "homeNavIcon0",
+          "x": 37.25,
+          "y": 789,
+          "width": 23,
+          "height": 23,
+          "icon": "house",
+          "library": "lucide",
+          "fill": "$accent"
+        },
+        {
+          "type": "text",
+          "id": "homeNavText0",
+          "x": 28.5,
+          "y": 817,
+          "fill": "$accent",
+          "content": "Главная",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "700"
+        },
+        {
+          "type": "icon",
+          "id": "homeNavIcon1",
+          "x": 134.75,
+          "y": 789,
+          "width": 23,
+          "height": 23,
+          "icon": "calendar-days",
+          "library": "lucide",
+          "fill": "$muted"
+        },
+        {
+          "type": "text",
+          "id": "homeNavText1",
+          "x": 117,
+          "y": 817,
+          "fill": "$muted",
+          "content": "Расписание",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        },
+        {
+          "type": "icon",
+          "id": "homeNavIcon2",
+          "x": 232,
+          "y": 790,
+          "width": 23,
+          "height": 23,
+          "icon": "users-round",
+          "library": "lucide",
+          "fill": "$muted"
+        },
+        {
+          "type": "text",
+          "id": "homeNavText2",
+          "x": 222,
+          "y": 817,
+          "fill": "$muted",
+          "content": "Тренеры",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        },
+        {
+          "type": "icon",
+          "id": "homeNavIcon3",
+          "x": 333,
+          "y": 790,
+          "width": 23,
+          "height": 23,
+          "icon": "user-round",
+          "library": "lucide",
+          "fill": "$muted"
+        },
+        {
+          "type": "text",
+          "id": "homeNavText3",
+          "x": 322,
+          "y": 817,
+          "fill": "$muted",
+          "content": "Профиль",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "scheduleClientScreen",
+      "x": 430,
+      "y": 0,
+      "name": "Расписание — клиент",
+      "clip": true,
+      "width": 390,
+      "height": 844,
+      "fill": "$bg",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "scheduleBg",
+          "x": 0,
+          "y": 0,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "radial",
+            "enabled": true,
+            "rotation": 0,
+            "size": {
+              "width": 0.8,
+              "height": 0.55
+            },
+            "colors": [
+              {
+                "color": "#171B11",
+                "position": 0
+              },
+              {
+                "color": "$bg",
+                "position": 1
+              }
+            ],
+            "center": {
+              "x": 0.12,
+              "y": 0.05
+            }
+          },
+          "width": 390,
+          "height": 844
+        },
+        {
+          "type": "text",
+          "id": "scheduleClock",
+          "x": 20,
+          "y": 12,
+          "fill": "$text",
+          "content": "20:37",
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "700"
+        },
+        {
+          "type": "icon",
+          "id": "scheduleSignal",
+          "x": 304,
+          "y": 13,
+          "width": 15,
+          "height": 15,
+          "icon": "signal",
+          "library": "lucide",
+          "fill": "$text"
+        },
+        {
+          "type": "icon",
+          "id": "scheduleWifi",
+          "x": 329,
+          "y": 13,
+          "width": 16,
+          "height": 16,
+          "icon": "wifi",
+          "library": "lucide",
+          "fill": "$text"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 3,
+          "id": "scheduleBattery",
+          "x": 357,
+          "y": 14,
+          "fill": "#B8B8B8",
+          "width": 22,
+          "height": 11
+        },
+        {
+          "type": "text",
+          "id": "scheduleBrandHard",
+          "x": 20,
+          "y": 43,
+          "fill": "$text",
+          "content": "Hard",
+          "fontFamily": "$font-body",
+          "fontSize": 26,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleBrandZone",
+          "x": 76,
+          "y": 43,
+          "fill": "$accent",
+          "content": "Zone",
+          "fontFamily": "$font-body",
+          "fontSize": 26,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleSubtitle",
+          "x": 20,
+          "y": 74,
+          "fill": "$muted",
+          "content": "расписание",
+          "fontFamily": "$font-body",
+          "fontSize": 13,
+          "fontWeight": "500"
+        },
+        {
+          "type": "icon",
+          "id": "scheduleTopCalendar",
+          "x": 344,
+          "y": 48,
+          "width": 27,
+          "height": 27,
+          "icon": "calendar-days",
+          "library": "lucide",
+          "fill": "$text"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 13,
+          "id": "scheduleDate0",
+          "x": 20,
+          "y": 111,
+          "fill": "$accent",
+          "width": 44,
+          "height": 72
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateDay0",
+          "x": 34,
+          "y": 120,
+          "fill": "$bg",
+          "content": "Пн",
+          "fontFamily": "$font-body",
+          "fontSize": 11,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateNum0",
+          "x": 30,
+          "y": 142,
+          "fill": "$bg",
+          "content": "22",
+          "fontFamily": "$font-body",
+          "fontSize": 19,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateMonth0",
+          "x": 32,
+          "y": 166,
+          "fill": "$bg",
+          "content": "июл",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "600"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 13,
+          "id": "scheduleDate1",
+          "x": 71,
+          "y": 111,
+          "fill": "$card-lo",
+          "width": 44,
+          "height": 72,
+          "stroke": "$card-border",
+          "strokeWidth": 1
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateDay1",
+          "x": 85,
+          "y": 120,
+          "fill": "$muted",
+          "content": "Вт",
+          "fontFamily": "$font-body",
+          "fontSize": 11,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateNum1",
+          "x": 81,
+          "y": 142,
+          "fill": "$text",
+          "content": "23",
+          "fontFamily": "$font-body",
+          "fontSize": 19,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateMonth1",
+          "x": 83,
+          "y": 166,
+          "fill": "$muted",
+          "content": "июл",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "600"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 13,
+          "id": "scheduleDate2",
+          "x": 122,
+          "y": 111,
+          "fill": "$card-lo",
+          "width": 44,
+          "height": 72,
+          "stroke": "$card-border",
+          "strokeWidth": 1
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateDay2",
+          "x": 136,
+          "y": 120,
+          "fill": "$muted",
+          "content": "Ср",
+          "fontFamily": "$font-body",
+          "fontSize": 11,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateNum2",
+          "x": 132,
+          "y": 142,
+          "fill": "$text",
+          "content": "24",
+          "fontFamily": "$font-body",
+          "fontSize": 19,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateMonth2",
+          "x": 134,
+          "y": 166,
+          "fill": "$muted",
+          "content": "июл",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "600"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 13,
+          "id": "scheduleDate3",
+          "x": 173,
+          "y": 111,
+          "fill": "$card-lo",
+          "width": 44,
+          "height": 72,
+          "stroke": "$card-border",
+          "strokeWidth": 1
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateDay3",
+          "x": 187,
+          "y": 120,
+          "fill": "$muted",
+          "content": "Чт",
+          "fontFamily": "$font-body",
+          "fontSize": 11,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateNum3",
+          "x": 183,
+          "y": 142,
+          "fill": "$text",
+          "content": "25",
+          "fontFamily": "$font-body",
+          "fontSize": 19,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateMonth3",
+          "x": 185,
+          "y": 166,
+          "fill": "$muted",
+          "content": "июл",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "600"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 13,
+          "id": "scheduleDate4",
+          "x": 224,
+          "y": 111,
+          "fill": "$card-lo",
+          "width": 44,
+          "height": 72,
+          "stroke": "$card-border",
+          "strokeWidth": 1
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateDay4",
+          "x": 238,
+          "y": 120,
+          "fill": "$muted",
+          "content": "Пт",
+          "fontFamily": "$font-body",
+          "fontSize": 11,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateNum4",
+          "x": 234,
+          "y": 142,
+          "fill": "$text",
+          "content": "26",
+          "fontFamily": "$font-body",
+          "fontSize": 19,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateMonth4",
+          "x": 236,
+          "y": 166,
+          "fill": "$muted",
+          "content": "июл",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "600"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 13,
+          "id": "scheduleDate5",
+          "x": 275,
+          "y": 111,
+          "fill": "$card-lo",
+          "width": 44,
+          "height": 72,
+          "stroke": "$card-border",
+          "strokeWidth": 1
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateDay5",
+          "x": 289,
+          "y": 120,
+          "fill": "$muted",
+          "content": "Сб",
+          "fontFamily": "$font-body",
+          "fontSize": 11,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateNum5",
+          "x": 285,
+          "y": 142,
+          "fill": "$text",
+          "content": "27",
+          "fontFamily": "$font-body",
+          "fontSize": 19,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateMonth5",
+          "x": 287,
+          "y": 166,
+          "fill": "$muted",
+          "content": "июл",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "600"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 13,
+          "id": "scheduleDate6",
+          "x": 326,
+          "y": 111,
+          "fill": "$card-lo",
+          "width": 44,
+          "height": 72,
+          "stroke": "$card-border",
+          "strokeWidth": 1
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateDay6",
+          "x": 340,
+          "y": 120,
+          "fill": "$muted",
+          "content": "Вс",
+          "fontFamily": "$font-body",
+          "fontSize": 11,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateNum6",
+          "x": 336,
+          "y": 142,
+          "fill": "$text",
+          "content": "28",
+          "fontFamily": "$font-body",
+          "fontSize": 19,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDateMonth6",
+          "x": 338,
+          "y": 166,
+          "fill": "$muted",
+          "content": "июл",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "600"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": "$radius-card",
+          "id": "scheduleCard0",
+          "x": 20,
+          "y": 199,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "linear",
+            "enabled": true,
+            "rotation": 90,
+            "size": {
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "$card-hi",
+                "position": 0
+              },
+              {
+                "color": "$card-lo",
+                "position": 1
+              }
+            ]
+          },
+          "width": 350,
+          "height": 76,
+          "stroke": "$card-border",
+          "strokeWidth": 1
+        },
+        {
+          "type": "text",
+          "id": "scheduleTime0",
+          "x": 33,
+          "y": 216,
+          "fill": "$text",
+          "content": "07:30",
+          "fontFamily": "$font-body",
+          "fontSize": 17,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDuration0",
+          "x": 33,
+          "y": 243,
+          "fill": "$muted",
+          "content": "60 мин",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        },
+        {
+          "type": "rectangle",
+          "id": "scheduleDivider0",
+          "x": 92,
+          "y": 211,
+          "fill": "$accent",
+          "width": 1,
+          "height": 52
+        },
+        {
+          "type": "text",
+          "id": "scheduleTitle0",
+          "x": 111,
+          "y": 216,
+          "fill": "$text",
+          "content": "CrossFit",
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleCoach0",
+          "x": 111,
+          "y": 242,
+          "fill": "$muted",
+          "content": "Николай",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        },
+        {
+          "type": "ellipse",
+          "id": "scheduleAvatar0",
+          "x": 235,
+          "y": 213,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "radial",
+            "enabled": true,
+            "rotation": 0,
+            "size": {
+              "width": 1,
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "#55595B",
+                "position": 0
+              },
+              {
+                "color": "#151718",
+                "position": 1
+              }
+            ]
+          },
+          "width": 38,
+          "height": 38
+        },
+        {
+          "type": "text",
+          "id": "scheduleInitials0",
+          "x": 246,
+          "y": 227,
+          "fill": "$text",
+          "content": "НГ",
+          "fontFamily": "$font-body",
+          "fontSize": 8,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleFree0",
+          "x": 285,
+          "y": 211,
+          "fill": "$accent",
+          "content": "8",
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleTotal0",
+          "x": 300,
+          "y": 212,
+          "fill": "$muted",
+          "content": "/ 12 мест",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "500"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 7,
+          "id": "scheduleAction0",
+          "x": 278,
+          "y": 238,
+          "fill": "$accent",
+          "width": 78,
+          "height": 27
+        },
+        {
+          "type": "text",
+          "id": "scheduleActionText0",
+          "x": 290,
+          "y": 247,
+          "fill": "$bg",
+          "content": "Записаться",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "700"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": "$radius-card",
+          "id": "scheduleCard1",
+          "x": 20,
+          "y": 283,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "linear",
+            "enabled": true,
+            "rotation": 90,
+            "size": {
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "$card-hi",
+                "position": 0
+              },
+              {
+                "color": "$card-lo",
+                "position": 1
+              }
+            ]
+          },
+          "width": 350,
+          "height": 76,
+          "stroke": "$card-border",
+          "strokeWidth": 1
+        },
+        {
+          "type": "text",
+          "id": "scheduleTime1",
+          "x": 33,
+          "y": 300,
+          "fill": "$text",
+          "content": "09:30",
+          "fontFamily": "$font-body",
+          "fontSize": 17,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDuration1",
+          "x": 33,
+          "y": 327,
+          "fill": "$muted",
+          "content": "60 мин",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        },
+        {
+          "type": "rectangle",
+          "id": "scheduleDivider1",
+          "x": 92,
+          "y": 295,
+          "fill": "$accent",
+          "width": 1,
+          "height": 52
+        },
+        {
+          "type": "text",
+          "id": "scheduleTitle1",
+          "x": 111,
+          "y": 300,
+          "fill": "$text",
+          "content": "Гибридный фитнес",
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleCoach1",
+          "x": 111,
+          "y": 326,
+          "fill": "$muted",
+          "content": "Дмитрий",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        },
+        {
+          "type": "ellipse",
+          "id": "scheduleAvatar1",
+          "x": 235,
+          "y": 297,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "radial",
+            "enabled": true,
+            "rotation": 0,
+            "size": {
+              "width": 1,
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "#55595B",
+                "position": 0
+              },
+              {
+                "color": "#151718",
+                "position": 1
+              }
+            ]
+          },
+          "width": 38,
+          "height": 38
+        },
+        {
+          "type": "text",
+          "id": "scheduleInitials1",
+          "x": 246,
+          "y": 311,
+          "fill": "$text",
+          "content": "ДС",
+          "fontFamily": "$font-body",
+          "fontSize": 8,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleFree1",
+          "x": 285,
+          "y": 295,
+          "fill": "$accent",
+          "content": "6",
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleTotal1",
+          "x": 300,
+          "y": 296,
+          "fill": "$muted",
+          "content": "/ 12 мест",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "500"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 7,
+          "id": "scheduleAction1",
+          "x": 278,
+          "y": 322,
+          "fill": "$accent",
+          "width": 78,
+          "height": 27
+        },
+        {
+          "type": "text",
+          "id": "scheduleActionText1",
+          "x": 290,
+          "y": 331,
+          "fill": "$bg",
+          "content": "Записаться",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "700"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": "$radius-card",
+          "id": "scheduleCard2",
+          "x": 20,
+          "y": 367,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "linear",
+            "enabled": true,
+            "rotation": 90,
+            "size": {
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "$card-hi",
+                "position": 0
+              },
+              {
+                "color": "$card-lo",
+                "position": 1
+              }
+            ]
+          },
+          "width": 350,
+          "height": 76,
+          "stroke": "$card-border",
+          "strokeWidth": 1
+        },
+        {
+          "type": "text",
+          "id": "scheduleTime2",
+          "x": 33,
+          "y": 384,
+          "fill": "$text",
+          "content": "12:45",
+          "fontFamily": "$font-body",
+          "fontSize": 17,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDuration2",
+          "x": 33,
+          "y": 411,
+          "fill": "$muted",
+          "content": "45 мин",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        },
+        {
+          "type": "rectangle",
+          "id": "scheduleDivider2",
+          "x": 92,
+          "y": 379,
+          "fill": "$accent",
+          "width": 1,
+          "height": 52
+        },
+        {
+          "type": "text",
+          "id": "scheduleTitle2",
+          "x": 111,
+          "y": 384,
+          "fill": "$text",
+          "content": "Сплит тренировка",
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleCoach2",
+          "x": 111,
+          "y": 410,
+          "fill": "$muted",
+          "content": "Святослав",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        },
+        {
+          "type": "ellipse",
+          "id": "scheduleAvatar2",
+          "x": 235,
+          "y": 381,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "radial",
+            "enabled": true,
+            "rotation": 0,
+            "size": {
+              "width": 1,
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "#55595B",
+                "position": 0
+              },
+              {
+                "color": "#151718",
+                "position": 1
+              }
+            ]
+          },
+          "width": 38,
+          "height": 38
+        },
+        {
+          "type": "text",
+          "id": "scheduleInitials2",
+          "x": 246,
+          "y": 395,
+          "fill": "$text",
+          "content": "СФ",
+          "fontFamily": "$font-body",
+          "fontSize": 8,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleFree2",
+          "x": 285,
+          "y": 379,
+          "fill": "$accent",
+          "content": "7",
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleTotal2",
+          "x": 300,
+          "y": 380,
+          "fill": "$muted",
+          "content": "/ 12 мест",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "500"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 7,
+          "id": "scheduleAction2",
+          "x": 278,
+          "y": 406,
+          "fill": "$accent",
+          "width": 78,
+          "height": 27
+        },
+        {
+          "type": "text",
+          "id": "scheduleActionText2",
+          "x": 290,
+          "y": 415,
+          "fill": "$bg",
+          "content": "Записаться",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "700"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": "$radius-card",
+          "id": "scheduleCard3",
+          "x": 20,
+          "y": 451,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "linear",
+            "enabled": true,
+            "rotation": 90,
+            "size": {
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "$card-hi",
+                "position": 0
+              },
+              {
+                "color": "$card-lo",
+                "position": 1
+              }
+            ]
+          },
+          "width": 350,
+          "height": 76,
+          "stroke": "$card-border",
+          "strokeWidth": 1
+        },
+        {
+          "type": "text",
+          "id": "scheduleTime3",
+          "x": 33,
+          "y": 468,
+          "fill": "$text",
+          "content": "18:00",
+          "fontFamily": "$font-body",
+          "fontSize": 17,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDuration3",
+          "x": 33,
+          "y": 495,
+          "fill": "$muted",
+          "content": "60 мин",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        },
+        {
+          "type": "rectangle",
+          "id": "scheduleDivider3",
+          "x": 92,
+          "y": 463,
+          "fill": "$accent",
+          "width": 1,
+          "height": 52
+        },
+        {
+          "type": "text",
+          "id": "scheduleTitle3",
+          "x": 111,
+          "y": 468,
+          "fill": "$text",
+          "content": "WOD",
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleCoach3",
+          "x": 111,
+          "y": 494,
+          "fill": "$muted",
+          "content": "Николай",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        },
+        {
+          "type": "ellipse",
+          "id": "scheduleAvatar3",
+          "x": 235,
+          "y": 465,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "radial",
+            "enabled": true,
+            "rotation": 0,
+            "size": {
+              "width": 1,
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "#55595B",
+                "position": 0
+              },
+              {
+                "color": "#151718",
+                "position": 1
+              }
+            ]
+          },
+          "width": 38,
+          "height": 38
+        },
+        {
+          "type": "text",
+          "id": "scheduleInitials3",
+          "x": 246,
+          "y": 479,
+          "fill": "$text",
+          "content": "НГ",
+          "fontFamily": "$font-body",
+          "fontSize": 8,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleFree3",
+          "x": 285,
+          "y": 463,
+          "fill": "$accent",
+          "content": "10",
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleTotal3",
+          "x": 300,
+          "y": 464,
+          "fill": "$muted",
+          "content": "/ 12 мест",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "500"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 7,
+          "id": "scheduleAction3",
+          "x": 278,
+          "y": 490,
+          "fill": "$card-lo",
+          "width": 78,
+          "height": 27,
+          "stroke": "$accent",
+          "strokeWidth": 1
+        },
+        {
+          "type": "text",
+          "id": "scheduleActionText3",
+          "x": 286,
+          "y": 499,
+          "fill": "$accent",
+          "content": "Вы записаны",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "700"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": "$radius-card",
+          "id": "scheduleCard4",
+          "x": 20,
+          "y": 535,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "linear",
+            "enabled": true,
+            "rotation": 90,
+            "size": {
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "$card-hi",
+                "position": 0
+              },
+              {
+                "color": "$card-lo",
+                "position": 1
+              }
+            ]
+          },
+          "width": 350,
+          "height": 76,
+          "stroke": "$card-border",
+          "strokeWidth": 1
+        },
+        {
+          "type": "text",
+          "id": "scheduleTime4",
+          "x": 33,
+          "y": 552,
+          "fill": "$text",
+          "content": "19:30",
+          "fontFamily": "$font-body",
+          "fontSize": 17,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDuration4",
+          "x": 33,
+          "y": 579,
+          "fill": "$muted",
+          "content": "60 мин",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        },
+        {
+          "type": "rectangle",
+          "id": "scheduleDivider4",
+          "x": 92,
+          "y": 547,
+          "fill": "$accent",
+          "width": 1,
+          "height": 52
+        },
+        {
+          "type": "text",
+          "id": "scheduleTitle4",
+          "x": 111,
+          "y": 552,
+          "fill": "$text",
+          "content": "Гимнастика",
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleCoach4",
+          "x": 111,
+          "y": 578,
+          "fill": "$muted",
+          "content": "Артем",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        },
+        {
+          "type": "ellipse",
+          "id": "scheduleAvatar4",
+          "x": 235,
+          "y": 549,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "radial",
+            "enabled": true,
+            "rotation": 0,
+            "size": {
+              "width": 1,
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "#55595B",
+                "position": 0
+              },
+              {
+                "color": "#151718",
+                "position": 1
+              }
+            ]
+          },
+          "width": 38,
+          "height": 38
+        },
+        {
+          "type": "text",
+          "id": "scheduleInitials4",
+          "x": 246,
+          "y": 563,
+          "fill": "$text",
+          "content": "АК",
+          "fontFamily": "$font-body",
+          "fontSize": 8,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleFree4",
+          "x": 285,
+          "y": 547,
+          "fill": "$accent",
+          "content": "5",
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleTotal4",
+          "x": 300,
+          "y": 548,
+          "fill": "$muted",
+          "content": "/ 12 мест",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "500"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 7,
+          "id": "scheduleAction4",
+          "x": 278,
+          "y": 574,
+          "fill": "$accent",
+          "width": 78,
+          "height": 27
+        },
+        {
+          "type": "text",
+          "id": "scheduleActionText4",
+          "x": 290,
+          "y": 583,
+          "fill": "$bg",
+          "content": "Записаться",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "700"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": "$radius-card",
+          "id": "scheduleCard5",
+          "x": 20,
+          "y": 619,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "linear",
+            "enabled": true,
+            "rotation": 90,
+            "size": {
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "$card-hi",
+                "position": 0
+              },
+              {
+                "color": "$card-lo",
+                "position": 1
+              }
+            ]
+          },
+          "width": 350,
+          "height": 76,
+          "stroke": "$card-border",
+          "strokeWidth": 1
+        },
+        {
+          "type": "text",
+          "id": "scheduleTime5",
+          "x": 33,
+          "y": 636,
+          "fill": "$text",
+          "content": "20:45",
+          "fontFamily": "$font-body",
+          "fontSize": 17,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleDuration5",
+          "x": 33,
+          "y": 663,
+          "fill": "$muted",
+          "content": "45 мин",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        },
+        {
+          "type": "rectangle",
+          "id": "scheduleDivider5",
+          "x": 92,
+          "y": 631,
+          "fill": "$accent",
+          "width": 1,
+          "height": 52
+        },
+        {
+          "type": "text",
+          "id": "scheduleTitle5",
+          "x": 111,
+          "y": 636,
+          "fill": "$text",
+          "content": "Mobility",
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "scheduleCoach5",
+          "x": 111,
+          "y": 662,
+          "fill": "$muted",
+          "content": "Елена",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        },
+        {
+          "type": "ellipse",
+          "id": "scheduleAvatar5",
+          "x": 235,
+          "y": 633,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "radial",
+            "enabled": true,
+            "rotation": 0,
+            "size": {
+              "width": 1,
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "#55595B",
+                "position": 0
+              },
+              {
+                "color": "#151718",
+                "position": 1
+              }
+            ]
+          },
+          "width": 38,
+          "height": 38
+        },
+        {
+          "type": "text",
+          "id": "scheduleInitials5",
+          "x": 246,
+          "y": 647,
+          "fill": "$text",
+          "content": "ЕМ",
+          "fontFamily": "$font-body",
+          "fontSize": 8,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleFree5",
+          "x": 285,
+          "y": 631,
+          "fill": "$accent",
+          "content": "9",
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "scheduleTotal5",
+          "x": 300,
+          "y": 632,
+          "fill": "$muted",
+          "content": "/ 15 мест",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "500"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 7,
+          "id": "scheduleAction5",
+          "x": 278,
+          "y": 658,
+          "fill": "$accent",
+          "width": 78,
+          "height": 27
+        },
+        {
+          "type": "text",
+          "id": "scheduleActionText5",
+          "x": 290,
+          "y": 667,
+          "fill": "$bg",
+          "content": "Записаться",
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "700"
+        },
+        {
+          "type": "icon",
+          "id": "scheduleInfoIcon",
+          "x": 21,
+          "y": 711,
+          "width": 14,
+          "height": 14,
+          "icon": "info",
+          "library": "lucide",
+          "fill": "$muted"
+        },
+        {
+          "type": "text",
+          "id": "scheduleInfoText",
+          "x": 42,
+          "y": 712,
+          "fill": "$muted",
+          "content": "Количество мест может меняться",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        },
+        {
+          "type": "rectangle",
+          "id": "scheduleNavBg",
+          "x": 0,
+          "y": 782,
+          "fill": "$surface",
+          "width": 390,
+          "height": 62,
+          "stroke": "$line",
+          "strokeWidth": 1
+        },
+        {
+          "type": "icon",
+          "id": "scheduleNavIcon0",
+          "x": 37.25,
+          "y": 789,
+          "width": 23,
+          "height": 23,
+          "icon": "house",
+          "library": "lucide",
+          "fill": "$muted"
+        },
+        {
+          "type": "text",
+          "id": "scheduleNavText0",
+          "x": 29,
+          "y": 817,
+          "fill": "$muted",
+          "content": "Главная",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        },
+        {
+          "type": "icon",
+          "id": "scheduleNavIcon1",
+          "x": 134.75,
+          "y": 789,
+          "width": 23,
+          "height": 23,
+          "icon": "calendar-days",
+          "library": "lucide",
+          "fill": "$accent"
+        },
+        {
+          "type": "text",
+          "id": "scheduleNavText1",
+          "x": 112,
+          "y": 817,
+          "fill": "$accent",
+          "content": "Расписание",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "700"
+        },
+        {
+          "type": "icon",
+          "id": "scheduleNavIcon2",
+          "x": 232.25,
+          "y": 789,
+          "width": 23,
+          "height": 23,
+          "icon": "users-round",
+          "library": "lucide",
+          "fill": "$muted"
+        },
+        {
+          "type": "text",
+          "id": "scheduleNavText2",
+          "x": 222,
+          "y": 817,
+          "fill": "$muted",
+          "content": "Тренеры",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        },
+        {
+          "type": "icon",
+          "id": "scheduleNavIcon3",
+          "x": 329.75,
+          "y": 789,
+          "width": 23,
+          "height": 23,
+          "icon": "user-round",
+          "library": "lucide",
+          "fill": "$muted"
+        },
+        {
+          "type": "text",
+          "id": "scheduleNavText3",
+          "x": 322,
+          "y": 817,
+          "fill": "$muted",
+          "content": "Профиль",
+          "fontFamily": "$font-body",
+          "fontSize": 10,
+          "fontWeight": "500"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "trainingDetailScreen",
+      "x": 860,
+      "y": 0,
+      "name": "Карточка тренировки — клиент",
+      "clip": true,
+      "width": 390,
+      "height": 844,
+      "fill": "$bg",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "detailBg",
+          "x": 0,
+          "y": 0,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "radial",
+            "enabled": true,
+            "rotation": 0,
+            "size": {
+              "width": 0.85,
+              "height": 0.6
+            },
+            "colors": [
+              {
+                "color": "#151A10",
+                "position": 0
+              },
+              {
+                "color": "$bg",
+                "position": 1
+              }
+            ],
+            "center": {
+              "x": 0.12,
+              "y": 0.04
+            }
+          },
+          "width": 390,
+          "height": 844
+        },
+        {
+          "type": "text",
+          "id": "detailClock",
+          "x": 18,
+          "y": 12,
+          "fill": "$text",
+          "content": "20:37",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "700"
+        },
+        {
+          "type": "icon",
+          "id": "detailSignal",
+          "x": 304,
+          "y": 13,
+          "width": 15,
+          "height": 15,
+          "icon": "signal",
+          "library": "lucide",
+          "fill": "$text"
+        },
+        {
+          "type": "icon",
+          "id": "detailWifi",
+          "x": 329,
+          "y": 13,
+          "width": 16,
+          "height": 16,
+          "icon": "wifi",
+          "library": "lucide",
+          "fill": "$text"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 3,
+          "id": "detailBattery",
+          "x": 355,
+          "y": 14,
+          "fill": "#F3F3F3",
+          "width": 18,
+          "height": 10
+        },
+        {
+          "type": "icon",
+          "id": "detailBack",
+          "x": 18,
+          "y": 44,
+          "width": 25,
+          "height": 25,
+          "icon": "chevron-left",
+          "library": "lucide",
+          "fill": "$text"
+        },
+        {
+          "type": "text",
+          "id": "detailDateHeader",
+          "x": 109,
+          "y": 47,
+          "fill": "$text",
+          "content": "пятница, 31 июля",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 17,
+          "fontWeight": "700"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": "$radius-card",
+          "id": "detailMainCard",
+          "x": 10,
+          "y": 82,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "linear",
+            "enabled": true,
+            "rotation": 135,
+            "size": {
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "$card-hi",
+                "position": 0
+              },
+              {
+                "color": "$card-lo",
+                "position": 1
+              }
+            ]
+          },
+          "width": 370,
+          "height": 276,
+          "stroke": "$card-border",
+          "strokeWidth": 1,
+          "strokeAlignment": "inner"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 7,
+          "id": "detailTypePill",
+          "x": 28,
+          "y": 100,
+          "fill": "#11140C",
+          "width": 129,
+          "height": 24
+        },
+        {
+          "type": "text",
+          "id": "detailType",
+          "x": 37,
+          "y": 106,
+          "fill": "$accent",
+          "content": "ГРУППОВОЕ ЗАНЯТИЕ",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 9,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "detailTitle",
+          "x": 28,
+          "y": 139,
+          "fill": "$text",
+          "content": "CrossFit",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 37,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "detailTime",
+          "x": 258,
+          "y": 136,
+          "fill": "$accent",
+          "content": "07:00",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 35,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "detailDurationTop",
+          "x": 313,
+          "y": 176,
+          "fill": "$muted",
+          "content": "60 мин",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 14,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "detailDate",
+          "x": 28,
+          "y": 194,
+          "fill": "$text",
+          "content": "пятница, 31 июля",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 15,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "detailBookingNote",
+          "x": 28,
+          "y": 219,
+          "fill": "$muted",
+          "content": "Предварительная запись",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 13,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "rectangle",
+          "id": "detailSeparator",
+          "x": 28,
+          "y": 252,
+          "fill": "#333536",
+          "width": 334,
+          "height": 1
+        },
+        {
+          "type": "icon",
+          "id": "detailLocationIcon",
+          "x": 30,
+          "y": 275,
+          "width": 23,
+          "height": 23,
+          "icon": "map-pin",
+          "library": "lucide",
+          "fill": "$accent"
+        },
+        {
+          "type": "text",
+          "id": "detailLocationLabel",
+          "x": 69,
+          "y": 272,
+          "fill": "$muted",
+          "content": "Место проведения",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "detailLocation",
+          "x": 69,
+          "y": 291,
+          "fill": "$text",
+          "content": "HardZone",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 16,
+          "fontWeight": "700"
+        },
+        {
+          "type": "icon",
+          "id": "detailDurationIcon",
+          "x": 30,
+          "y": 319,
+          "width": 22,
+          "height": 22,
+          "icon": "clock-3",
+          "library": "lucide",
+          "fill": "$accent"
+        },
+        {
+          "type": "text",
+          "id": "detailDurationLabel",
+          "x": 69,
+          "y": 316,
+          "fill": "$muted",
+          "content": "Продолжительность",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "detailDuration",
+          "x": 69,
+          "y": 335,
+          "fill": "$text",
+          "content": "60 мин",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 16,
+          "fontWeight": "700"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": "$radius-card",
+          "id": "detailTrainerCard",
+          "x": 10,
+          "y": 370,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "linear",
+            "enabled": true,
+            "rotation": 135,
+            "size": {
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "$card-hi",
+                "position": 0
+              },
+              {
+                "color": "$card-lo",
+                "position": 1
+              }
+            ]
+          },
+          "width": 370,
+          "height": 92,
+          "stroke": "$card-border",
+          "strokeWidth": 1,
+          "strokeAlignment": "inner"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 29,
+          "id": "detailTrainerAvatar",
+          "x": 26,
+          "y": 387,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "radial",
+            "enabled": true,
+            "rotation": 0,
+            "size": {
+              "width": 0.9,
+              "height": 0.9
+            },
+            "colors": [
+              {
+                "color": "#3A4030",
+                "position": 0
+              },
+              {
+                "color": "#111311",
+                "position": 1
+              }
+            ],
+            "center": {
+              "x": 0.35,
+              "y": 0.25
+            }
+          },
+          "width": 58,
+          "height": 58
+        },
+        {
+          "type": "text",
+          "id": "detailTrainerInitials",
+          "x": 41,
+          "y": 406,
+          "fill": "$text",
+          "content": "СФ",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 16,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "detailTrainerLabel",
+          "x": 101,
+          "y": 386,
+          "fill": "$muted",
+          "content": "Тренер",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "detailTrainerName",
+          "x": 101,
+          "y": 407,
+          "fill": "$text",
+          "content": "Святослав Федосов",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 17,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "detailTrainerRating",
+          "x": 101,
+          "y": 435,
+          "fill": "$muted",
+          "content": "★ 5 · 1 отзыв",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 12,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "icon",
+          "id": "detailTrainerArrow",
+          "x": 344,
+          "y": 405,
+          "width": 24,
+          "height": 24,
+          "icon": "chevron-right",
+          "library": "lucide",
+          "fill": "$text"
+        },
+        {
+          "type": "text",
+          "id": "detailAboutTitle",
+          "x": 24,
+          "y": 484,
+          "fill": "$text",
+          "content": "О тренировке",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 20,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "detailAbout",
+          "x": 10,
+          "y": 519,
+          "fill": "$muted",
+          "content": "Интенсивная функциональная тренировка, которая\nразвивает силу, выносливость и уверенность в себе.\nТренер подберёт нагрузку под твои возможности —\nподходит для любого уровня.",
+          "lineHeight": 1.45,
+          "fontFamily": "$font-body",
+          "fontSize": 14,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "icon",
+          "id": "detailTagIcon0",
+          "x": 27,
+          "y": 622,
+          "width": 21,
+          "height": 21,
+          "icon": "biceps-flexed",
+          "library": "lucide",
+          "fill": "$accent"
+        },
+        {
+          "type": "text",
+          "id": "detailTag0",
+          "x": 59,
+          "y": 622,
+          "fill": "$text",
+          "content": "Сила и выносливость",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 14,
+          "fontWeight": "700"
+        },
+        {
+          "type": "rectangle",
+          "id": "detailTagLine0",
+          "x": 24,
+          "y": 651,
+          "fill": "$card-border",
+          "width": 342,
+          "height": 1
+        },
+        {
+          "type": "icon",
+          "id": "detailTagIcon1",
+          "x": 27,
+          "y": 665,
+          "width": 21,
+          "height": 21,
+          "icon": "dumbbell",
+          "library": "lucide",
+          "fill": "$accent"
+        },
+        {
+          "type": "text",
+          "id": "detailTag1",
+          "x": 59,
+          "y": 665,
+          "fill": "$text",
+          "content": "Базовые движения",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 14,
+          "fontWeight": "700"
+        },
+        {
+          "type": "rectangle",
+          "id": "detailTagLine1",
+          "x": 24,
+          "y": 694,
+          "fill": "$card-border",
+          "width": 342,
+          "height": 1
+        },
+        {
+          "type": "icon",
+          "id": "detailTagIcon2",
+          "x": 27,
+          "y": 708,
+          "width": 21,
+          "height": 21,
+          "icon": "chart-no-axes-column-increasing",
+          "library": "lucide",
+          "fill": "$accent"
+        },
+        {
+          "type": "text",
+          "id": "detailTag2",
+          "x": 59,
+          "y": 708,
+          "fill": "$text",
+          "content": "Подходит для любого уровня",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 14,
+          "fontWeight": "700"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 16,
+          "id": "detailAction",
+          "x": 10,
+          "y": 767,
+          "fill": "$accent",
+          "width": 370,
+          "height": 58
+        },
+        {
+          "type": "text",
+          "id": "detailActionText",
+          "x": 84,
+          "y": 785,
+          "fill": "$bg",
+          "content": "Записаться на тренировку",
+          "lineHeight": 1.2,
+          "fontFamily": "$font-body",
+          "fontSize": 18,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "oB474",
+      "x": 1290,
+      "y": 0,
+      "name": "Тренеры — клиент",
+      "clip": true,
+      "width": 390,
+      "height": 844,
+      "fill": "$bg",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "o9sbqD",
+          "name": "Статус-бар",
+          "width": "fill_container",
+          "height": 30,
+          "padding": [
+            8,
+            16,
+            4,
+            16
+          ],
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "E7oxds",
+              "name": "Время",
+              "fill": "$text",
+              "content": "20:37",
+              "fontFamily": "$font-body",
+              "fontSize": 11,
+              "fontWeight": "600"
+            },
+            {
+              "type": "frame",
+              "id": "SV09I",
+              "name": "Системные индикаторы",
+              "gap": 6,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "CXaDM",
+                  "name": "Связь",
+                  "width": 14,
+                  "height": 14,
+                  "icon": "signal",
+                  "library": "lucide",
+                  "fill": "$text"
+                },
+                {
+                  "type": "icon",
+                  "id": "o78aED",
+                  "name": "Wi-Fi",
+                  "width": 14,
+                  "height": 14,
+                  "icon": "wifi",
+                  "library": "lucide",
+                  "fill": "$text"
+                },
+                {
+                  "type": "icon",
+                  "id": "jiWY6",
+                  "name": "Батарея",
+                  "width": 14,
+                  "height": 14,
+                  "icon": "battery-medium",
+                  "library": "lucide",
+                  "fill": "$text"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "cY7Jx",
+          "name": "Заголовок экрана",
+          "width": "fill_container",
+          "height": 64,
+          "stroke": "$line",
+          "strokeWidth": {
+            "bottom": 1
+          },
+          "padding": [
+            10,
+            16
+          ],
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "AaAFJ",
+              "name": "Текст заголовка",
+              "layout": "vertical",
+              "gap": 2,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "wM2KP",
+                  "name": "Раздел",
+                  "fill": "$muted",
+                  "content": "КОМАНДА HARDZONE",
+                  "fontFamily": "$font-body",
+                  "fontSize": 10,
+                  "fontWeight": "600",
+                  "letterSpacing": 1.2
+                },
+                {
+                  "type": "text",
+                  "id": "J4mG5r",
+                  "name": "Заголовок",
+                  "fill": "$text",
+                  "content": "Тренеры",
+                  "fontFamily": "$font-display",
+                  "fontSize": 25,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "ys4Gd",
+              "name": "Количество тренеров",
+              "fill": "$muted",
+              "content": "4 специалиста",
+              "fontFamily": "$font-body",
+              "fontSize": 11,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "JxZ6a",
+          "name": "Список тренеров",
+          "width": "fill_container",
+          "height": "fill_container",
+          "layout": "vertical",
+          "padding": [
+            8,
+            16,
+            0,
+            16
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "ckEK6",
+              "name": "Тренер — Святослав Федосов",
+              "width": "fill_container",
+              "height": 122,
+              "stroke": "$line",
+              "strokeWidth": {
+                "bottom": 1
+              },
+              "gap": 14,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "rF5Op",
+                  "name": "Фото — Святослав Федосов",
+                  "width": 78,
+                  "height": 94,
+                  "fill": "$surface",
+                  "cornerRadius": 6,
+                  "layout": "vertical",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "GnXhY",
+                      "name": "Инициалы — Святослав Федосов",
+                      "fill": "$text",
+                      "content": "СФ",
+                      "fontFamily": "$font-display",
+                      "fontSize": 27,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "c9HFV",
+                  "name": "Данные — Святослав Федосов",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 5,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "q6QHBy",
+                      "name": "Имя — Святослав Федосов",
+                      "fill": "$text",
+                      "content": "Святослав Федосов",
+                      "fontFamily": "$font-body",
+                      "fontSize": 16,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "iUxwC",
+                      "name": "Роль — Святослав Федосов",
+                      "fill": "$muted",
+                      "content": "Старший тренер",
+                      "fontFamily": "$font-body",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "Gno0n",
+                      "name": "Специализации — Святослав Федосов",
+                      "fill": "$text",
+                      "content": "CrossFit · Гимнастика",
+                      "fontFamily": "$font-body",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Xf3vf",
+                      "name": "Ближайшее занятие — Святослав Федосов",
+                      "gap": 5,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "ellipse",
+                          "id": "e1hajZ",
+                          "name": "Маркер времени — Святослав Федосов",
+                          "fill": "$accent",
+                          "width": 5,
+                          "height": 5
+                        },
+                        {
+                          "type": "text",
+                          "id": "zq8Q5",
+                          "name": "Время занятия — Святослав Федосов",
+                          "fill": "$accent",
+                          "content": "Сегодня · 19:00",
+                          "fontFamily": "$font-body",
+                          "fontSize": 11,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "icon",
+                  "id": "oftr9",
+                  "name": "Открыть — Святослав Федосов",
+                  "width": 18,
+                  "height": 18,
+                  "icon": "chevron-right",
+                  "library": "lucide",
+                  "fill": "$muted"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "TbwEg",
+              "name": "Тренер — Николай Гончаров",
+              "width": "fill_container",
+              "height": 122,
+              "stroke": "$line",
+              "strokeWidth": {
+                "bottom": 1
+              },
+              "gap": 14,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ninF4",
+                  "name": "Фото — Николай Гончаров",
+                  "width": 78,
+                  "height": 94,
+                  "fill": "$surface",
+                  "cornerRadius": 6,
+                  "layout": "vertical",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "JGmkk",
+                      "name": "Инициалы — Николай Гончаров",
+                      "fill": "$text",
+                      "content": "НГ",
+                      "fontFamily": "$font-display",
+                      "fontSize": 27,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "QTSvr",
+                  "name": "Данные — Николай Гончаров",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 5,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "cqFaR",
+                      "name": "Имя — Николай Гончаров",
+                      "fill": "$text",
+                      "content": "Николай Гончаров",
+                      "fontFamily": "$font-body",
+                      "fontSize": 16,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "TBZtY",
+                      "name": "Роль — Николай Гончаров",
+                      "fill": "$muted",
+                      "content": "Тренер",
+                      "fontFamily": "$font-body",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "UZ1o0",
+                      "name": "Специализации — Николай Гончаров",
+                      "fill": "$text",
+                      "content": "Гибридный фитнес · WOD",
+                      "fontFamily": "$font-body",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "cHIIh",
+                      "name": "Ближайшее занятие — Николай Гончаров",
+                      "gap": 5,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "ellipse",
+                          "id": "gfAmn",
+                          "name": "Маркер времени — Николай Гончаров",
+                          "fill": "$accent",
+                          "width": 5,
+                          "height": 5
+                        },
+                        {
+                          "type": "text",
+                          "id": "UUeWr",
+                          "name": "Время занятия — Николай Гончаров",
+                          "fill": "$accent",
+                          "content": "Завтра · 09:30",
+                          "fontFamily": "$font-body",
+                          "fontSize": 11,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "icon",
+                  "id": "aYBji",
+                  "name": "Открыть — Николай Гончаров",
+                  "width": 18,
+                  "height": 18,
+                  "icon": "chevron-right",
+                  "library": "lucide",
+                  "fill": "$muted"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "p16aRx",
+              "name": "Тренер — Дмитрий Соколов",
+              "width": "fill_container",
+              "height": 122,
+              "stroke": "$line",
+              "strokeWidth": {
+                "bottom": 1
+              },
+              "gap": 14,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "QjybY",
+                  "name": "Фото — Дмитрий Соколов",
+                  "width": 78,
+                  "height": 94,
+                  "fill": "$surface",
+                  "cornerRadius": 6,
+                  "layout": "vertical",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "AazWD",
+                      "name": "Инициалы — Дмитрий Соколов",
+                      "fill": "$text",
+                      "content": "ДС",
+                      "fontFamily": "$font-display",
+                      "fontSize": 27,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "nEteV",
+                  "name": "Данные — Дмитрий Соколов",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 5,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "bWjnn",
+                      "name": "Имя — Дмитрий Соколов",
+                      "fill": "$text",
+                      "content": "Дмитрий Соколов",
+                      "fontFamily": "$font-body",
+                      "fontSize": 16,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "MxhHv",
+                      "name": "Роль — Дмитрий Соколов",
+                      "fill": "$muted",
+                      "content": "Тренер",
+                      "fontFamily": "$font-body",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "NtftW",
+                      "name": "Специализации — Дмитрий Соколов",
+                      "fill": "$text",
+                      "content": "CrossFit · Силовая",
+                      "fontFamily": "$font-body",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "cjkbw",
+                      "name": "Ближайшее занятие — Дмитрий Соколов",
+                      "gap": 5,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "ellipse",
+                          "id": "vwwgS",
+                          "name": "Маркер времени — Дмитрий Соколов",
+                          "fill": "$accent",
+                          "width": 5,
+                          "height": 5
+                        },
+                        {
+                          "type": "text",
+                          "id": "Bteod",
+                          "name": "Время занятия — Дмитрий Соколов",
+                          "fill": "$accent",
+                          "content": "Завтра · 18:00",
+                          "fontFamily": "$font-body",
+                          "fontSize": 11,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "icon",
+                  "id": "R6GNnn",
+                  "name": "Открыть — Дмитрий Соколов",
+                  "width": 18,
+                  "height": 18,
+                  "icon": "chevron-right",
+                  "library": "lucide",
+                  "fill": "$muted"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "RWklT",
+              "name": "Тренер — Елена Морозова",
+              "width": "fill_container",
+              "height": 122,
+              "stroke": "$line",
+              "strokeWidth": {
+                "bottom": 1
+              },
+              "gap": 14,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "W8fZmt",
+                  "name": "Фото — Елена Морозова",
+                  "width": 78,
+                  "height": 94,
+                  "fill": "$surface",
+                  "cornerRadius": 6,
+                  "layout": "vertical",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "jKISE",
+                      "name": "Инициалы — Елена Морозова",
+                      "fill": "$text",
+                      "content": "ЕМ",
+                      "fontFamily": "$font-display",
+                      "fontSize": 27,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "xR0SM",
+                  "name": "Данные — Елена Морозова",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 5,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "BNB5u",
+                      "name": "Имя — Елена Морозова",
+                      "fill": "$text",
+                      "content": "Елена Морозова",
+                      "fontFamily": "$font-body",
+                      "fontSize": 16,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "cQvcz",
+                      "name": "Роль — Елена Морозова",
+                      "fill": "$muted",
+                      "content": "Тренер",
+                      "fontFamily": "$font-body",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "CoYTJ",
+                      "name": "Специализации — Елена Морозова",
+                      "fill": "$text",
+                      "content": "Mobility · Stretching",
+                      "fontFamily": "$font-body",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "cyHJU",
+                      "name": "Ближайшее занятие — Елена Морозова",
+                      "gap": 5,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "ellipse",
+                          "id": "c9kiT",
+                          "name": "Маркер времени — Елена Морозова",
+                          "fill": "$accent",
+                          "width": 5,
+                          "height": 5
+                        },
+                        {
+                          "type": "text",
+                          "id": "Njv1p",
+                          "name": "Время занятия — Елена Морозова",
+                          "fill": "$accent",
+                          "content": "Суббота · 10:00",
+                          "fontFamily": "$font-body",
+                          "fontSize": 11,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "icon",
+                  "id": "W7cW8N",
+                  "name": "Открыть — Елена Морозова",
+                  "width": 18,
+                  "height": 18,
+                  "icon": "chevron-right",
+                  "library": "lucide",
+                  "fill": "$muted"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "W50pY",
+          "name": "Нижняя навигация",
+          "width": "fill_container",
+          "height": 78,
+          "fill": "$surface",
+          "stroke": "$line",
+          "strokeWidth": {
+            "top": 1
+          },
+          "padding": [
+            8,
+            10,
+            10,
+            10
+          ],
+          "justifyContent": "space_around",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "HdmAn",
+              "name": "Навигация — Главная",
+              "width": 82,
+              "height": 54,
+              "layout": "vertical",
+              "gap": 4,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "BJdGh",
+                  "name": "Иконка — Главная",
+                  "width": 21,
+                  "height": 21,
+                  "icon": "house",
+                  "library": "lucide",
+                  "fill": "$muted"
+                },
+                {
+                  "type": "text",
+                  "id": "rfyYT",
+                  "name": "Подпись — Главная",
+                  "fill": "$muted",
+                  "content": "Главная",
+                  "fontFamily": "$font-body",
+                  "fontSize": 10,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "LA4Kb",
+              "name": "Навигация — Расписание",
+              "width": 82,
+              "height": 54,
+              "layout": "vertical",
+              "gap": 4,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "lmhJu",
+                  "name": "Иконка — Расписание",
+                  "width": 21,
+                  "height": 21,
+                  "icon": "calendar-days",
+                  "library": "lucide",
+                  "fill": "$muted"
+                },
+                {
+                  "type": "text",
+                  "id": "Uk4SS",
+                  "name": "Подпись — Расписание",
+                  "fill": "$muted",
+                  "content": "Расписание",
+                  "fontFamily": "$font-body",
+                  "fontSize": 10,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "o4AAI",
+              "name": "Навигация — Тренеры",
+              "width": 82,
+              "height": 54,
+              "layout": "vertical",
+              "gap": 4,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "XQmHf",
+                  "name": "Иконка — Тренеры",
+                  "width": 21,
+                  "height": 21,
+                  "icon": "dumbbell",
+                  "library": "lucide",
+                  "fill": "$accent"
+                },
+                {
+                  "type": "text",
+                  "id": "LcXk9",
+                  "name": "Подпись — Тренеры",
+                  "fill": "$accent",
+                  "content": "Тренеры",
+                  "fontFamily": "$font-body",
+                  "fontSize": 10,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "V5vOA",
+              "name": "Навигация — Профиль",
+              "width": 82,
+              "height": 54,
+              "layout": "vertical",
+              "gap": 4,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "Y22hmH",
+                  "name": "Иконка — Профиль",
+                  "width": 21,
+                  "height": 21,
+                  "icon": "user-round",
+                  "library": "lucide",
+                  "fill": "$muted"
+                },
+                {
+                  "type": "text",
+                  "id": "GPm6b",
+                  "name": "Подпись — Профиль",
+                  "fill": "$muted",
+                  "content": "Профиль",
+                  "fontFamily": "$font-body",
+                  "fontSize": 10,
+                  "fontWeight": "500"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "dAvCf",
+      "x": 1720,
+      "y": 0,
+      "name": "Карточка тренера — клиент",
+      "clip": true,
+      "width": 390,
+      "height": 844,
+      "fill": "$bg",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "zw1Wu",
+          "name": "Статус-бар",
+          "width": "fill_container",
+          "height": 30,
+          "padding": [
+            8,
+            16,
+            4,
+            16
+          ],
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "Rnfv6",
+              "name": "Время",
+              "fill": "$text",
+              "content": "20:37",
+              "fontFamily": "$font-body",
+              "fontSize": 11,
+              "fontWeight": "600"
+            },
+            {
+              "type": "frame",
+              "id": "i4Y7H",
+              "name": "Системные индикаторы",
+              "gap": 6,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "lJPyF",
+                  "name": "Связь",
+                  "width": 14,
+                  "height": 14,
+                  "icon": "signal",
+                  "library": "lucide",
+                  "fill": "$text"
+                },
+                {
+                  "type": "icon",
+                  "id": "bBu1u",
+                  "name": "Wi-Fi",
+                  "width": 14,
+                  "height": 14,
+                  "icon": "wifi",
+                  "library": "lucide",
+                  "fill": "$text"
+                },
+                {
+                  "type": "icon",
+                  "id": "P37AJ",
+                  "name": "Батарея",
+                  "width": 14,
+                  "height": 14,
+                  "icon": "battery-medium",
+                  "library": "lucide",
+                  "fill": "$text"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "dxHuR",
+          "name": "Заголовок карточки",
+          "width": "fill_container",
+          "height": 58,
+          "stroke": "$line",
+          "strokeWidth": {
+            "bottom": 1
+          },
+          "gap": 10,
+          "padding": [
+            8,
+            12
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "cZesU",
+              "name": "Назад",
+              "width": 42,
+              "height": 42,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "RAzxc",
+                  "name": "Иконка назад",
+                  "width": 22,
+                  "height": 22,
+                  "icon": "arrow-left",
+                  "library": "lucide",
+                  "fill": "$text"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "KhnZp",
+              "name": "Заголовок",
+              "fill": "$text",
+              "content": "Тренер",
+              "fontFamily": "$font-display",
+              "fontSize": 23,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "p72m5R",
+          "name": "Содержимое карточки",
+          "width": "fill_container",
+          "height": "fill_container",
+          "layout": "vertical",
+          "gap": 16,
+          "padding": [
+            14,
+            16,
+            8,
+            16
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "YADyx",
+              "name": "Профиль тренера",
+              "width": "fill_container",
+              "height": 150,
+              "gap": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "j3X8W",
+                  "name": "Фото Святослава",
+                  "width": 112,
+                  "height": 150,
+                  "fill": "$surface",
+                  "cornerRadius": 6,
+                  "layout": "vertical",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "QE1jq",
+                      "name": "Инициалы Святослава",
+                      "fill": "$text",
+                      "content": "СФ",
+                      "fontFamily": "$font-display",
+                      "fontSize": 34,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "JrWuh",
+                  "name": "Основные данные тренера",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 7,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "dllp7",
+                      "name": "Имя тренера",
+                      "fill": "$text",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Святослав\nФедосов",
+                      "lineHeight": 1.05,
+                      "fontFamily": "$font-display",
+                      "fontSize": 27,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "vG1cT",
+                      "name": "Должность",
+                      "fill": "$muted",
+                      "content": "Старший тренер",
+                      "fontFamily": "$font-body",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "utUXL",
+                      "name": "Рейтинг тренера",
+                      "gap": 5,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "IoevN",
+                          "name": "Звезда рейтинга",
+                          "width": 14,
+                          "height": 14,
+                          "icon": "star",
+                          "library": "lucide",
+                          "fill": "$accent"
+                        },
+                        {
+                          "type": "text",
+                          "id": "VZN1B",
+                          "name": "Значение рейтинга",
+                          "fill": "$text",
+                          "content": "5,0 · 1 отзыв",
+                          "fontFamily": "$font-body",
+                          "fontSize": 11,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "bnVCL",
+                      "name": "Специализация",
+                      "fill": "$text",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "CrossFit · Гимнастика\nСиловая подготовка",
+                      "lineHeight": 1.35,
+                      "fontFamily": "$font-body",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "ASeqW",
+              "name": "Ближайшие занятия",
+              "width": "fill_container",
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ME9wD",
+                  "name": "Заголовок ближайших занятий",
+                  "width": "fill_container",
+                  "height": 34,
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "J7yVam",
+                      "name": "Ближайшие занятия — заголовок",
+                      "fill": "$text",
+                      "content": "Ближайшие занятия",
+                      "fontFamily": "$font-body",
+                      "fontSize": 16,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "F6WZn",
+                      "name": "Все занятия",
+                      "fill": "$accent",
+                      "content": "Все занятия",
+                      "fontFamily": "$font-body",
+                      "fontSize": 11,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "H03oD",
+                  "name": "Занятие — CrossFit 19:00",
+                  "width": "fill_container",
+                  "height": 76,
+                  "stroke": "$line",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 12,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "zSbSS",
+                      "name": "Время — CrossFit 19:00",
+                      "width": 64,
+                      "layout": "vertical",
+                      "gap": 3,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "vEHfv",
+                          "name": "День — CrossFit 19:00",
+                          "fill": "$muted",
+                          "content": "СЕГОДНЯ",
+                          "fontFamily": "$font-body",
+                          "fontSize": 9,
+                          "fontWeight": "700",
+                          "letterSpacing": 0.8
+                        },
+                        {
+                          "type": "text",
+                          "id": "i4Olg",
+                          "name": "Часы — CrossFit 19:00",
+                          "fill": "$text",
+                          "content": "19:00",
+                          "fontFamily": "$font-display",
+                          "fontSize": 23,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ngje8",
+                      "name": "Данные занятия — CrossFit 19:00",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "oZvid",
+                          "name": "Название занятия — CrossFit 19:00",
+                          "fill": "$text",
+                          "content": "CrossFit",
+                          "fontFamily": "$font-body",
+                          "fontSize": 13,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "text",
+                          "id": "kwcse",
+                          "name": "Места — CrossFit 19:00",
+                          "fill": "$muted",
+                          "content": "6 свободно из 20",
+                          "fontFamily": "$font-body",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "rcdGv",
+                      "name": "Записаться — CrossFit 19:00",
+                      "width": 86,
+                      "height": 36,
+                      "fill": "$accent",
+                      "cornerRadius": 5,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "zYzYo",
+                          "name": "Текст кнопки — CrossFit 19:00",
+                          "fill": "#050505",
+                          "content": "Записаться",
+                          "fontFamily": "$font-body",
+                          "fontSize": 11,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f9CrD",
+                  "name": "Занятие — Гимнастика 07:30",
+                  "width": "fill_container",
+                  "height": 76,
+                  "stroke": "$line",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 12,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "W9Ps2",
+                      "name": "Время — Гимнастика 07:30",
+                      "width": 64,
+                      "layout": "vertical",
+                      "gap": 3,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "U6HvBj",
+                          "name": "День — Гимнастика 07:30",
+                          "fill": "$muted",
+                          "content": "ЗАВТРА",
+                          "fontFamily": "$font-body",
+                          "fontSize": 9,
+                          "fontWeight": "700",
+                          "letterSpacing": 0.8
+                        },
+                        {
+                          "type": "text",
+                          "id": "K5nUqf",
+                          "name": "Часы — Гимнастика 07:30",
+                          "fill": "$text",
+                          "content": "07:30",
+                          "fontFamily": "$font-display",
+                          "fontSize": 23,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ok9YO",
+                      "name": "Данные занятия — Гимнастика 07:30",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "aC7ou",
+                          "name": "Название занятия — Гимнастика 07:30",
+                          "fill": "$text",
+                          "content": "Гимнастика",
+                          "fontFamily": "$font-body",
+                          "fontSize": 13,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "text",
+                          "id": "IyovO",
+                          "name": "Места — Гимнастика 07:30",
+                          "fill": "$muted",
+                          "content": "12 свободно из 20",
+                          "fontFamily": "$font-body",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "PB1In",
+                      "name": "Записаться — Гимнастика 07:30",
+                      "width": 86,
+                      "height": 36,
+                      "fill": "$accent",
+                      "cornerRadius": 5,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "WYHEj",
+                          "name": "Текст кнопки — Гимнастика 07:30",
+                          "fill": "#050505",
+                          "content": "Записаться",
+                          "fontFamily": "$font-body",
+                          "fontSize": 11,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "t7sA2",
+              "name": "О тренере",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 7,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "r0cjQ1",
+                  "name": "О тренере — заголовок",
+                  "fill": "$text",
+                  "content": "О тренере",
+                  "fontFamily": "$font-body",
+                  "fontSize": 16,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "boXPd",
+                  "name": "Биография тренера",
+                  "fill": "$muted",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Помогаю освоить технику и уверенно прогрессировать — от первого занятия до соревновательных целей.",
+                  "lineHeight": 1.45,
+                  "fontFamily": "$font-body",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "zfWUw",
+              "name": "Последний отзыв",
+              "width": "fill_container",
+              "fill": "$surface",
+              "cornerRadius": 6,
+              "layout": "vertical",
+              "gap": 6,
+              "padding": [
+                10,
+                12
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ut0Gq",
+                  "name": "Автор и оценка",
+                  "width": "fill_container",
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "M4hwcD",
+                      "name": "Автор отзыва",
+                      "fill": "$text",
+                      "content": "Анна",
+                      "fontFamily": "$font-body",
+                      "fontSize": 11,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "tMyF4",
+                      "name": "Оценка отзыва",
+                      "fill": "$accent",
+                      "content": "★★★★★",
+                      "fontFamily": "$font-body",
+                      "fontSize": 11,
+                      "fontWeight": "normal",
+                      "letterSpacing": 1
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "Cz0z6",
+                  "name": "Текст отзыва",
+                  "fill": "$muted",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Всегда понятно объясняет технику и помогает подобрать нагрузку.",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-body",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "pwqHQ",
+          "name": "Нижняя навигация",
+          "width": "fill_container",
+          "height": 78,
+          "fill": "$surface",
+          "stroke": "$line",
+          "strokeWidth": {
+            "top": 1
+          },
+          "padding": [
+            8,
+            10,
+            10,
+            10
+          ],
+          "justifyContent": "space_around",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "EMjak",
+              "name": "Навигация — Главная",
+              "width": 82,
+              "height": 54,
+              "layout": "vertical",
+              "gap": 4,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "JocJq",
+                  "name": "Иконка — Главная",
+                  "width": 21,
+                  "height": 21,
+                  "icon": "house",
+                  "library": "lucide",
+                  "fill": "$muted"
+                },
+                {
+                  "type": "text",
+                  "id": "K8NTXn",
+                  "name": "Подпись — Главная",
+                  "fill": "$muted",
+                  "content": "Главная",
+                  "fontFamily": "$font-body",
+                  "fontSize": 10,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Ajnjq",
+              "name": "Навигация — Расписание",
+              "width": 82,
+              "height": 54,
+              "layout": "vertical",
+              "gap": 4,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "r9sDU",
+                  "name": "Иконка — Расписание",
+                  "width": 21,
+                  "height": 21,
+                  "icon": "calendar-days",
+                  "library": "lucide",
+                  "fill": "$muted"
+                },
+                {
+                  "type": "text",
+                  "id": "vpWAz",
+                  "name": "Подпись — Расписание",
+                  "fill": "$muted",
+                  "content": "Расписание",
+                  "fontFamily": "$font-body",
+                  "fontSize": 10,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "QgOW9",
+              "name": "Навигация — Тренеры",
+              "width": 82,
+              "height": 54,
+              "layout": "vertical",
+              "gap": 4,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "njVkU",
+                  "name": "Иконка — Тренеры",
+                  "width": 21,
+                  "height": 21,
+                  "icon": "dumbbell",
+                  "library": "lucide",
+                  "fill": "$accent"
+                },
+                {
+                  "type": "text",
+                  "id": "MFkGD",
+                  "name": "Подпись — Тренеры",
+                  "fill": "$accent",
+                  "content": "Тренеры",
+                  "fontFamily": "$font-body",
+                  "fontSize": 10,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Ak79v",
+              "name": "Навигация — Профиль",
+              "width": 82,
+              "height": 54,
+              "layout": "vertical",
+              "gap": 4,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "fodUs",
+                  "name": "Иконка — Профиль",
+                  "width": 21,
+                  "height": 21,
+                  "icon": "user-round",
+                  "library": "lucide",
+                  "fill": "$muted"
+                },
+                {
+                  "type": "text",
+                  "id": "F18edz",
+                  "name": "Подпись — Профиль",
+                  "fill": "$muted",
+                  "content": "Профиль",
+                  "fontFamily": "$font-body",
+                  "fontSize": 10,
+                  "fontWeight": "500"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "h5j9X1",
+      "x": 2190,
+      "y": 0,
+      "name": "Авторизация клиента — проверка",
+      "clip": true,
+      "width": 390,
+      "height": 844,
+      "fill": "#11110F",
+      "layout": "vertical",
+      "padding": [
+        34,
+        24,
+        30,
+        24
+      ],
+      "justifyContent": "space_between",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "frame",
+          "id": "Jq8FC",
+          "name": "Верхняя марка",
+          "width": "fill_container",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "bEmhr",
+              "name": "Название HardZone",
+              "fill": "#F8F7F2",
+              "content": "HARDZONE",
+              "fontFamily": "Oswald",
+              "fontSize": 22,
+              "fontWeight": "700",
+              "letterSpacing": 0.6
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "mJFGh",
+          "name": "Проверка профиля",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 22,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "iK53o",
+              "name": "Контейнер иконки",
+              "width": 88,
+              "height": 88,
+              "fill": "#1A1A17",
+              "cornerRadius": 44,
+              "stroke": "#F8F830",
+              "strokeWidth": 1.5,
+              "layout": "vertical",
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "QDTbh",
+                  "name": "Иконка профиля",
+                  "width": 38,
+                  "height": 38,
+                  "icon": "user-round-check",
+                  "library": "lucide",
+                  "fill": "#F8F830"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "bbxav",
+              "name": "Текст авторизации",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "nfxHL",
+                  "name": "Заголовок авторизации",
+                  "fill": "#F8F7F2",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "ПРОВЕРЯЕМ ВАШ ПРОФИЛЬ",
+                  "lineHeight": 1.05,
+                  "textAlign": "center",
+                  "fontFamily": "Oswald",
+                  "fontSize": 30,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "ZWyj3",
+                  "name": "Описание авторизации",
+                  "fill": "#999991",
+                  "textGrowth": "fixed-width",
+                  "width": 304,
+                  "content": "Сопоставляем Telegram с вашей карточкой клиента HardZone",
+                  "lineHeight": 1.45,
+                  "textAlign": "center",
+                  "fontFamily": "Inter",
+                  "fontSize": 14
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "ti71R",
+              "name": "Индикатор проверки",
+              "gap": 7,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "gs0XX",
+                  "name": "Активная точка",
+                  "fill": "#F8F830",
+                  "width": 7,
+                  "height": 7
+                },
+                {
+                  "type": "ellipse",
+                  "id": "U0Tbs",
+                  "name": "Средняя точка",
+                  "fill": "#5C5C56",
+                  "width": 7,
+                  "height": 7
+                },
+                {
+                  "type": "ellipse",
+                  "id": "lNFv4",
+                  "name": "Последняя точка",
+                  "fill": "#33332F",
+                  "width": 7,
+                  "height": 7
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "lHLma",
+          "name": "Нижняя подсказка",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 7,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "icon",
+              "id": "w6Ogu",
+              "name": "Иконка защиты",
+              "width": 16,
+              "height": 16,
+              "icon": "shield-check",
+              "library": "lucide",
+              "fill": "#777770"
+            },
+            {
+              "type": "text",
+              "id": "lElD0",
+              "name": "Подсказка безопасности",
+              "fill": "#777770",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "Вход выполняется автоматически через Telegram",
+              "textAlign": "center",
+              "fontFamily": "Inter",
+              "fontSize": 12
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variables": {
+    "bg": {
+      "type": "color",
+      "value": "#050505"
+    },
+    "surface": {
+      "type": "color",
+      "value": "#0A0A0A"
+    },
+    "line": {
+      "type": "color",
+      "value": "#242424"
+    },
+    "text": {
+      "type": "color",
+      "value": "#F4F4F2"
+    },
+    "muted": {
+      "type": "color",
+      "value": "#9B9B96"
+    },
+    "accent": {
+      "type": "color",
+      "value": "#F8F830"
+    },
+    "font-display": {
+      "type": "string",
+      "value": "Oswald"
+    },
+    "font-body": {
+      "type": "string",
+      "value": "Inter"
+    },
+    "card-border": {
+      "type": "color",
+      "value": "#292C2E"
+    },
+    "card-hi": {
+      "type": "color",
+      "value": "#1A1D1F"
+    },
+    "card-lo": {
+      "type": "color",
+      "value": "#0B0D0E"
+    },
+    "radius-card": {
+      "type": "number",
+      "value": 13
+    }
+  },
+  "fileToken": "5a939d73-c058-4fb5-8c62-5dfba19c66df"
+}
