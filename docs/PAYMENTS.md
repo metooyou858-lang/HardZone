@@ -133,3 +133,11 @@ Because backend tests require PostgreSQL, run them through the remote isolated d
 ```powershell
 .\scripts\test-backend-remote.ps1
 ```
+
+## AQSI Webhook Security
+
+- `POST /api/webhooks/aqsi` не доверяет полю `status` входящего запроса.
+- Webhook извлекает только идентификатор заказа и запускает существующий `syncOrderWithAqsi`.
+- Подтверждение заказа возможно только после самостоятельного запроса backend к AQSI и проверки оплаченного статуса.
+- Полный payload webhook не записывается в отдельный неограниченный файл; в общий структурированный лог попадают только идентификатор заказа и результат сверки.
+- Ошибка или недоступность AQSI не подтверждает оплату.

@@ -811,7 +811,7 @@ async function linkClientByPhone(telegramId, phone, telegramUser = null) {
 
   const { rows } = await query(
     `
-      SELECT id, photo_url
+      SELECT id, photo_url, telegram_id
       FROM clients
       WHERE phone_normalized = $1
         AND status <> 'inactive'
@@ -829,11 +829,15 @@ async function linkClientByPhone(telegramId, phone, telegramUser = null) {
   }
 
   const matchedClientId = rows[0].id;
+  if (rows[0].telegram_id && String(rows[0].telegram_id) !== String(telegramId)) {
+    return { status: 'already_linked', phone_normalized: phoneNormalized, matched_client_id: matchedClientId };
+  }
+
   const telegramPhotoUrl = normalizeOptionalText(rows[0].photo_url, 2048)
     ? null
     : await saveTelegramPhotoToClientUploads(telegramUser);
 
-  await query(
+  const { rows: linkedRows } = await query(
     `
       UPDATE clients
       SET telegram_id = $1,
@@ -842,9 +846,15 @@ async function linkClientByPhone(telegramId, phone, telegramUser = null) {
           photo_url = COALESCE(NULLIF(photo_url, ''), $4),
           updated_at = NOW()
       WHERE id = $5
+        AND (telegram_id IS NULL OR telegram_id = $1)
+      RETURNING id
     `,
     [String(telegramId), phone, phoneNormalized, telegramPhotoUrl, matchedClientId]
   );
+
+  if (!linkedRows[0]) {
+    return { status: 'already_linked', phone_normalized: phoneNormalized, matched_client_id: matchedClientId };
+  }
 
   return {
     status: 'linked',
@@ -854,7 +864,7 @@ async function linkClientByPhone(telegramId, phone, telegramUser = null) {
   };
 }
 
-async function createAndLinkClientByPhone(telegramUser, phone) {
+async function createAndLinkClientByVerifiedContact(telegramUser, phone) {
   const phoneNormalized = normalizePhone(phone);
 
   if (!phoneNormalized) {
@@ -1257,55 +1267,11 @@ router.post('/client-miniapp-login', async (req, res) => {
   }
 });
 
-router.post('/client-miniapp-link-phone', async (req, res) => {
-  try {
-    const clientBotToken = getClientBotToken();
-    if (!clientBotToken) {
-      return res.status(503).json({ success: false, error: 'Telegram client bot token is not configured' });
-    }
-
-    const telegramUser = parseTelegramInitData(req.body?.init_data, clientBotToken);
-    if (!telegramUser?.id) {
-      return res.status(401).json({ success: false, error: 'Telegram авторизация недействительна' });
-    }
-
-    const result = await createAndLinkClientByPhone(telegramUser, req.body?.phone);
-    if (result.status === 'invalid_phone') {
-      await logClientMiniAppAuthAttempt({
-        action: 'link_phone',
-        status: 'invalid_phone',
-        telegramUser,
-        errorCode: 'invalid_phone',
-      });
-      return res.status(422).json({ success: false, error: 'Укажите корректный номер телефона' });
-    }
-
-    if (result.status === 'duplicate') {
-      await logClientMiniAppAuthAttempt({
-        action: 'link_phone',
-        status: 'duplicate',
-        telegramUser,
-        phoneNormalized: result.phone_normalized,
-        errorCode: 'client_phone_duplicate',
-      });
-      return res.status(409).json({
-        success: false,
-        error: 'В CRM найдено несколько клиентов с таким номером. Обратитесь к администратору.',
-      });
-    }
-
-    await logClientMiniAppAuthAttempt({
-      action: 'link_phone',
-      status: result.status === 'created' ? 'created' : 'linked',
-      telegramUser,
-      phoneNormalized: result.phone_normalized,
-      matchedClientId: result.matched_client_id,
-    });
-
-    return res.json({ success: true, data: result.data });
-  } catch (error) {
-    return sendInternalError(res, error, { route: 'telegram.client_miniapp_link_phone' });
-  }
+router.post('/client-miniapp-link-phone', (_req, res) => {
+  return res.status(410).json({
+    success: false,
+    error: 'Привязка по ручному вводу телефона отключена. Подтвердите свой номер кнопкой в чат-боте HardZone.',
+  });
 });
 
 router.post('/client-miniapp-book', async (req, res) => {
@@ -1521,7 +1487,7 @@ router.post('/webhook/:secret', async (req, res) => {
 });
 
 router.findClientByTelegramId = findClientByTelegramId;
-router.createAndLinkClientByPhone = createAndLinkClientByPhone;
+router.createAndLinkClientByVerifiedContact = createAndLinkClientByVerifiedContact;
 router.buildClientMiniAppPayload = buildClientMiniAppPayload;
 router.bookClientSlot = bookClientSlot;
 router.cancelClientBooking = cancelClientBooking;

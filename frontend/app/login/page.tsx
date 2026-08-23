@@ -4,6 +4,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
+
+import { getSafeNextPath } from "@/lib/safe-next-path";
 import styles from "../auth.module.css";
 
 export default function LoginPage() {
@@ -28,7 +30,7 @@ export default function LoginPage() {
       const data = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(data.error || "Не удалось выполнить вход");
 
-      const nextPath = new URLSearchParams(window.location.search).get("next") || "/";
+      const nextPath = getSafeNextPath(new URLSearchParams(window.location.search).get("next"));
       router.replace(nextPath);
       router.refresh();
     } catch (submissionError) {

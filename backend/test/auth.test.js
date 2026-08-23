@@ -10,6 +10,7 @@ const assert = require('node:assert/strict');
 const { after, before, test } = require('node:test');
 
 const app = require('../src/app');
+const telegramRouter = require('../src/routes/telegram');
 const { pool, query } = require('../src/db');
 const { hashPassword } = require('../src/utils/passwords');
 const { createResetToken, hashResetToken } = require('../src/utils/reset-tokens');
@@ -567,6 +568,51 @@ test('disabled telegram mini app phone link does not disclose phone matches', as
   }
 });
 
+test('client mini app phone link is disabled in favor of verified bot contact', async () => {
+  const result = await request('/api/telegram/client-miniapp-link-phone', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      init_data: 'untrusted',
+      phone: '+7 999 000-00-00',
+    }),
+  });
+
+  assert.equal(result.response.status, 410);
+  assert.equal(result.body.success, false);
+});
+
+test('verified client contact cannot replace an existing Telegram link', async () => {
+  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const phoneNormalized = `79${String(Date.now()).slice(-9)}`;
+  const phone = `+${phoneNormalized}`;
+  const { rows } = await query(
+    `
+      INSERT INTO clients (first_name, last_name, phone, phone_normalized, telegram_id, barcode)
+      VALUES ('CI', 'Linked Client', $1, $2, '111222333', $3)
+      RETURNING id
+    `,
+    [phone, phoneNormalized, `ci-sec-${suffix}`]
+  );
+
+  try {
+    const result = await telegramRouter.createAndLinkClientByVerifiedContact(
+      { id: 999888777 },
+      phone
+    );
+
+    assert.equal(result.status, 'already_linked');
+
+    const { rows: linkedRows } = await query(
+      'SELECT telegram_id FROM clients WHERE id = $1',
+      [rows[0].id]
+    );
+    assert.equal(linkedRows[0].telegram_id, '111222333');
+  } finally {
+    await query('DELETE FROM clients WHERE id = $1', [rows[0].id]);
+  }
+});
+
 test('staff read API returns telegram-ready payloads for authorized staff', async () => {
   const staffUser = await createUser();
 
@@ -887,6 +933,44 @@ test('staff without client sub-permissions cannot create, edit, or import client
     headers: { 'x-hardzone-session': createSessionToken(sessionUser) },
   });
   assert.equal(importClients.response.status, 403);
+});
+
+test('staff with read-only clients access cannot mutate subscriptions by direct request', async () => {
+  const staffUser = await createUser({
+    module_revokes: ['clients_update'],
+  });
+
+  const sessionUser = {
+    id: Number(staffUser.id),
+    name: staffUser.name,
+    username: staffUser.username,
+    role: staffUser.role,
+  };
+  const headers = {
+    'content-type': 'application/json',
+    'x-hardzone-session': createSessionToken(sessionUser),
+  };
+
+  const createSubscription = await request('/api/subscriptions', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ client_id: 1, type: 'visits', visits_total: 8 }),
+  });
+  assert.equal(createSubscription.response.status, 403);
+
+  const freezeSubscription = await request('/api/subscriptions/1/freeze', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ reason: 'ci-security-check' }),
+  });
+  assert.equal(freezeSubscription.response.status, 403);
+
+  const unfreezeSubscription = await request('/api/subscriptions/1/unfreeze', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({}),
+  });
+  assert.equal(unfreezeSubscription.response.status, 403);
 });
 
 test('staff without schedule cannot use staff schedule endpoints by direct request', async () => {

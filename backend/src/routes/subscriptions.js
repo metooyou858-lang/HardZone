@@ -384,7 +384,7 @@ router.post('/legacy-manual', requireLegacySubscriptions, async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireClientsUpdate, async (req, res) => {
   try {
     const { client_id, type, visits_total, started_at, expires_at, order_id } = req.body;
 
@@ -650,7 +650,7 @@ router.post('/:id/sync-product-params', requireClientsUpdate, async (req, res) =
   }
 });
 
-router.post('/:id/freeze', async (req, res) => {
+router.post('/:id/freeze', requireClientsUpdate, async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -693,7 +693,7 @@ router.post('/:id/freeze', async (req, res) => {
   }
 });
 
-router.post('/:id/unfreeze', async (req, res) => {
+router.post('/:id/unfreeze', requireClientsUpdate, async (req, res) => {
   const client = await pool.connect();
 
   try {

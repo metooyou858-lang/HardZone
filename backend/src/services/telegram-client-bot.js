@@ -884,7 +884,7 @@ async function handleClientMessage(message) {
       return;
     }
 
-    const result = await telegramRoute.createAndLinkClientByPhone(telegramUser, contact.phone_number);
+    const result = await telegramRoute.createAndLinkClientByVerifiedContact(telegramUser, contact.phone_number);
     if (result.status === 'invalid_phone') {
       await sendClientMessage(chatId, 'Не удалось распознать номер телефона. Попробуйте ещё раз.', buildClientPhoneKeyboard());
       return;
@@ -894,6 +894,14 @@ async function handleClientMessage(message) {
       await sendClientMessage(
         chatId,
         'В CRM найдено несколько клиентов с таким номером. Обратитесь к администратору HardZone.'
+      );
+      return;
+    }
+
+    if (result.status === 'already_linked') {
+      await sendClientMessage(
+        chatId,
+        'Этот клиент уже привязан к другому Telegram. Для смены привязки обратитесь к администратору HardZone.'
       );
       return;
     }

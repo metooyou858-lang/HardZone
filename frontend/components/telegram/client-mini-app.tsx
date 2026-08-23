@@ -1,11 +1,10 @@
 "use client";
 
-import { type FormEvent, type RefObject, useEffect, useRef, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 
 import {
   bookClientMiniAppSlot,
   cancelClientMiniAppBooking,
-  linkClientMiniAppPhone,
   loginClientMiniApp,
   reviewClientMiniAppTrainer,
   saveClientMiniAppAthleteProfile,
@@ -39,7 +38,7 @@ declare global {
 }
 
 type ClientTab = "home" | "schedule" | "trainers" | "profile" | "visits";
-type AuthMode = "checking" | "linked" | "phone" | "telegram";
+type AuthMode = "checking" | "linked" | "contact" | "telegram";
 
 function getTelegramStableViewportHeight() {
   if (typeof window === "undefined") return null;
@@ -225,7 +224,10 @@ function subscriptionMeta(subscription: ClientMiniAppSubscription | null) {
   if (subscription.status === "exhausted") return "Посещения закончились";
   if (subscription.status === "frozen") return "Заморожен";
   if (subscription.type === "visits" || subscription.type === "single") {
-    return subscription.visits_left === null ? "Посещения не ограничены" : `Осталось ${subscription.visits_left}`;
+    const visitsLeft = subscription.visits_left === null ? "Посещения не ограничены" : `Осталось ${subscription.visits_left}`;
+    return subscription.expires_at
+      ? `${visitsLeft} · до ${formatDate(subscription.expires_at.slice(0, 10))}`
+      : visitsLeft;
   }
   return subscription.expires_at ? `Действует до ${formatDate(subscription.expires_at.slice(0, 10))}` : "Активен";
 }
@@ -1548,22 +1550,16 @@ function ProfileScreen({
 
 function ClientAuthScreen({
   mode,
-  phone,
   error,
-  loading,
   viewportHeight,
-  onPhoneChange,
-  onSubmit,
+  onReturnToBot,
 }: {
   mode: AuthMode;
-  phone: string;
   error: string;
-  loading: boolean;
   viewportHeight: number | null;
-  onPhoneChange: (value: string) => void;
-  onSubmit: () => void;
+  onReturnToBot: () => void;
 }) {
-  const canEnterPhone = mode === "phone";
+  const needsContact = mode === "contact";
 
   return (
     <main
@@ -1576,35 +1572,19 @@ function ClientAuthScreen({
         </p>
         <h1 className="mt-2 text-xl font-medium leading-tight text-[var(--text-main)]">Вход клиента</h1>
         <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
-          {canEnterPhone
-            ? "Введите телефон для входа или регистрации."
+          {needsContact
+            ? "Для безопасной привязки вернитесь в бот и нажмите «Поделиться телефоном». Telegram передаст только ваш подтверждённый номер."
             : "Откройте это приложение из Telegram, чтобы мы получили защищённые данные запуска."}
         </p>
 
-        {canEnterPhone ? (
-          <form
-            className="mt-5 space-y-3"
-            onSubmit={(event: FormEvent<HTMLFormElement>) => {
-              event.preventDefault();
-              onSubmit();
-            }}
+        {needsContact ? (
+          <button
+            type="button"
+            onClick={onReturnToBot}
+            className="mt-5 h-12 w-full rounded-lg bg-[var(--accent)] text-sm font-medium text-[var(--text-inverse)]"
           >
-            <input
-              value={phone}
-              onChange={(event) => onPhoneChange(event.target.value)}
-              inputMode="tel"
-              autoComplete="tel"
-              placeholder="+7 999 000-00-00"
-              className="h-12 w-full rounded-lg border border-[var(--line-soft)] bg-[rgba(255,255,255,0.04)] px-3 text-base text-[var(--text-main)] outline-none focus:border-[var(--accent)]"
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="h-12 w-full rounded-lg bg-[var(--accent)] text-sm font-medium text-[var(--text-inverse)] disabled:opacity-60"
-            >
-              {loading ? "Проверяем..." : "Продолжить"}
-            </button>
-          </form>
+            Вернуться в бот
+          </button>
         ) : null}
 
         {error ? (
@@ -1642,9 +1622,7 @@ export function ClientMiniApp() {
   const [activeTab, setActiveTab] = useState<ClientTab>("home");
   const [authMode, setAuthMode] = useState<AuthMode>("checking");
   const [initData, setInitData] = useState("");
-  const [phone, setPhone] = useState("");
   const [authError, setAuthError] = useState("");
-  const [authLoading, setAuthLoading] = useState(false);
   const [data, setData] = useState<ClientMiniAppPayload | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
@@ -1687,7 +1665,7 @@ export function ClientMiniApp() {
       const message = error instanceof Error ? error.message : "";
       if (message.includes("не привязан")) {
         setData(null);
-        setAuthMode("phone");
+        setAuthMode("contact");
         setAuthError("");
         return;
       }
@@ -1695,22 +1673,6 @@ export function ClientMiniApp() {
       setData(null);
       setAuthMode("telegram");
       setAuthError(error instanceof Error ? error.message : "Не удалось войти через Telegram");
-    }
-  }
-
-  async function linkPhone() {
-    setAuthLoading(true);
-    setAuthError("");
-
-    try {
-      const payload = await linkClientMiniAppPhone(initData, phone);
-      applyClientPayload(payload);
-      setPhone("");
-      setAuthMode("linked");
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "Не удалось привязать Telegram по телефону");
-    } finally {
-      setAuthLoading(false);
     }
   }
 
@@ -1771,16 +1733,13 @@ export function ClientMiniApp() {
     return <ClientLoadingScreen viewportHeight={viewportHeight} />;
   }
 
-  if (authMode === "phone" || authMode === "telegram") {
+  if (authMode === "contact" || authMode === "telegram") {
     return (
       <ClientAuthScreen
         mode={authMode}
-        phone={phone}
         error={authError}
-        loading={authLoading}
         viewportHeight={viewportHeight}
-        onPhoneChange={setPhone}
-        onSubmit={() => void linkPhone()}
+        onReturnToBot={() => (window.Telegram?.WebApp as { close?: () => void } | undefined)?.close?.()}
       />
     );
   }
