@@ -28,9 +28,23 @@ async function poll() {
     return;
   }
 
-  await telegramClientRequest('deleteWebhook', { drop_pending_updates: false }, { timeoutMs: 15000 });
-  await configureClientMenuButton();
-  logger.info('telegram_client', { action: 'poller_started' });
+  while (!stopped) {
+    try {
+      await telegramClientRequest('deleteWebhook', { drop_pending_updates: false }, { timeoutMs: 15000 });
+      await configureClientMenuButton();
+      logger.info('telegram_client', { action: 'poller_started' });
+      break;
+    } catch (error) {
+      logger.error('telegram_client', {
+        action: 'poll_setup_failed',
+        message: error.message,
+        stack: error.stack,
+      });
+      await sleep(5000);
+    }
+  }
+
+  if (stopped) return;
 
   let offset;
   while (!stopped) {
