@@ -24,6 +24,7 @@ const {
 
 const CLUB_TIME_ZONE = process.env.APP_TIMEZONE || 'Asia/Vladivostok';
 const TELEGRAM_API_BASE = process.env.TELEGRAM_API_BASE || 'https://api.telegram.org/bot';
+const TELEGRAM_RELAY_SECRET = String(process.env.TELEGRAM_RELAY_SECRET || '').trim();
 const MENU_BUTTONS = {
   schedule: '📅 Расписание',
   account: '👤 Личный кабинет',
@@ -173,7 +174,10 @@ async function telegramRequest(method, payload, options = {}) {
   const timeoutMs = options.timeoutMs || 30000;
   const response = await fetch(`${TELEGRAM_API_BASE}${token}/${method}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...(TELEGRAM_RELAY_SECRET ? { 'x-hardzone-telegram-relay': TELEGRAM_RELAY_SECRET } : {}),
+    },
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(timeoutMs),
   });

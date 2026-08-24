@@ -63,3 +63,5 @@
 - Создание, изменение, заморозка и разморозка абонементов требуют `clients_update`; базовое право `clients` остаётся доступом только на чтение.
 - Backend-тесты запускать только по `backend/test/*.test.js`: общий `node --test` ошибочно подхватывает production-файл `src/test-client-miniapp-server.js` и пытается занять порт 3002.
 - Telegram poller должен повторять начальную настройку `deleteWebhook`/menu при сетевой ошибке: bootstrap вне retry-цикла превращает временную недоступность Telegram API в PM2 crash-loop после рестарта.
+- При недоступности Telegram API с production VPS использовать только изолированный relay с `TELEGRAM_API_BASE` и секретным заголовком; не направлять через прокси CRM/AQSI и не возвращать ручную привязку клиента по номеру.
+- Изолированный прогон deployed backend выявляет отдельную регрессию отмены записи: после `/api/staff/bookings/:id/cancel` `schedule_slots.booked_count` может остаться `1`; это не связано с Telegram relay и требует отдельного исправления.
