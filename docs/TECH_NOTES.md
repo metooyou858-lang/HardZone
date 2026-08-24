@@ -77,6 +77,12 @@
 - Показывает uptime backend, статус БД, проблемные заказы, последние ERROR-события.
 - Буфер ошибок живет в памяти backend (`logger.js -> recentErrors[]`) и сбрасывается при рестарте.
 
+## Telegram Bot API transport
+
+Production VPS может сохранять доступ к обычным HTTPS-сайтам, но терять TCP-маршрут до адресов Telegram API. В этом случае staff- и client-поллеры используют изолированный Cloudflare Worker `hardzone-telegram-relay` как исходящий транспорт. Relay принимает только `POST /bot{token}/{method}`, скрывает маршрут без общего секрета и не проксирует CRM, AQSI, PostgreSQL или Mini App.
+
+Worker обязан буферизовать входящее тело через `request.arrayBuffer()` до upstream-запроса. Потоковая передача `request.body` оставляла пустой `getUpdates` незавершённым и вызывала циклические тайм-ауты поллера. Полный контракт, команды и приёмка находятся в `docs/TELEGRAM_RELAY.md`.
+
 ## URL и штрихкоды
 
 Символ `%` в URL ломает barcode lookup. Перед запросом к API штрихкод нужно нормализовать/кодировать.

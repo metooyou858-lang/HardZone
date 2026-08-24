@@ -143,10 +143,11 @@ TELEGRAM_POLLING_ENABLED=true
 
 The client bot opens the Mini App at `/telegram/client`.
 
-After changing Telegram env values, restart backend with updated PM2 env:
+After changing Telegram env values, restart both Telegram pollers with updated PM2 env. Backend restart is not required when only poller transport variables changed:
 
 ```powershell
-ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "su - app -c 'pm2 restart inventory-backend --update-env'"
+ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "sudo -u app env PM2_HOME=/home/app/.pm2 pm2 restart hardzone-telegram-poller hardzone-telegram-client-poller --update-env"
+ssh -i "$HOME\.ssh\hardzone_deploy" root@79.137.162.55 "sudo -u app env PM2_HOME=/home/app/.pm2 pm2 save"
 ```
 
 Staff access is controlled by `users.telegram_id` plus the existing CRM modules:
