@@ -30,6 +30,8 @@ TELEGRAM_CLIENT_BOT_TOKEN=<test-token>
 TELEGRAM_CLIENT_MINIAPP_URL=https://hardzone.space/telegram/test-client
 TELEGRAM_ENABLED=true
 TELEGRAM_POLLING_ENABLED=true
+TELEGRAM_API_BASE=https://hardzone-telegram-relay.metooyou-858.workers.dev/bot
+TELEGRAM_RELAY_SECRET=<shared-relay-secret>
 ```
 
 Тестовый API и frontend:
@@ -41,6 +43,8 @@ TELEGRAM_TEST_ASSET_PREFIX=/telegram-test-assets
 ```
 
 Тестовый токен нельзя подставлять в основной процесс, а основной токен — в тестовый процесс.
+
+Тестовый bot-процесс читает relay-настройки при старте. После изменения `TELEGRAM_API_BASE` или `TELEGRAM_RELAY_SECRET` его нужно отдельно перезапустить с актуальным окружением; статус PM2 `online` сам по себе не доказывает, что polling соединён с Telegram.
 
 ## Серверные процессы
 

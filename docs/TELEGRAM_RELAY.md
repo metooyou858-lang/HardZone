@@ -38,10 +38,11 @@ npx wrangler secret put RELAY_SECRET
 
 Для Wrangler достаточно OAuth-разрешений `account:read`, `user:read` и `workers_scripts:write`. Не выдавать ему доступ к DNS, D1, KV, Pages, AI и другим сервисам, которые relay не использует.
 
-После изменения production env или кода Telegram-сервисов перезапускать только два poller-процесса:
+После изменения production env или кода Telegram-сервисов перезапускать все активные poller-процессы. Если изолированный тестовый бот развёрнут, он также должен подхватить relay-настройки:
 
 ```bash
 sudo -u app env PM2_HOME=/home/app/.pm2 pm2 restart hardzone-telegram-poller hardzone-telegram-client-poller --update-env
+sudo -u app env PM2_HOME=/home/app/.pm2 pm2 restart hardzone-test-client-bot --update-env
 sudo -u app env PM2_HOME=/home/app/.pm2 pm2 save
 ```
 
