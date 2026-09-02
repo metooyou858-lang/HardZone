@@ -1554,8 +1554,27 @@ export function AnalyticsWorkspace({ section }: { section: AnalyticsSection }) {
     setError(null);
 
     try {
-      await createAnalyticsExpense(data);
-      setReloadToken((value) => value + 1);
+      const createdExpense = await createAnalyticsExpense(data);
+
+      setReport((currentReport) => {
+        if (!currentReport) return currentReport;
+
+        const expenseDate = createdExpense.expense_date.slice(0, 10);
+        if (expenseDate < currentReport.range.from || expenseDate > currentReport.range.to) {
+          return currentReport;
+        }
+
+        const amount = Number(createdExpense.amount || 0);
+        return {
+          ...currentReport,
+          summary: {
+            ...currentReport.summary,
+            external_expenses: Math.round((currentReport.summary.external_expenses + amount) * 100) / 100,
+            cash_profit: Math.round((currentReport.summary.cash_profit - amount) * 100) / 100,
+          },
+          external_expenses: [createdExpense, ...currentReport.external_expenses],
+        };
+      });
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Не удалось добавить расход");
       throw createError;
@@ -1574,7 +1593,17 @@ export function AnalyticsWorkspace({ section }: { section: AnalyticsSection }) {
 
     try {
       await deleteAnalyticsExpense(expense.id);
-      setReloadToken((value) => value + 1);
+      const amount = Number(expense.amount || 0);
+
+      setReport((currentReport) => currentReport ? {
+        ...currentReport,
+        summary: {
+          ...currentReport.summary,
+          external_expenses: Math.round((currentReport.summary.external_expenses - amount) * 100) / 100,
+          cash_profit: Math.round((currentReport.summary.cash_profit + amount) * 100) / 100,
+        },
+        external_expenses: currentReport.external_expenses.filter((item) => item.id !== expense.id),
+      } : currentReport);
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Не удалось удалить расход");
     } finally {
