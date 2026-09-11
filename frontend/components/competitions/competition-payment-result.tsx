@@ -118,7 +118,6 @@ export default function CompetitionPaymentResult() {
     <main className={`${styles.page} ${styles.paymentPage}`}>
       <section className={styles.registration}>
         <div className={styles.success} role="status">
-          <span className={styles.successMark} aria-hidden="true">{paid ? "✓" : cancelled ? "!" : "…"}</span>
           <h1>{paid ? "Оплата прошла" : cancelled ? "Заявка отменена" : checking ? "Проверяем итог оплаты" : refunded ? "Платёж возвращён" : "Заявка принята"}</h1>
           {loading && <p>Получаем подтверждение от Т‑Банка…</p>}
           {!loading && paid && <p>Регистрация команды подтверждена. Увидимся 10 октября в HardZone.</p>}
