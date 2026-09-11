@@ -93,6 +93,15 @@ function MarketingIcon() {
   );
 }
 
+function CompetitionIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
+      <path d="M6.25 3.75h7.5v2.917a3.75 3.75 0 0 1-7.5 0V3.75Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M6.25 5H3.75v1.25A3.75 3.75 0 0 0 7.5 10M13.75 5h2.5v1.25A3.75 3.75 0 0 1 12.5 10M10 10.417v3.333M7.5 16.25h5M8.333 13.75h3.334" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function SettingsIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true">
@@ -155,6 +164,7 @@ const navItems: Array<{ href: string; label: string; icon: React.ReactNode; perm
   { href: "/schedule", label: "Расписание", icon: <ScheduleIcon />, permission: "schedule" },
   { href: "/analytics", label: "Аналитика", icon: <AnalyticsIcon />, permission: "analytics" },
   { href: "/marketing", label: "Маркетинг", icon: <MarketingIcon />, permission: "marketing" },
+  { href: "/competitions", label: "Соревнования", icon: <CompetitionIcon />, permission: "competitions" },
   { href: "/finance", label: "Финансы", icon: <FinanceIcon />, permission: "analytics" },
 ];
 
@@ -185,6 +195,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const navigationFallbackRef = useRef<number | null>(null);
   const isAuthScreen = pathname === "/login" || pathname === "/reset-password";
   const isTelegramMiniApp = pathname.startsWith("/telegram/");
+  const isPublicCompetition = pathname === "/competition" || pathname.startsWith("/competition/");
 
   useEffect(() => {
     pathnameRef.current = pathname;
@@ -237,7 +248,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [collapsed]);
 
   useEffect(() => {
-    if (isAuthScreen || isTelegramMiniApp) return;
+    if (isAuthScreen || isTelegramMiniApp || isPublicCompetition) return;
 
     let cancelled = false;
 
@@ -265,7 +276,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       });
 
     return () => { cancelled = true; };
-  }, [isAuthScreen, isTelegramMiniApp]);
+  }, [isAuthScreen, isTelegramMiniApp, isPublicCompetition]);
 
   async function handleLogout() {
     await fetch("/auth-api/logout", { method: "POST", credentials: "same-origin" });
@@ -277,7 +288,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     [user?.modules]
   );
 
-  if (isAuthScreen || isTelegramMiniApp) {
+  if (isAuthScreen || isTelegramMiniApp || isPublicCompetition) {
     return <>{children}</>;
   }
 

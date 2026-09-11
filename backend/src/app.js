@@ -30,6 +30,8 @@ const clubSettingsRouter = require('./routes/club-settings');
 const analyticsRouter = require('./routes/analytics');
 const dashboardRouter = require('./routes/dashboard');
 const marketingRouter = require('./routes/marketing');
+const competitionPublicRouter = require('./routes/competition-public');
+const competitionsRouter = require('./routes/competitions');
 const { startDelayedAqsiSyncScheduler } = require('./services/order-sync');
 const { markMissedBookings } = require('./jobs/schedule-cleanup');
 const { ensureBootstrapUser } = require('./services/user-auth');
@@ -74,6 +76,7 @@ app.get('/health', async (req, res, next) => {
 });
 
 app.use('/api/auth', authRouter);
+app.use('/api/public/competition', competitionPublicRouter);
 app.use('/api/products', authMiddleware, requireModule('warehouse', 'services', 'sales', 'schedule'), productsRouter);
 app.use('/api/receipts', authMiddleware, requireModule('warehouse'), receiptsRouter);
 app.use('/api/writeoffs', authMiddleware, requireModule('warehouse'), writeoffsRouter);
@@ -98,6 +101,7 @@ app.use('/api/club-settings', authMiddleware, clubSettingsRouter);
 app.use('/api/analytics', authMiddleware, requireModule('analytics'), analyticsRouter);
 app.use('/api/dashboard', authMiddleware, dashboardRouter);
 app.use('/api/marketing', authMiddleware, requireModule('marketing'), marketingRouter);
+app.use('/api/competitions', authMiddleware, requireModule('competitions'), competitionsRouter);
 
 app.use((req, res) => {
   res.status(404).json({

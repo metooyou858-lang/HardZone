@@ -108,13 +108,21 @@ if [ "$DO_RESTART_BACKEND" = true ]; then
   preflight_ssh
   echo "=== Синхронизация бэкенда ==="
   sync_dir "backend/src" "backend"
+  if [ -d "$LOCAL_BASE/backend/certs" ]; then
+    sync_dir "backend/certs" "backend"
+  fi
   ssh_cmd "chown -R app:app '$REMOTE_BASE/backend/src'"
+  ssh_cmd "chown -R root:app '$REMOTE_BASE/backend/certs' && chmod 755 '$REMOTE_BASE/backend/certs' && chmod 644 '$REMOTE_BASE/backend/certs/'*"
   if [ "$DO_BUILD_BACKEND" = true ]; then
     echo "=== Установка зависимостей бэкенда ==="
     ssh_cmd "su - app -c 'cd $REMOTE_BASE/backend && npm install --production'"
   fi
   echo "=== Рестарт бэкенда ==="
-  ssh_cmd "su - app -c 'pm2 restart inventory-backend'"
+  if ssh_cmd "test -f '$REMOTE_BASE/backend/certs/russian_trusted_root_ca.pem'"; then
+    ssh_cmd "su - app -c 'NODE_EXTRA_CA_CERTS=$REMOTE_BASE/backend/certs/russian_trusted_root_ca.pem pm2 restart inventory-backend --update-env && pm2 save'"
+  else
+    ssh_cmd "su - app -c 'pm2 restart inventory-backend'"
+  fi
 fi
 
 # Фронтенд: sync исходников → сборка → рестарт

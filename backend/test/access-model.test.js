@@ -62,6 +62,7 @@ test('duty trainer module set revokes system, refunds, recovery, and cancellatio
   assert.equal(access.module_revokes.includes('schedule_edit_personal'), true);
   assert.equal(access.module_revokes.includes('schedule_gym'), true);
   assert.equal(access.module_revokes.includes('marketing'), true);
+  assert.equal(access.module_revokes.includes('competitions'), true);
 });
 
 test('staff without users_manage cannot pass system diagnostics guard', () => {
@@ -73,6 +74,19 @@ test('staff without users_manage cannot pass system diagnostics guard', () => {
   assert.equal(hasModuleAccess(user, 'users_manage'), false);
 
   const { res, nextCalled } = runRequireModule(user, 'users_manage');
+
+  assert.equal(nextCalled, false);
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body.success, false);
+});
+
+test('staff without competitions cannot pass competition registrations guard', () => {
+  const user = {
+    role: 'admin',
+    modules: ['sales', 'clients', 'schedule'],
+  };
+
+  const { res, nextCalled } = runRequireModule(user, 'competitions');
 
   assert.equal(nextCalled, false);
   assert.equal(res.statusCode, 403);

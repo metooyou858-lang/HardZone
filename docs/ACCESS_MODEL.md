@@ -156,6 +156,7 @@ schedule_attendance
 schedule_gym
 analytics
 marketing
+competitions
 users_manage
 ```
 
@@ -196,6 +197,7 @@ schedule_attendance
 schedule_gym
 analytics
 marketing
+competitions
 users_manage
 ```
 
@@ -235,6 +237,7 @@ schedule_edit_groups
 schedule_edit_personal
 schedule_cancel
 schedule_gym
+competitions
 ```
 
 ### Trainer Basic
@@ -405,6 +408,7 @@ schedule_attendance
    - `sales_cancel`;
    - `sales_refund`;
    - `sales_aqsi_recovery`.
+11. Публичная регистрация на командные соревнования доступна без входа, а просмотр и изменение заявок в CRM требуют отдельного модуля `competitions`.
 
 Следующий кодовый шаг:
 
