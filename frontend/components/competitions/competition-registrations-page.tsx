@@ -18,7 +18,7 @@ const categoryLabels = {
 const paymentLabels = {
   pending: "Ожидает оплаты",
   processing: "Оплачивается",
-  paid: "Оплачено",
+  paid: "Подтверждена",
   failed: "Не оплачено",
   refunded: "Возврат",
 } as const;
@@ -27,6 +27,11 @@ function paymentColor(status: keyof typeof paymentLabels) {
   if (status === "paid") return "text-[var(--accent)]";
   if (status === "failed" || status === "refunded") return "text-[var(--danger)]";
   return "text-[var(--text-muted)]";
+}
+
+function registrationLabel(item: CompetitionRegistration) {
+  if (item.status === "cancelled") return item.expired_at ? "Срок оплаты истёк" : "Отменена";
+  return paymentLabels[item.payment_status];
 }
 
 function createdAt(value: string) {
@@ -47,8 +52,8 @@ export default function CompetitionRegistrationsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  async function load() {
-    setLoading(true);
+  async function load(silent = false) {
+    if (!silent) setLoading(true);
     setError("");
     try {
       const data = await fetchCompetitionRegistrations();
@@ -63,6 +68,8 @@ export default function CompetitionRegistrationsPage() {
 
   useEffect(() => {
     void load();
+    const timer = window.setInterval(() => void load(true), 15000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const totals = useMemo(() => {
@@ -129,28 +136,28 @@ export default function CompetitionRegistrationsPage() {
             <thead>
               <tr className="border-b border-[var(--line-soft)] text-xs text-[var(--text-muted)]">
                 <th className="px-5 py-4 font-medium">Команда</th>
+                <th className="px-5 py-4 font-medium">Email</th>
                 <th className="px-5 py-4 font-medium">Категория</th>
                 <th className="px-5 py-4 font-medium">Мужчина</th>
                 <th className="px-5 py-4 font-medium">Женщина</th>
                 <th className="px-5 py-4 font-medium">Подана</th>
-                <th className="px-5 py-4 font-medium">Оплата</th>
                 <th className="px-5 py-4 font-medium">Статус</th>
               </tr>
             </thead>
             <tbody>
               {registrations.map((item) => (
                 <tr key={item.id} className={`border-b border-[var(--line-soft)] last:border-0 ${item.status === "cancelled" ? "opacity-55" : ""}`}>
-                  <td className="px-5 py-4 text-sm font-semibold text-[var(--text-main)]">{item.team_name}{item.team_email && <a className="mt-1 block text-xs font-normal text-[var(--text-muted)]" href={`mailto:${item.team_email}`}>{item.team_email}</a>}{item.email_delivery_issue && <span className="mt-1 block text-xs text-[var(--warning)]">Проверьте отправку письма</span>}{item.automation_error && <span className="mt-1 block text-xs text-[var(--warning)]">Проверка оплаты отложена</span>}</td>
+                  <td className="px-5 py-4 text-sm font-semibold text-[var(--text-main)]">{item.team_name}{item.email_delivery_issue && <span className="mt-1 block text-xs text-[var(--warning)]">Проверьте отправку письма</span>}{item.automation_error && <span className="mt-1 block text-xs text-[var(--warning)]">Проверка оплаты отложена</span>}</td>
+                  <td className="px-5 py-4 text-sm text-[var(--text-muted)]">{item.team_email ? <a className="block max-w-[240px] break-all hover:text-[var(--accent)]" href={`mailto:${item.team_email}`}>{item.team_email}</a> : "Не указан"}</td>
                   <td className="px-5 py-4 text-sm text-[var(--text-main)]">{categoryLabels[item.category]}</td>
                   <td className="px-5 py-4 text-sm"><span className="block text-[var(--text-main)]">{item.male_name}</span><a className="mt-1 block text-xs text-[var(--text-muted)] hover:text-[var(--accent)]" href={`tel:${item.male_phone}`}>{item.male_phone}</a></td>
                   <td className="px-5 py-4 text-sm"><span className="block text-[var(--text-main)]">{item.female_name}</span><a className="mt-1 block text-xs text-[var(--text-muted)] hover:text-[var(--accent)]" href={`tel:${item.female_phone}`}>{item.female_phone}</a></td>
                   <td className="px-5 py-4 text-xs text-[var(--text-muted)]">{createdAt(item.created_at)}</td>
-                  <td className={`px-5 py-4 text-sm font-medium ${paymentColor(item.payment_status)}`}>{paymentLabels[item.payment_status]}</td>
                   <td className="px-5 py-4">
-                    <select value={item.status} disabled={savingId === item.id} onChange={(event) => void changeStatus(item.id, event.target.value as CompetitionRegistrationStatus)} className="min-h-10 rounded-[10px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-3 text-sm text-[var(--text-main)] outline-none focus:border-[var(--accent)] disabled:opacity-50">
-                      <option value="registered">Зарегистрирована</option>
-                      <option value="cancelled">Отменена</option>
-                    </select>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-sm font-medium ${paymentColor(item.payment_status)}`}>{registrationLabel(item)}</span>
+                      {!item.expired_at && <button type="button" disabled={savingId === item.id} onClick={() => void changeStatus(item.id, item.status === "registered" ? "cancelled" : "registered")} className="min-h-10 text-xs text-[var(--text-muted)] underline underline-offset-4 hover:text-[var(--text-main)] disabled:opacity-50">{item.status === "registered" ? "Отменить" : "Восстановить"}</button>}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -162,11 +169,8 @@ export default function CompetitionRegistrationsPage() {
           {registrations.map((item) => (
             <article key={item.id} className={`p-4 ${item.status === "cancelled" ? "opacity-55" : ""}`}>
               <div className="flex items-start justify-between gap-3">
-                <div><h2 className="font-semibold text-[var(--text-main)]">{item.team_name}</h2><p className="mt-1 text-xs text-[var(--text-muted)]">{categoryLabels[item.category]} · {createdAt(item.created_at)}</p>{item.team_email && <a className="mt-1 block text-xs text-[var(--text-muted)]" href={`mailto:${item.team_email}`}>{item.team_email}</a>}{item.email_delivery_issue && <p className="mt-1 text-xs text-[var(--warning)]">Проверьте отправку письма</p>}{item.automation_error && <p className="mt-1 text-xs text-[var(--warning)]">Проверка оплаты отложена</p>}<p className={`mt-1 text-xs font-medium ${paymentColor(item.payment_status)}`}>{paymentLabels[item.payment_status]}</p></div>
-                <select aria-label={`Статус команды ${item.team_name}`} value={item.status} disabled={savingId === item.id} onChange={(event) => void changeStatus(item.id, event.target.value as CompetitionRegistrationStatus)} className="min-h-10 max-w-[148px] rounded-[10px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-2 text-xs text-[var(--text-main)] outline-none focus:border-[var(--accent)] disabled:opacity-50">
-                  <option value="registered">Зарегистрирована</option>
-                  <option value="cancelled">Отменена</option>
-                </select>
+                <div className="min-w-0"><h2 className="font-semibold text-[var(--text-main)]">{item.team_name}</h2><p className="mt-1 text-xs text-[var(--text-muted)]">{categoryLabels[item.category]} · {createdAt(item.created_at)}</p><p className="mt-2 break-all text-xs text-[var(--text-muted)]">Email: {item.team_email ? <a href={`mailto:${item.team_email}`}>{item.team_email}</a> : "Не указан"}</p>{item.email_delivery_issue && <p className="mt-1 text-xs text-[var(--warning)]">Проверьте отправку письма</p>}{item.automation_error && <p className="mt-1 text-xs text-[var(--warning)]">Проверка оплаты отложена</p>}<p className={`mt-1 text-xs font-medium ${paymentColor(item.payment_status)}`}>{registrationLabel(item)}</p></div>
+                {!item.expired_at && <button type="button" disabled={savingId === item.id} onClick={() => void changeStatus(item.id, item.status === "registered" ? "cancelled" : "registered")} className="min-h-10 shrink-0 text-xs text-[var(--text-muted)] underline underline-offset-4 hover:text-[var(--text-main)] disabled:opacity-50">{item.status === "registered" ? "Отменить" : "Восстановить"}</button>}
               </div>
               <div className="mt-4 grid gap-3 text-sm">
                 <div><span className="block text-xs text-[var(--text-muted)]">Мужчина</span><span className="mt-1 block text-[var(--text-main)]">{item.male_name}</span><a className="mt-1 block text-xs text-[var(--accent)]" href={`tel:${item.male_phone}`}>{item.male_phone}</a></div>
