@@ -98,6 +98,7 @@ function buildCompetitionInitPayload({ registration, orderId, amountKopecks }, c
     OrderId: orderId,
     Description: `Взнос за участие команды «${registration.team_name}»`.slice(0, 140),
     PayType: 'O',
+    ...(registration.payment_deadline ? { RedirectDueDate: new Date(registration.payment_deadline).toISOString().replace('.000Z', '+00:00').replace(/\.\d{3}Z$/, '+00:00') } : {}),
     Language: 'ru',
     NotificationURL: `${config.publicBaseUrl}/api/public/competition/payments/tbank/notification`,
     SuccessURL: resultUrl,
@@ -107,6 +108,7 @@ function buildCompetitionInitPayload({ registration, orderId, amountKopecks }, c
     },
     Receipt: {
       Phone: receiptPhone,
+      ...(registration.team_email ? { Email: registration.team_email } : {}),
       Taxation: config.taxation,
       Items: [
         {
@@ -145,7 +147,7 @@ function normalizeCompetitionPaymentStatus(providerStatus) {
   const status = String(providerStatus || '').toUpperCase();
   if (status === 'CONFIRMED') return 'paid';
   if (status === 'REFUNDED' || status === 'PARTIAL_REFUNDED') return 'refunded';
-  if (['REJECTED', 'CANCELED', 'DEADLINE_EXPIRED', 'REVERSED'].includes(status)) return 'failed';
+  if (['REJECTED', 'CANCELED', 'DEADLINE_EXPIRED', 'REVERSED', 'AUTH_FAIL'].includes(status)) return 'failed';
   if (status) return 'processing';
   return 'pending';
 }

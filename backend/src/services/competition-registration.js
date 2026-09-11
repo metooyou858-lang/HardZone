@@ -42,7 +42,13 @@ function normalizeCompetitionRegistration(input) {
     throw validationError('У участников должны быть разные номера телефонов');
   }
 
+  const teamEmail = String(input?.team_email || '').trim().toLowerCase();
+  if (teamEmail.length > 254 || !/^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(teamEmail)) {
+    throw validationError('Укажите корректный email команды');
+  }
+
   return {
+    team_email: teamEmail,
     team_name: normalizedRequiredText(input?.team_name, 'название команды', 120),
     category,
     male_name: normalizedRequiredText(input?.male_name, 'имя и фамилию участника', 160),
@@ -55,7 +61,8 @@ function normalizeCompetitionRegistration(input) {
 }
 
 function registrationsMatch(existing, submitted) {
-  return existing.team_name === submitted.team_name
+  return (!existing.team_email || existing.team_email === submitted.team_email)
+    && existing.team_name === submitted.team_name
     && existing.category === submitted.category
     && existing.male_name === submitted.male_name
     && existing.male_phone_normalized === submitted.male_phone_normalized
@@ -73,10 +80,14 @@ function getCompetitionPublicConfig() {
     date: String(process.env.COMPETITION_DATE || '2026-10-10').trim() || null,
     location: String(process.env.COMPETITION_LOCATION || 'Клуб HardZone, г. Хабаровск, ул. Тихоокеанская, 47Г').trim(),
     fee_rubles: Number.isInteger(feeRubles) && feeRubles > 0 ? feeRubles : null,
-    terms_version: String(process.env.COMPETITION_TERMS_VERSION || '2026-09-07').trim(),
-    privacy_version: String(process.env.COMPETITION_PRIVACY_VERSION || '2026-09-07').trim(),
+    terms_version: String(process.env.COMPETITION_TERMS_VERSION || '2026-09-11').trim(),
+    privacy_version: String(process.env.COMPETITION_PRIVACY_VERSION || '2026-09-11').trim(),
     registration_enabled: explicitlyEnabled,
     payment_enabled: String(process.env.COMPETITION_PAYMENT_ENABLED || 'false').toLowerCase() === 'true',
+    messenger_urls: {
+      whatsapp: 'https://chat.whatsapp.com/CmIOwJVasUwCTiRQXS23py?s=cl&p=a&mlu=4&ilr=4',
+      telegram: 'https://t.me/games_khv',
+    },
     chat_urls: {
       amateur: String(process.env.COMPETITION_AMATEUR_CHAT_URL || '').trim() || null,
       advanced: String(process.env.COMPETITION_ADVANCED_CHAT_URL || '').trim() || null,
@@ -104,10 +115,10 @@ async function createCompetitionRegistration(input) {
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [config.event_key]);
 
     const duplicate = await client.query(
-      `SELECT id, team_name, category,
+      `SELECT id, team_email, team_name, category,
               male_name, male_phone, male_phone_normalized,
               female_name, female_phone, female_phone_normalized,
-              public_token, payment_status, paid_at, status, created_at
+              public_token, payment_deadline, payment_status, paid_at, status, created_at
        FROM competition_registrations
        WHERE event_key = $1
          AND status = 'registered'
@@ -148,10 +159,10 @@ async function createCompetitionRegistration(input) {
          female_name, female_phone, female_phone_normalized,
          terms_version, terms_accepted_at,
          privacy_version, privacy_accepted_at,
-         public_token
+         public_token, team_email, payment_deadline, fee_kopecks, next_payment_check_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11, NOW(), $12)
-       RETURNING id, team_name, category, male_phone, public_token, payment_status, status, created_at`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11, NOW(), $12, $13, CASE WHEN $14 THEN NOW() + INTERVAL '60 minutes' END, $15, NOW())
+       RETURNING id, team_name, category, male_phone, public_token, team_email, payment_deadline, payment_status, status, created_at`,
       [
         config.event_key,
         registration.team_name,
@@ -165,9 +176,18 @@ async function createCompetitionRegistration(input) {
         config.terms_version,
         config.privacy_version,
         randomUUID(),
+        registration.team_email,
+        config.payment_enabled,
+        config.fee_rubles ? config.fee_rubles * 100 : null,
       ]
     );
 
+    if (rows[0].payment_deadline) {
+      await client.query(
+        `INSERT INTO competition_email_jobs (registration_id, kind) VALUES ($1, 'registration') ON CONFLICT DO NOTHING`,
+        [rows[0].id]
+      );
+    }
     return rows[0];
   });
 }
@@ -176,13 +196,14 @@ async function listCompetitionRegistrations(executor = pool) {
   const config = getCompetitionPublicConfig();
   const { rows } = await executor.query(
     `SELECT
-       id, team_name, category,
+       id, team_name, category, team_email, payment_deadline, expired_at, automation_error,
        male_name, male_phone,
        female_name, female_phone,
        terms_version, terms_accepted_at,
        privacy_version, privacy_accepted_at,
        payment_status, paid_at,
-       status, created_at, updated_at
+       status, created_at, updated_at,
+       EXISTS (SELECT 1 FROM competition_email_jobs j WHERE j.registration_id=competition_registrations.id AND (j.state IN ('sending','uncertain') OR (j.state='pending' AND j.last_error IS NOT NULL))) AS email_delivery_issue
      FROM competition_registrations
      WHERE event_key = $1
      ORDER BY CASE status WHEN 'registered' THEN 0 ELSE 1 END, created_at DESC, id DESC`,
@@ -194,7 +215,7 @@ async function listCompetitionRegistrations(executor = pool) {
 async function getCompetitionRegistrationByPublicToken(publicToken, executor = pool) {
   const config = getCompetitionPublicConfig();
   const { rows } = await executor.query(
-    `SELECT id, event_key, team_name, category, male_phone, public_token,
+    `SELECT id, event_key, team_name, category, male_phone, public_token, team_email, payment_deadline, fee_kopecks, expired_at,
             payment_status, paid_at, status, created_at, updated_at
      FROM competition_registrations
      WHERE event_key = $1 AND public_token = $2
@@ -211,7 +232,7 @@ async function updateCompetitionRegistrationStatus(id, status) {
   return withTransaction(async (client) => {
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [config.event_key]);
     const currentResult = await client.query(
-      `SELECT id, male_phone_normalized, female_phone_normalized
+      `SELECT id, male_phone_normalized, female_phone_normalized, expired_at
        FROM competition_registrations
        WHERE id = $1 AND event_key = $2
        FOR UPDATE`,
@@ -220,6 +241,9 @@ async function updateCompetitionRegistrationStatus(id, status) {
     const current = currentResult.rows[0];
     if (!current) throw Object.assign(new Error('Заявка не найдена'), { statusCode: 404 });
 
+    if (status === 'registered' && current.expired_at) {
+      throw Object.assign(new Error('Срок оплаты истёк. Команда должна подать новую заявку.'), { statusCode: 409 });
+    }
     if (status === 'registered') {
       const duplicate = await client.query(
         `SELECT id

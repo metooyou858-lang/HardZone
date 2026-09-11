@@ -140,7 +140,7 @@ export default function CompetitionRegistrationsPage() {
             <tbody>
               {registrations.map((item) => (
                 <tr key={item.id} className={`border-b border-[var(--line-soft)] last:border-0 ${item.status === "cancelled" ? "opacity-55" : ""}`}>
-                  <td className="px-5 py-4 text-sm font-semibold text-[var(--text-main)]">{item.team_name}</td>
+                  <td className="px-5 py-4 text-sm font-semibold text-[var(--text-main)]">{item.team_name}{item.team_email && <a className="mt-1 block text-xs font-normal text-[var(--text-muted)]" href={`mailto:${item.team_email}`}>{item.team_email}</a>}{item.email_delivery_issue && <span className="mt-1 block text-xs text-[var(--warning)]">Проверьте отправку письма</span>}{item.automation_error && <span className="mt-1 block text-xs text-[var(--warning)]">Проверка оплаты отложена</span>}</td>
                   <td className="px-5 py-4 text-sm text-[var(--text-main)]">{categoryLabels[item.category]}</td>
                   <td className="px-5 py-4 text-sm"><span className="block text-[var(--text-main)]">{item.male_name}</span><a className="mt-1 block text-xs text-[var(--text-muted)] hover:text-[var(--accent)]" href={`tel:${item.male_phone}`}>{item.male_phone}</a></td>
                   <td className="px-5 py-4 text-sm"><span className="block text-[var(--text-main)]">{item.female_name}</span><a className="mt-1 block text-xs text-[var(--text-muted)] hover:text-[var(--accent)]" href={`tel:${item.female_phone}`}>{item.female_phone}</a></td>
@@ -162,7 +162,7 @@ export default function CompetitionRegistrationsPage() {
           {registrations.map((item) => (
             <article key={item.id} className={`p-4 ${item.status === "cancelled" ? "opacity-55" : ""}`}>
               <div className="flex items-start justify-between gap-3">
-                <div><h2 className="font-semibold text-[var(--text-main)]">{item.team_name}</h2><p className="mt-1 text-xs text-[var(--text-muted)]">{categoryLabels[item.category]} · {createdAt(item.created_at)}</p><p className={`mt-1 text-xs font-medium ${paymentColor(item.payment_status)}`}>{paymentLabels[item.payment_status]}</p></div>
+                <div><h2 className="font-semibold text-[var(--text-main)]">{item.team_name}</h2><p className="mt-1 text-xs text-[var(--text-muted)]">{categoryLabels[item.category]} · {createdAt(item.created_at)}</p>{item.team_email && <a className="mt-1 block text-xs text-[var(--text-muted)]" href={`mailto:${item.team_email}`}>{item.team_email}</a>}{item.email_delivery_issue && <p className="mt-1 text-xs text-[var(--warning)]">Проверьте отправку письма</p>}{item.automation_error && <p className="mt-1 text-xs text-[var(--warning)]">Проверка оплаты отложена</p>}<p className={`mt-1 text-xs font-medium ${paymentColor(item.payment_status)}`}>{paymentLabels[item.payment_status]}</p></div>
                 <select aria-label={`Статус команды ${item.team_name}`} value={item.status} disabled={savingId === item.id} onChange={(event) => void changeStatus(item.id, event.target.value as CompetitionRegistrationStatus)} className="min-h-10 max-w-[148px] rounded-[10px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-2 text-xs text-[var(--text-main)] outline-none focus:border-[var(--accent)] disabled:opacity-50">
                   <option value="registered">Зарегистрирована</option>
                   <option value="cancelled">Отменена</option>

@@ -9,6 +9,7 @@ const {
 function validRegistration(overrides = {}) {
   return {
     team_name: ' Стальные нервы ',
+    team_email: ' TEAM@example.ru ',
     category: 'amateur',
     male_name: ' Алексей Смирнов ',
     male_phone: '+7 (999) 111-22-33',

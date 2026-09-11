@@ -15,6 +15,7 @@ export type CompetitionPublicConfig = {
   registration_enabled: boolean;
   payment_enabled: boolean;
   chat_urls: Record<CompetitionCategory, string | null>;
+  messenger_urls: { whatsapp: string; telegram: string };
   organizer: {
     name: string;
     inn: string;
@@ -29,6 +30,11 @@ export type CompetitionRegistration = {
   id: string;
   team_name: string;
   category: CompetitionCategory;
+  team_email: string | null;
+  payment_deadline: string | null;
+  expired_at: string | null;
+  automation_error: string | null;
+  email_delivery_issue: boolean;
   male_name: string;
   male_phone: string;
   female_name: string;

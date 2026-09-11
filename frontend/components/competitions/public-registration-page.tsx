@@ -9,6 +9,7 @@ import type { CompetitionCategory, CompetitionPublicConfig } from "@/lib/api/com
 
 type FormState = {
   team_name: string;
+  team_email: string;
   category: CompetitionCategory;
   male_name: string;
   male_phone: string;
@@ -29,6 +30,7 @@ type SubmittedTeam = {
 
 const initialForm: FormState = {
   team_name: "",
+  team_email: "",
   category: "amateur",
   male_name: "",
   male_phone: "",
@@ -269,6 +271,7 @@ export default function CompetitionRegistrationPage() {
                 </div>
               </details>
 
+              <p className={styles.finalTerms}>На оплату заявки отводится 60 минут. Если оплата не подтверждена, заявка отменяется после контрольной проверки банка. При незавершённой проверке отмена откладывается.</p>
               <p className={styles.finalTerms}>В финальных комплексах допускается увеличение диапазона весов и сложности упражнений относительно базовых ограничений категорий.</p>
 
               <div className={styles.refundTerms}>
@@ -303,6 +306,14 @@ export default function CompetitionRegistrationPage() {
                     </select>
                   </label>
                 </div>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.field}>
+                  <span>Email команды</span>
+                  <input className={styles.input} type="email" autoComplete="email" inputMode="email" required maxLength={254} disabled={formDisabled} value={form.team_email} onChange={(event) => update("team_email", event.target.value)} placeholder="team@example.ru" />
+                  <small>Пришлём ссылку на оплату и подтверждение участия. На оплату — 60 минут.</small>
+                </label>
               </div>
 
               <div className={styles.formGroup}>
@@ -343,7 +354,7 @@ export default function CompetitionRegistrationPage() {
                   </label>
                   <label className={styles.consent}>
                     <input className={styles.checkbox} type="checkbox" disabled={formDisabled} required checked={form.personal_data_accepted} onChange={(event) => update("personal_data_accepted", event.target.checked)} />
-                    <span>Я даю <Link href="/competition/privacy" target="_blank">согласие на обработку персональных данных</Link> для регистрации команды и подтверждаю согласие второго участника на передачу его данных.</span>
+                    <span>Я даю <Link href="/competition/privacy" target="_blank">согласие на обработку персональных данных</Link> для регистрации команды и служебных email-уведомлений о заявке и оплате и подтверждаю согласие второго участника на передачу его данных.</span>
                   </label>
                 </div>
               </div>

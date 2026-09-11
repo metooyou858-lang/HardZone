@@ -29,7 +29,7 @@ async function refreshRegistrationPaymentStatus(registrationId, executor = pool)
        CASE
          WHEN BOOL_OR(status = 'CONFIRMED') THEN 'paid'
          WHEN BOOL_OR(status IN ('REFUNDED', 'PARTIAL_REFUNDED')) THEN 'refunded'
-         WHEN BOOL_OR(status NOT IN ('REJECTED', 'CANCELED', 'DEADLINE_EXPIRED', 'REVERSED', 'FAILED')) THEN 'processing'
+         WHEN BOOL_OR(status NOT IN ('REJECTED', 'CANCELED', 'DEADLINE_EXPIRED', 'REVERSED', 'AUTH_FAIL', 'FAILED')) THEN 'processing'
          ELSE 'failed'
        END AS payment_status,
        MIN(confirmed_at) FILTER (WHERE confirmed_at IS NOT NULL) AS paid_at
@@ -48,6 +48,18 @@ async function refreshRegistrationPaymentStatus(registrationId, executor = pool)
      WHERE id = $3`,
     [paymentStatus, paidAt, registrationId]
   );
+  if (paymentStatus === 'paid') {
+    await executor.query(
+      `INSERT INTO competition_email_jobs (registration_id, kind)
+       SELECT id, 'paid' FROM competition_registrations
+       WHERE id = $1 AND team_email IS NOT NULL AND payment_deadline IS NOT NULL
+       ON CONFLICT DO NOTHING`, [registrationId]
+    );
+    await executor.query(
+      `UPDATE competition_email_jobs SET state = 'skipped'
+       WHERE registration_id = $1 AND kind IN ('registration','reminder','expired') AND state = 'pending'`, [registrationId]
+    );
+  }
   return paymentStatus;
 }
 
@@ -69,12 +81,15 @@ async function startCompetitionPayment(publicToken) {
       return { registration, already_paid: true, payment_url: null };
     }
 
+    if (registration.payment_deadline && new Date(registration.payment_deadline).getTime() <= Date.now()) {
+      throw Object.assign(new Error('Срок оплаты истёк. Проверяем итоговый статус платежа.'), { statusCode: 409 });
+    }
     const activeResult = await client.query(
       `SELECT id, payment_url
        FROM competition_payments
        WHERE registration_id = $1
          AND payment_url IS NOT NULL
-         AND status NOT IN ('REJECTED', 'CANCELED', 'DEADLINE_EXPIRED', 'REVERSED', 'REFUNDED', 'PARTIAL_REFUNDED', 'FAILED')
+         AND status NOT IN ('REJECTED', 'CANCELED', 'DEADLINE_EXPIRED', 'REVERSED', 'REFUNDED', 'PARTIAL_REFUNDED', 'AUTH_FAIL', 'FAILED')
          AND created_at > NOW() - INTERVAL '24 hours'
        ORDER BY created_at DESC
        LIMIT 1`,
@@ -84,7 +99,10 @@ async function startCompetitionPayment(publicToken) {
       return { registration, already_paid: false, payment_url: activeResult.rows[0].payment_url };
     }
 
-    const amountKopecks = competition.fee_rubles * 100;
+    if (registration.payment_deadline && new Date(registration.payment_deadline).getTime() - Date.now() < 65000) {
+      throw Object.assign(new Error('Срок создания новой оплаты истёк. Дождитесь проверки заявки.'), { statusCode: 409 });
+    }
+    const amountKopecks = Number(registration.fee_kopecks) || competition.fee_rubles * 100;
     const orderId = paymentOrderId(registration.id);
     const paymentInsert = await client.query(
       `INSERT INTO competition_payments (registration_id, order_id, amount_kopecks, status)
@@ -144,7 +162,14 @@ async function findCompetitionPayment({ orderId, paymentId }, executor = pool) {
   return rows[0] || null;
 }
 
-async function syncCompetitionPayment(payment) {
+async function syncCompetitionPayment(payment, executor = null) {
+  if (!executor) {
+    return withTransaction(async (client) => {
+      const { rows } = await client.query('SELECT public_token FROM competition_registrations WHERE id = $1', [payment.registration_id]);
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`competition-payment:${rows[0]?.public_token}`]);
+      return syncCompetitionPayment(payment, client);
+    });
+  }
   const state = await getCompetitionPaymentState(payment.payment_id);
   if (
     String(state.PaymentId || '') !== String(payment.payment_id)
@@ -156,7 +181,8 @@ async function syncCompetitionPayment(payment) {
 
   const providerStatus = String(state.Status || 'UNKNOWN').toUpperCase();
   const normalizedStatus = normalizeCompetitionPaymentStatus(providerStatus);
-  await withTransaction(async (client) => {
+  {
+    const client = executor;
     await client.query(
       `UPDATE competition_payments
        SET status = $1,
@@ -167,7 +193,7 @@ async function syncCompetitionPayment(payment) {
       [providerStatus, String(state.ErrorCode || ''), payment.id]
     );
     await refreshRegistrationPaymentStatus(payment.registration_id, client);
-  });
+  }
   return normalizedStatus;
 }
 
@@ -225,7 +251,12 @@ async function getCompetitionPaymentSummary(publicToken, { sync = false } = {}) 
     registration_status: registration.status,
     payment_status: registration.payment_status,
     paid_at: registration.paid_at,
-    payment_url: registration.payment_status === 'paid' ? null : payment?.payment_url || null,
+    payment_deadline: registration.payment_deadline,
+    expired_at: registration.expired_at,
+    server_now: new Date().toISOString(),
+    messenger_urls: registration.payment_status === 'paid' ? competition.messenger_urls : null,
+    payment_url: registration.payment_status === 'paid' || registration.status !== 'registered'
+      || (registration.payment_deadline && new Date(registration.payment_deadline).getTime() <= Date.now()) ? null : payment?.payment_url || null,
     chat_url: registration.payment_status === 'paid' ? competition.chat_urls[registration.category] : null,
   };
 }

@@ -132,6 +132,7 @@ async function start() {
     console.log(`Bootstrap auth user is ready: ${bootstrapUser.username}`);
   }
   startDelayedAqsiSyncScheduler();
+  const stopCompetitionAutomation = require('./services/competition-automation').startCompetitionAutomation();
   markMissedBookings();
   const scheduleCleanupInterval = setInterval(markMissedBookings, 60 * 60 * 1000);
 
@@ -144,6 +145,7 @@ async function start() {
 
     server.close(async () => {
       clearInterval(scheduleCleanupInterval);
+      stopCompetitionAutomation();
       await pool.end();
       process.exit(0);
     });
