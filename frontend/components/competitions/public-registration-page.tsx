@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 
 import styles from "@/app/competition/competition.module.css";
 import type { CompetitionCategory, CompetitionPublicConfig } from "@/lib/api/competitions";
@@ -85,6 +85,27 @@ export default function CompetitionRegistrationPage() {
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updatePhone(key: "male_phone" | "female_phone", event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    let digits = input.value.replace(/\D/g, "");
+    let before = input.value.slice(0, input.selectionStart ?? input.value.length).replace(/\D/g, "").length;
+    const operation = (event.nativeEvent as InputEvent).inputType;
+    // Deleting a separator must delete a digit instead of trapping the cursor.
+    if (digits === form[key].replace(/\D/g, "") && operation?.startsWith("delete")) {
+      const index = operation === "deleteContentBackward" ? before - 1 : before;
+      if (index >= 0) digits = digits.slice(0, index) + digits.slice(index + 1);
+      if (operation === "deleteContentBackward") before = Math.max(0, before - 1);
+    }
+    if (digits && !/^[78]/.test(digits)) { digits = `7${digits}`; before++; }
+    digits = digits.replace(/^8/, "7").slice(0, 11);
+    const national = digits.slice(1);
+    const value = digits ? "+7" + (national ? ` ${national.slice(0, 3)}` : "") + (national.length > 3 ? ` ${national.slice(3, 6)}` : "") + (national.length > 6 ? `-${national.slice(6, 8)}` : "") + (national.length > 8 ? `-${national.slice(8, 10)}` : "") : "";
+    update(key, value);
+    let caret = 0, seen = 0;
+    while (caret < value.length && seen < before) { if (/\d/.test(value[caret])) seen++; caret++; }
+    requestAnimationFrame(() => input.setSelectionRange(caret, caret));
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -311,7 +332,7 @@ export default function CompetitionRegistrationPage() {
               <div className={styles.formGroup}>
                 <label className={styles.field}>
                   <span>Email команды</span>
-                  <input className={styles.input} type="email" autoComplete="email" inputMode="email" required maxLength={254} disabled={formDisabled} value={form.team_email} onChange={(event) => update("team_email", event.target.value)} placeholder="team@example.ru" />
+                  <input className={styles.input} type="email" autoComplete="email" inputMode="email" autoCapitalize="none" spellCheck={false} required maxLength={254} disabled={formDisabled} value={form.team_email} onChange={(event) => { event.target.setCustomValidity(""); update("team_email", event.target.value.replace(/\s/g, "")); }} onInvalid={(event) => event.currentTarget.setCustomValidity("Укажите email в формате name@example.ru")} onBlur={(event) => event.currentTarget.setCustomValidity(event.currentTarget.value && !/^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(event.currentTarget.value) ? "Укажите email в формате name@example.ru" : "")} placeholder="team@example.ru" />
                   <small>Пришлём ссылку на оплату и подтверждение участия. На оплату — 60 минут.</small>
                 </label>
               </div>
@@ -327,7 +348,7 @@ export default function CompetitionRegistrationPage() {
                     </label>
                     <label className={styles.field}>
                       <span>Телефон</span>
-                      <input className={styles.input} disabled={formDisabled} required inputMode="tel" autoComplete="tel" value={form.male_phone} onChange={(event) => update("male_phone", event.target.value)} placeholder="+7 900 000-00-00" />
+                      <input className={styles.input} disabled={formDisabled} required type="tel" inputMode="tel" autoComplete="section-male tel" pattern={"\\+7 [0-9]{3} [0-9]{3}-[0-9]{2}-[0-9]{2}"} title="Введите номер полностью: +7 900 000-00-00" value={form.male_phone} onChange={(event) => updatePhone("male_phone", event)} placeholder="+7 900 000-00-00" />
                     </label>
                   </div>
 
@@ -339,7 +360,7 @@ export default function CompetitionRegistrationPage() {
                     </label>
                     <label className={styles.field}>
                       <span>Телефон</span>
-                      <input className={styles.input} disabled={formDisabled} required inputMode="tel" value={form.female_phone} onChange={(event) => update("female_phone", event.target.value)} placeholder="+7 900 000-00-00" />
+                      <input className={styles.input} disabled={formDisabled} required type="tel" inputMode="tel" autoComplete="section-female tel" pattern={"\\+7 [0-9]{3} [0-9]{3}-[0-9]{2}-[0-9]{2}"} title="Введите номер полностью: +7 900 000-00-00" value={form.female_phone} onChange={(event) => updatePhone("female_phone", event)} placeholder="+7 900 000-00-00" />
                     </label>
                   </div>
                 </div>
