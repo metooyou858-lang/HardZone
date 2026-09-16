@@ -29,6 +29,7 @@ HardZone - monorepo CRM для CrossFit-клуба:
 - `docs/TELEGRAM_TEST_CLIENT.md` - изолированный клиентский Telegram-бот на отдельном тестовом токене с реальными данными CRM.
 - `docs/COMPETITION_REGISTRATION.md` - текущее состояние регистрации и оплаты командных соревнований, ограничения и следующий этап.
 - `docs/COMPETITION_EVENTS.md` - мероприятия, отдельные регистрации, категории и совместимость старых ссылок.
+- `docs/COMPETITION_SCHEDULE.md` - комплексы, расчёт времени, площадки и сохранённая сетка заходов.
 - `docs/COMPETITION_UI_DIRECTION.md` - подтверждённое визуальное направление публичной страницы соревнований.
 
 ## Production

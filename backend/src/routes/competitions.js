@@ -5,8 +5,33 @@ const {
   updateCompetitionRegistrationStatus,
 } = require('../services/competition-registration');
 const { getCompetitionConfig, listCompetitionEvents, createCompetitionEvent, updateCompetitionEvent } = require('../services/competition-events');
+const { readSchedule, saveSchedule, generateSchedule } = require('../services/competition-schedule');
 
 const router = express.Router();
+
+router.get('/events/:eventKey/schedule', async (req, res, next) => {
+  try { return res.json({ success:true, data:await readSchedule(req.params.eventKey) }); }
+  catch(error) {
+    if(error.statusCode) return res.status(error.statusCode).json({success:false,error:error.message});
+    return next(error);
+  }
+});
+
+router.put('/events/:eventKey/schedule', async (req, res, next) => {
+  try { return res.json({ success:true, data:await saveSchedule(req.params.eventKey, req.body) }); }
+  catch(error) {
+    if(error.statusCode) return res.status(error.statusCode).json({success:false,error:error.message});
+    return next(error);
+  }
+});
+
+router.post('/events/:eventKey/schedule/generate', async (req, res, next) => {
+  try { return res.json({ success:true, data:await generateSchedule(req.params.eventKey, req.body) }); }
+  catch(error) {
+    if(error.statusCode) return res.status(error.statusCode).json({success:false,error:error.message});
+    return next(error);
+  }
+});
 
 router.get('/events', async (_req, res, next) => {
   try { return res.json({success:true, data:await listCompetitionEvents()}); } catch(error) { return next(error); }

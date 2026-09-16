@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import CompetitionSchedulePanel from "./competition-schedule-panel";
 
 import {
   fetchCompetitionRegistrations,
@@ -47,6 +48,7 @@ export default function CompetitionRegistrationsPage({ eventKey, onBack, onEdit 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [category, setCategory] = useState("");
+  const [section, setSection] = useState<"registrations" | "schedule">("registrations");
   const requestVersion = useRef(0);
   const categoryLabels = Object.fromEntries((competition?.categories || []).map(item => [item.key, item.name]));
 
@@ -129,6 +131,11 @@ export default function CompetitionRegistrationsPage({ eventKey, onBack, onEdit 
         </div>
       )}
 
+      <nav aria-label="Разделы мероприятия" className="flex flex-wrap gap-x-6 border-b border-[var(--line-soft)]">
+        {[{key:"registrations" as const,name:"Регистрация"},{key:"schedule" as const,name:"Комплексы и заходы"}].map(item => <button key={item.key} type="button" onClick={() => setSection(item.key)} aria-pressed={section === item.key} className={`min-h-11 border-b-2 px-1 text-sm ${section === item.key ? "border-[var(--accent)] text-[var(--text-main)]" : "border-transparent text-[var(--text-muted)]"}`}>{item.name}</button>)}
+      </nav>
+      <div hidden={section !== "schedule"}><CompetitionSchedulePanel eventKey={eventKey} /></div>
+      {section === "registrations" && <>
       <nav aria-label="Заявки и категории" className="flex flex-wrap gap-x-5 border-b border-[var(--line-soft)]">
         {[{key:"",name:"Все заявки"}, ...(competition?.categories || [])].map(item => <button key={item.key} type="button" aria-pressed={category === item.key} onClick={() => setCategory(item.key)} className={`min-h-11 border-b-2 px-1 text-sm ${category === item.key ? "border-[var(--accent)] text-[var(--text-main)]" : "border-transparent text-[var(--text-muted)]"}`}>{item.name}{item.key && ` · ${registrations.filter(r => r.category === item.key && r.status === "registered" && r.payment_status === "paid").length}`}</button>)}
       </nav>
@@ -186,6 +193,7 @@ export default function CompetitionRegistrationsPage({ eventKey, onBack, onEdit 
         {!loading && visible.length === 0 && <div className="px-5 py-16 text-center text-sm text-[var(--text-muted)]">{category ? "В этой категории пока нет подтверждённых команд" : "Заявок пока нет"}</div>}
         {loading && <div className="px-5 py-16 text-center text-sm text-[var(--text-muted)]">Загружаем заявки…</div>}
       </section>
+      </>}
     </div>
   );
 }

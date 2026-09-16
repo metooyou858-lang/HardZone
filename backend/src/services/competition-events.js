@@ -88,6 +88,9 @@ async function updateCompetitionEvent(eventKey, input) {
     const settings = normalizeEvent(input, existing);
     const used = await client.query('SELECT DISTINCT category FROM competition_registrations WHERE event_key=$1', [eventKey]);
     if (used.rows.some(row => !settings.categories.some(category => category.key === row.category))) throw invalid('Нельзя удалить категорию, в которой уже есть заявки');
+    const schedule = (await client.query('SELECT config, generated_grid FROM competition_schedules WHERE event_key=$1', [eventKey])).rows[0];
+    const scheduledKeys = [...(schedule?.config.categories || []).filter(item => item.complexes.length).map(item => item.category_key), ...(schedule?.generated_grid?.blocks || []).map(item => item.category_key)];
+    if (scheduledKeys.some(key => !settings.categories.some(category => category.key === key))) throw invalid('Нельзя удалить категорию с комплексами или сохранённой сеткой');
     if (existing.legacy && JSON.stringify(settings.categories) !== JSON.stringify(defaultCategories)) throw invalid('Категории действующего соревнования связаны с опубликованными условиями');
     const { rows } = await client.query('UPDATE competition_events SET settings=settings || $2::JSONB, updated_at=NOW() WHERE event_key=$1 RETURNING *', [eventKey, settings]);
     return publicConfig(rows[0]);
