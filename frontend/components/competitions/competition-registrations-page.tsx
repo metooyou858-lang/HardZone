@@ -48,7 +48,15 @@ export default function CompetitionRegistrationsPage({ eventKey, onBack, onEdit 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [category, setCategory] = useState("");
-  const [section, setSection] = useState<"registrations" | "schedule">("registrations");
+  const [section, setSectionState] = useState<"registrations" | "schedule">(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("section") === "schedule" ? "schedule" : "registrations"
+  );
+  function setSection(next: "registrations" | "schedule") {
+    setSectionState(next);
+    const url = new URL(window.location.href);
+    url.searchParams.set("section", next);
+    window.history.replaceState(window.history.state, "", url);
+  }
   const requestVersion = useRef(0);
   const categoryLabels = Object.fromEntries((competition?.categories || []).map(item => [item.key, item.name]));
 

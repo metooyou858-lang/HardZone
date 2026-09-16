@@ -11,7 +11,15 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
   const [data, setData] = useState<CompetitionSchedule | null>(null);
   const [draft, setDraft] = useState<ScheduleConfig>({categories:[]});
   const [category, setCategory] = useState("");
-  const [view, setView] = useState<"settings" | "grid">("settings");
+  const [view, setViewState] = useState<"settings" | "grid">(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("scheduleView") === "grid" ? "grid" : "settings"
+  );
+  function setView(next: "settings" | "grid") {
+    setViewState(next);
+    const url = new URL(window.location.href);
+    url.searchParams.set("scheduleView", next);
+    window.history.replaceState(window.history.state, "", url);
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
