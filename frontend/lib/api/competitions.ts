@@ -1,10 +1,14 @@
 import { apiFetch } from "./client";
 
-export type CompetitionCategory = "amateur" | "advanced";
+export type CompetitionCategory = string;
 export type CompetitionRegistrationStatus = "registered" | "cancelled";
 export type CompetitionPaymentStatus = "pending" | "processing" | "paid" | "failed" | "refunded";
 
 export type CompetitionPublicConfig = {
+  legacy: boolean;
+  public_path: string;
+  categories: { key: string; name: string }[];
+  terms_text: string;
   event_key: string;
   name: string;
   date: string | null;
@@ -61,21 +65,35 @@ type ApiEnvelope<T> = {
   error?: string;
 };
 
-export async function fetchCompetitionRegistrations(): Promise<CompetitionPayload> {
-  const response = await apiFetch<ApiEnvelope<CompetitionPayload>>("/competitions");
+export async function fetchCompetitionRegistrations(eventKey?: string): Promise<CompetitionPayload> {
+  const response = await apiFetch<ApiEnvelope<CompetitionPayload>>(`/competitions${eventKey ? `?event=${encodeURIComponent(eventKey)}` : ""}`);
   return response.data;
 }
 
 export async function updateCompetitionRegistrationStatus(
   id: string,
-  status: CompetitionRegistrationStatus
+  status: CompetitionRegistrationStatus,
+  eventKey?: string
 ): Promise<CompetitionRegistration[]> {
   const response = await apiFetch<ApiEnvelope<CompetitionRegistration[]>>(
-    `/competitions/${id}/status`,
+    `/competitions/${id}/status${eventKey ? `?event=${encodeURIComponent(eventKey)}` : ""}`,
     {
       method: "PATCH",
       body: JSON.stringify({ status }),
     }
   );
   return response.data;
+}
+
+export type CompetitionEvent = CompetitionPublicConfig & { registrations_count: number; confirmed_count: number };
+export type CompetitionEventInput = Pick<CompetitionPublicConfig, "name" | "date" | "location" | "fee_rubles" | "categories" | "terms_text" | "registration_enabled">;
+
+export async function fetchCompetitionEvents(): Promise<CompetitionEvent[]> {
+  return (await apiFetch<ApiEnvelope<CompetitionEvent[]>>("/competitions/events")).data;
+}
+
+export async function saveCompetitionEvent(input: CompetitionEventInput, eventKey?: string): Promise<CompetitionPublicConfig> {
+  return (await apiFetch<ApiEnvelope<CompetitionPublicConfig>>(`/competitions/events${eventKey ? `/${encodeURIComponent(eventKey)}` : ""}`, {
+    method: eventKey ? "PATCH" : "POST", body: JSON.stringify(input),
+  })).data;
 }

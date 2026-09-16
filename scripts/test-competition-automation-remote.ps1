@@ -30,7 +30,7 @@ export NODE_ENV=test
 export COMPETITION_AUTOMATION_ENABLED=false
 cd "$workdir/backend"
 sudo -u app --preserve-env=DATABASE_URL,HARDZONE_SESSION_SECRET,BACKEND_API_TOKEN,NODE_ENV,COMPETITION_AUTOMATION_ENABLED timeout 90 node src/db/migrate.js > "$workdir/migrations.log" 2>&1 || { cat "$workdir/migrations.log"; exit 1; }
-sudo -u app --preserve-env=DATABASE_URL,HARDZONE_SESSION_SECRET,BACKEND_API_TOKEN,NODE_ENV,COMPETITION_AUTOMATION_ENABLED timeout 120 node --test test/competition-registration.test.js test/tbank-competition.test.js test/competition-automation.test.js
+sudo -u app --preserve-env=DATABASE_URL,HARDZONE_SESSION_SECRET,BACKEND_API_TOKEN,NODE_ENV,COMPETITION_AUTOMATION_ENABLED timeout 120 node --test test/competition-registration.test.js test/tbank-competition.test.js test/competition-automation.test.js test/competition-events.test.js
 echo "Evidence: $workdir"
 '@
 $remote | ssh -i "$HOME/.ssh/hardzone_deploy" root@79.137.162.55 "tr -d '\r' | bash -s"

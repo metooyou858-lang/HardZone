@@ -1,6 +1,5 @@
 const { pool, withTransaction } = require('../db');
 const { syncCompetitionPayment } = require('./competition-payment');
-const { getCompetitionPublicConfig } = require('./competition-registration');
 const { sendCompetitionEmail } = require('./competition-email');
 const logger = require('./logger');
 
@@ -29,10 +28,9 @@ async function enqueue(client, registrationId, kind) {
 
 async function reconcileRegistration(id, {syncPayment = syncCompetitionPayment} = {}) {
   return withTransaction(async client => {
-    const config = getCompetitionPublicConfig();
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [config.event_key]);
-    const initial = await client.query('SELECT * FROM competition_registrations WHERE id=$1 AND event_key=$2', [id,config.event_key]);
+    const initial = await client.query('SELECT * FROM competition_registrations WHERE id=$1', [id]);
     if (!initial.rows[0]?.payment_deadline) return;
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [initial.rows[0].event_key]);
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`competition-payment:${initial.rows[0].public_token}`]);
     let registration = (await client.query('SELECT * FROM competition_registrations WHERE id=$1', [id])).rows[0];
     if (registration.status !== 'registered' || registration.paid_at || ['paid','refunded'].includes(registration.payment_status)) return;
@@ -93,12 +91,11 @@ async function runCompetitionAutomation() {
   try {
     locked=(await guard.query(`SELECT pg_try_advisory_lock(hashtext('competition-automation')) AS locked`)).rows[0].locked;
     if(!locked) return;
-    const eventKey=getCompetitionPublicConfig().event_key;
     const registrations=await pool.query(`SELECT id FROM competition_registrations
-      WHERE event_key=$1 AND payment_deadline IS NOT NULL AND status='registered'
+      WHERE payment_deadline IS NOT NULL AND status='registered'
       AND paid_at IS NULL AND payment_status NOT IN ('paid','refunded')
       AND COALESCE(next_payment_check_at,created_at)<=NOW()
-      ORDER BY next_payment_check_at NULLS FIRST LIMIT 100`,[eventKey]);
+      ORDER BY next_payment_check_at NULLS FIRST LIMIT 100`);
     for(const {id} of registrations.rows) {
       try {await reconcileRegistration(id);} catch(error) {
         await pool.query(`UPDATE competition_registrations SET next_payment_check_at=NOW()+INTERVAL '60 seconds', automation_error=$2 WHERE id=$1`,[id,String(error.providerCode||error.code||error.message).slice(0,160)]);
@@ -106,7 +103,7 @@ async function runCompetitionAutomation() {
       }
     }
     const jobs=await pool.query(`SELECT j.* FROM competition_email_jobs j JOIN competition_registrations r ON r.id=j.registration_id
-      WHERE j.state='pending' AND j.available_at<=NOW() AND r.event_key=$1 ORDER BY j.id LIMIT 100`,[eventKey]);
+      WHERE j.state='pending' AND j.available_at<=NOW() ORDER BY j.id LIMIT 100`);
     for(const job of jobs.rows) {
       try {await deliverEmailJob(job);} catch(error) {
         await pool.query(`UPDATE competition_email_jobs SET available_at=NOW()+INTERVAL '60 seconds',last_error=$2 WHERE id=$1 AND state='pending'`,[job.id,String(error.code||'SYNC_FAILED').slice(0,120)]);

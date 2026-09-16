@@ -41,11 +41,6 @@ const initialForm: FormState = {
   website: "",
 };
 
-const categoryLabels: Record<CompetitionCategory, string> = {
-  amateur: "Любители",
-  advanced: "Продвинутые",
-};
-
 function formatCompetitionDate(value: string | null) {
   if (!value) return null;
   return new Intl.DateTimeFormat("ru-RU", {
@@ -68,10 +63,14 @@ export default function CompetitionRegistrationPage() {
     let cancelled = false;
     (async () => {
       try {
-        const response = await fetch("/api/public/competition", { cache: "no-store" });
+        const eventKey = new URLSearchParams(window.location.search).get("event");
+        const response = await fetch(`/api/public/competition${eventKey ? `?event=${encodeURIComponent(eventKey)}` : ""}`, { cache: "no-store" });
         const data = (await response.json()) as { data?: CompetitionPublicConfig; error?: string };
         if (!response.ok || !data.data) throw new Error(data.error || "Не удалось загрузить регистрацию");
-        if (!cancelled) setConfig(data.data);
+        if (!cancelled) {
+          setConfig(data.data);
+          setForm(current => ({ ...current, category: data.data!.categories[0]?.key || "" }));
+        }
       } catch (loadError) {
         if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить регистрацию");
       } finally {
@@ -115,7 +114,7 @@ export default function CompetitionRegistrationPage() {
     setError("");
 
     try {
-      const response = await fetch("/api/public/competition/registrations", {
+      const response = await fetch(`/api/public/competition/registrations?event=${encodeURIComponent(config.event_key)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -180,10 +179,14 @@ export default function CompetitionRegistrationPage() {
   const formDisabled = loading || !config?.registration_enabled;
   const chatUrl = submittedTeam ? config?.chat_urls[submittedTeam.category] : null;
   const organizer = config?.organizer;
+  const categoryLabels = Object.fromEntries((config?.categories || []).map(item => [item.key, item.name]));
+  const privacyPath = config?.legacy ? "/competition/privacy" : `/competition/privacy?event=${encodeURIComponent(config?.event_key || "")}`;
+
+  if (loading || !config) return <main className={styles.documentPage}><div className={styles.documentShell} role={error ? "alert" : "status"}>{error || "Загружаем мероприятие…"}</div></main>;
 
   return (
     <main className={styles.page}>
-      <section className={styles.poster} aria-labelledby="competition-title">
+      {config.legacy ? <section className={styles.poster} aria-labelledby="competition-title">
         <div className={styles.posterShade} aria-hidden="true" />
         <div className={styles.posterContent}>
           <div className={styles.posterTitle}>
@@ -208,7 +211,11 @@ export default function CompetitionRegistrationPage() {
             <a href="#competition-terms">Условия участия ↓</a>
           </div>
         </div>
-      </section>
+      </section> : <header className={styles.eventHeader}>
+        <span className={styles.date}>HARDZONE · {date}</span><h1 id="competition-title">{config.name}</h1>
+        <p>{config.location}</p><p>Команды М + Ж · {fee} ₽ с команды</p>
+        <a href="#registration-title">Перейти к регистрации ↓</a>
+      </header>}
 
       <section className={styles.registration} aria-labelledby="registration-title">
         {submittedTeam ? (
@@ -242,9 +249,10 @@ export default function CompetitionRegistrationPage() {
               <div className={styles.termsHeading}>
                 <span>До подачи заявки</span>
                 <h3 id="competition-terms-title">Условия проведения</h3>
-                <p>Комплексы объявим отдельно. Ниже — базовые ограничения по весам и сложности упражнений.</p>
+                {config.legacy && <p>Комплексы объявим отдельно. Ниже — базовые ограничения по весам и сложности упражнений.</p>}
               </div>
 
+              {config.legacy ? <>
               <details className={styles.categoryTerms}>
                 <summary><strong>Любители</strong><span>Посмотреть упражнения</span></summary>
                 <div className={styles.categoryBody}>
@@ -294,6 +302,10 @@ export default function CompetitionRegistrationPage() {
 
               <p className={styles.finalTerms}>На оплату заявки отводится 60 минут. Если оплата не подтверждена, заявка отменяется после контрольной проверки банка. При незавершённой проверке отмена откладывается.</p>
               <p className={styles.finalTerms}>В финальных комплексах допускается увеличение диапазона весов и сложности упражнений относительно базовых ограничений категорий.</p>
+              </> : <>
+                <p className={styles.finalTerms} style={{whiteSpace:"pre-wrap"}}>{config.terms_text}</p>
+                <p className={styles.finalTerms}>На оплату заявки — 60 минут. Участие подтверждается автоматически после оплаты. Неоплаченная заявка отменяется после контрольной проверки банка.</p>
+              </>}
 
               <div className={styles.refundTerms}>
                 <h4>Изменение или отмена участия</h4>
@@ -322,8 +334,7 @@ export default function CompetitionRegistrationPage() {
                   <label className={styles.field}>
                     <span>Категория</span>
                     <select className={styles.select} disabled={formDisabled} value={form.category} onChange={(event) => update("category", event.target.value as CompetitionCategory)}>
-                      <option value="amateur">Любители</option>
-                      <option value="advanced">Продвинутые</option>
+                      {config.categories.map(category => <option key={category.key} value={category.key}>{category.name}</option>)}
                     </select>
                   </label>
                 </div>
@@ -375,7 +386,7 @@ export default function CompetitionRegistrationPage() {
                   </label>
                   <label className={styles.consent}>
                     <input className={styles.checkbox} type="checkbox" disabled={formDisabled} required checked={form.personal_data_accepted} onChange={(event) => update("personal_data_accepted", event.target.checked)} />
-                    <span>Я даю <Link href="/competition/privacy" target="_blank">согласие на обработку персональных данных</Link> для регистрации команды и служебных email-уведомлений о заявке и оплате и подтверждаю согласие второго участника на передачу его данных.</span>
+                    <span>Я даю <Link href={privacyPath} target="_blank">согласие на обработку персональных данных</Link> для регистрации команды и служебных email-уведомлений о заявке и оплате и подтверждаю согласие второго участника на передачу его данных.</span>
                   </label>
                 </div>
               </div>
@@ -401,7 +412,7 @@ export default function CompetitionRegistrationPage() {
           <p>ИНН {organizer?.inn || "271702687700"} · ОГРНИП {organizer?.ogrnip || "325270000031829"}</p>
           <p>{organizer?.registration_address || "Хабаровский край, г. Хабаровск, пер. Трубный, д. 17, кв. 193"}</p>
           <p><a href={`tel:+${(organizer?.phone || "+7 984 263-97-83").replace(/\D/g, "")}`}>{organizer?.phone || "+7 984 263-97-83"}</a> · <a href={`mailto:${organizer?.email || "fast.alena1994@yandex.ru"}`}>{organizer?.email || "fast.alena1994@yandex.ru"}</a></p>
-          <Link href="/competition/privacy">Обработка персональных данных</Link>
+          <Link href={privacyPath}>Обработка персональных данных</Link>
         </footer>
       </section>
     </main>

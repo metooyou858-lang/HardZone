@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   fetchCompetitionRegistrations,
@@ -9,11 +9,6 @@ import {
   type CompetitionRegistration,
   type CompetitionRegistrationStatus,
 } from "@/lib/api/competitions";
-
-const categoryLabels = {
-  amateur: "Любители",
-  advanced: "Продвинутые",
-} as const;
 
 const paymentLabels = {
   pending: "Ожидает оплаты",
@@ -44,19 +39,24 @@ function createdAt(value: string) {
   }).format(new Date(value));
 }
 
-export default function CompetitionRegistrationsPage() {
+export default function CompetitionRegistrationsPage({ eventKey, onBack, onEdit }: { eventKey: string; onBack: () => void; onEdit: (event: CompetitionPublicConfig) => void }) {
   const [competition, setCompetition] = useState<CompetitionPublicConfig | null>(null);
   const [registrations, setRegistrations] = useState<CompetitionRegistration[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [category, setCategory] = useState("");
+  const requestVersion = useRef(0);
+  const categoryLabels = Object.fromEntries((competition?.categories || []).map(item => [item.key, item.name]));
 
-  async function load(silent = false) {
+  const load = useCallback(async (silent = false) => {
+    const version = ++requestVersion.current;
     if (!silent) setLoading(true);
     setError("");
     try {
-      const data = await fetchCompetitionRegistrations();
+      const data = await fetchCompetitionRegistrations(eventKey);
+      if (version !== requestVersion.current) return;
       setCompetition(data.competition);
       setRegistrations(data.registrations);
     } catch (loadError) {
@@ -64,30 +64,31 @@ export default function CompetitionRegistrationsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [eventKey]);
 
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => void load(true), 15000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [load]);
 
   const totals = useMemo(() => {
     const active = registrations.filter((item) => item.status === "registered");
     return {
       active: active.length,
       paid: active.filter((item) => item.payment_status === "paid").length,
-      amateur: active.filter((item) => item.category === "amateur").length,
-      advanced: active.filter((item) => item.category === "advanced").length,
     };
   }, [registrations]);
+  const visible = category ? registrations.filter(item => item.category === category && item.status === "registered" && item.payment_status === "paid") : registrations;
 
   async function changeStatus(id: string, status: CompetitionRegistrationStatus) {
     setSavingId(id);
     setError("");
     setNotice("");
     try {
-      setRegistrations(await updateCompetitionRegistrationStatus(id, status));
+      ++requestVersion.current;
+      setRegistrations(await updateCompetitionRegistrationStatus(id, status, eventKey));
+      ++requestVersion.current;
       setNotice(status === "cancelled" ? "Регистрация отменена" : "Регистрация восстановлена");
     } catch (statusError) {
       setError(statusError instanceof Error ? statusError.message : "Не удалось изменить статус");
@@ -98,7 +99,7 @@ export default function CompetitionRegistrationsPage() {
 
   async function copyRegistrationLink() {
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}/competition`);
+      await navigator.clipboard.writeText(`${window.location.origin}${competition?.public_path || "/competition"}`);
       setNotice("Ссылка на регистрацию скопирована");
       setError("");
     } catch {
@@ -108,15 +109,13 @@ export default function CompetitionRegistrationsPage() {
 
   return (
     <div className="space-y-5">
+      <button type="button" onClick={onBack} className="min-h-11 text-sm text-[var(--text-muted)]">← Все мероприятия</button>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm text-[var(--text-muted)]">{competition?.name || "Командные соревнования HardZone"}</p>
-          <h1 className="font-[family:var(--font-heading)] text-3xl font-semibold tracking-tight text-[var(--text-main)] sm:text-4xl">Соревнования</h1>
-          <p className="mt-2 text-sm text-[var(--text-muted)]">Заявок: {totals.active} · Оплачено: {totals.paid} · Любители: {totals.amateur} · Продвинутые: {totals.advanced}</p>
+          <h1 className="break-words text-2xl font-semibold text-[var(--text-main)]">{competition?.name || "Мероприятие"}</h1>
+          <p className="mt-2 text-sm text-[var(--text-muted)]">Активных заявок: {totals.active} · Подтверждено оплатой: {totals.paid}</p>
         </div>
-        <button type="button" onClick={() => void copyRegistrationLink()} className="min-h-11 rounded-[14px] bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#062b26] transition hover:brightness-110">
-          Скопировать ссылку регистрации
-        </button>
+        <div className="flex flex-wrap gap-2"><button type="button" disabled={!competition} onClick={() => competition && onEdit(competition)} className="min-h-11 rounded-xl border border-[var(--line-soft)] px-4 text-sm">Настройки</button><button type="button" disabled={!competition} onClick={() => void copyRegistrationLink()} className="min-h-11 rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#062b26]">Ссылка регистрации</button></div>
       </div>
 
       {!loading && competition && !competition.registration_enabled && (
@@ -130,6 +129,10 @@ export default function CompetitionRegistrationsPage() {
         </div>
       )}
 
+      <nav aria-label="Заявки и категории" className="flex flex-wrap gap-x-5 border-b border-[var(--line-soft)]">
+        {[{key:"",name:"Все заявки"}, ...(competition?.categories || [])].map(item => <button key={item.key} type="button" aria-pressed={category === item.key} onClick={() => setCategory(item.key)} className={`min-h-11 border-b-2 px-1 text-sm ${category === item.key ? "border-[var(--accent)] text-[var(--text-main)]" : "border-transparent text-[var(--text-muted)]"}`}>{item.name}{item.key && ` · ${registrations.filter(r => r.category === item.key && r.status === "registered" && r.payment_status === "paid").length}`}</button>)}
+      </nav>
+      {category && <p className="text-sm text-[var(--text-muted)]">Команды попадают в категорию автоматически после подтверждения оплаты.</p>}
       <section className="overflow-hidden rounded-[22px] border border-[var(--line-soft)] bg-[var(--bg-card)]">
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full border-collapse text-left">
@@ -145,7 +148,7 @@ export default function CompetitionRegistrationsPage() {
               </tr>
             </thead>
             <tbody>
-              {registrations.map((item) => (
+              {visible.map((item) => (
                 <tr key={item.id} className={`border-b border-[var(--line-soft)] last:border-0 ${item.status === "cancelled" ? "opacity-55" : ""}`}>
                   <td className="px-5 py-4 text-sm font-semibold text-[var(--text-main)]">{item.team_name}{item.email_delivery_issue && <span className="mt-1 block text-xs text-[var(--warning)]">Проверьте отправку письма</span>}{item.automation_error && <span className="mt-1 block text-xs text-[var(--warning)]">Проверка оплаты отложена</span>}</td>
                   <td className="px-5 py-4 text-sm text-[var(--text-muted)]">{item.team_email ? <a className="block max-w-[240px] break-all hover:text-[var(--accent)]" href={`mailto:${item.team_email}`}>{item.team_email}</a> : "Не указан"}</td>
@@ -166,7 +169,7 @@ export default function CompetitionRegistrationsPage() {
         </div>
 
         <div className="divide-y divide-[var(--line-soft)] md:hidden">
-          {registrations.map((item) => (
+          {visible.map((item) => (
             <article key={item.id} className={`p-4 ${item.status === "cancelled" ? "opacity-55" : ""}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0"><h2 className="font-semibold text-[var(--text-main)]">{item.team_name}</h2><p className="mt-1 text-xs text-[var(--text-muted)]">{categoryLabels[item.category]} · {createdAt(item.created_at)}</p><p className="mt-2 break-all text-xs text-[var(--text-muted)]">Email: {item.team_email ? <a href={`mailto:${item.team_email}`}>{item.team_email}</a> : "Не указан"}</p>{item.email_delivery_issue && <p className="mt-1 text-xs text-[var(--warning)]">Проверьте отправку письма</p>}{item.automation_error && <p className="mt-1 text-xs text-[var(--warning)]">Проверка оплаты отложена</p>}<p className={`mt-1 text-xs font-medium ${paymentColor(item.payment_status)}`}>{registrationLabel(item)}</p></div>
@@ -180,7 +183,7 @@ export default function CompetitionRegistrationsPage() {
           ))}
         </div>
 
-        {!loading && registrations.length === 0 && <div className="px-5 py-16 text-center text-sm text-[var(--text-muted)]">Заявок пока нет</div>}
+        {!loading && visible.length === 0 && <div className="px-5 py-16 text-center text-sm text-[var(--text-muted)]">{category ? "В этой категории пока нет подтверждённых команд" : "Заявок пока нет"}</div>}
         {loading && <div className="px-5 py-16 text-center text-sm text-[var(--text-muted)]">Загружаем заявки…</div>}
       </section>
     </div>

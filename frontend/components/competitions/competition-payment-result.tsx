@@ -7,6 +7,10 @@ import styles from "@/app/competition/competition.module.css";
 import type { CompetitionCategory, CompetitionPaymentStatus } from "@/lib/api/competitions";
 
 type PaymentSummary = {
+  event_name: string;
+  event_date: string | null;
+  public_path: string;
+  category_name: string;
   team_name: string;
   category: CompetitionCategory;
   registration_status: "registered" | "cancelled";
@@ -18,11 +22,6 @@ type PaymentSummary = {
   expired_at: string | null;
   server_now: string;
   messenger_urls: { whatsapp: string; telegram: string } | null;
-};
-
-const categoryLabels: Record<CompetitionCategory, string> = {
-  amateur: "Любители",
-  advanced: "Продвинутые",
 };
 
 export default function CompetitionPaymentResult() {
@@ -120,20 +119,20 @@ export default function CompetitionPaymentResult() {
         <div className={styles.success} role="status">
           <h1>{paid ? "Оплата прошла" : cancelled ? "Заявка отменена" : checking ? "Проверяем итог оплаты" : refunded ? "Платёж возвращён" : "Заявка принята"}</h1>
           {loading && <p>Получаем подтверждение от Т‑Банка…</p>}
-          {!loading && paid && <p>Регистрация команды подтверждена. Увидимся 10 октября в HardZone.</p>}
+          {!loading && paid && <p>Регистрация команды подтверждена. {summary?.event_name}{summary?.event_date ? ` · ${new Date(`${summary.event_date}T12:00:00`).toLocaleDateString("ru-RU")}` : ""}.</p>}
           {!loading && cancelled && <p>{summary?.expired_at ? "Срок оплаты истёк. Вы можете подать новую заявку." : "Регистрация команды отменена."}</p>}
           {!loading && checking && <p>Срок оплаты истёк. Проверяем статус в банке; страница обновится автоматически. Если платёж ещё обрабатывается, дождёмся результата.</p>}
           {!loading && !paid && !cancelled && !checking && !refunded && <p>Для подтверждения участия оплатите взнос до окончания срока.</p>}
           {!paid && !cancelled && !refunded && remaining !== null && remaining > 0 && <p>Осталось на оплату: <strong style={{fontVariantNumeric:"tabular-nums"}}>{countdown}</strong><br /><small>До {new Intl.DateTimeFormat("ru-RU", {timeZone:"Asia/Vladivostok", day:"numeric", month:"long", hour:"2-digit", minute:"2-digit"}).format(new Date(summary!.payment_deadline!))} по Хабаровску</small></p>}
           {summary && (
-            <strong>{summary.team_name} · {categoryLabels[summary.category]}</strong>
+            <strong>{summary.team_name} · {summary.category_name}</strong>
           )}
           {error && <div className={styles.error} role="alert">{error}</div>}
           <div className={styles.paymentActions}>
             {paid && summary?.messenger_urls && (
               <>
-                <a className={styles.chatLink} href={summary.messenger_urls.whatsapp} target="_blank" rel="noreferrer">Чат в WhatsApp ↗</a>
-                <a className={styles.chatLink} href={summary.messenger_urls.telegram} target="_blank" rel="noreferrer">Чат в Telegram ↗</a>
+                {summary.messenger_urls.whatsapp && <a className={styles.chatLink} href={summary.messenger_urls.whatsapp} target="_blank" rel="noreferrer">Чат в WhatsApp ↗</a>}
+                {summary.messenger_urls.telegram && <a className={styles.chatLink} href={summary.messenger_urls.telegram} target="_blank" rel="noreferrer">Чат в Telegram ↗</a>}
               </>
             )}
             {!paid && !cancelled && !checking && !refunded && !loading && summary && publicToken && (
@@ -141,7 +140,7 @@ export default function CompetitionPaymentResult() {
                 {retrying ? "Открываем оплату…" : "Перейти к оплате"}
               </button>
             )}
-            <Link className={styles.secondaryLink} href="/competition">Вернуться к соревнованиям</Link>
+            <Link className={styles.secondaryLink} href={summary?.public_path || "/competition"}>Вернуться к соревнованиям</Link>
           </div>
         </div>
       </section>

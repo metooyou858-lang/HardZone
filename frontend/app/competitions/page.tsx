@@ -1,5 +1,5 @@
-import CompetitionRegistrationsPage from "@/components/competitions/competition-registrations-page";
+import CompetitionEventsPage from "@/components/competitions/competition-events-page";
 
 export default function Page() {
-  return <CompetitionRegistrationsPage />;
+  return <CompetitionEventsPage />;
 }

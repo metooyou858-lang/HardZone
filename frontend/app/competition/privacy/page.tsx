@@ -8,13 +8,14 @@ export const metadata: Metadata = {
   description: "Условия обработки персональных данных при регистрации на командные соревнования HardZone",
 };
 
-export default function CompetitionPrivacyPage() {
+export default async function CompetitionPrivacyPage({ searchParams }: { searchParams: Promise<{ event?: string }> }) {
+  const { event } = await searchParams;
   return (
     <main className={styles.documentPage}>
       <article className={styles.documentShell}>
-        <Link className={styles.documentBack} href="/competition">← Вернуться к регистрации</Link>
+        <Link className={styles.documentBack} href={event ? `/competition?event=${encodeURIComponent(event)}` : "/competition"}>← Вернуться к регистрации</Link>
         <h1>Согласие на обработку персональных данных</h1>
-        <p className={styles.documentLead}>Редакция от 11 сентября 2026 года. Согласие относится только к регистрации команды на командные соревнования HardZone 10 октября 2026 года.</p>
+        <p className={styles.documentLead}>{event ? "Редакция от 16 сентября 2026 года. Согласие относится к регистрации команды на выбранное в форме мероприятие HardZone." : "Редакция от 11 сентября 2026 года. Согласие относится только к регистрации команды на командные соревнования HardZone 10 октября 2026 года."}</p>
 
         <section className={styles.documentSection}>
           <h2>Оператор</h2>

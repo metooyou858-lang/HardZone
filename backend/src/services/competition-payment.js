@@ -10,9 +10,9 @@ const {
   verifyTbankToken,
 } = require('./tbank-competition');
 const {
-  getCompetitionPublicConfig,
   getCompetitionRegistrationByPublicToken,
 } = require('./competition-registration');
+const { getCompetitionConfig } = require('./competition-events');
 
 function notFound(message) {
   return Object.assign(new Error(message), { statusCode: 404 });
@@ -64,16 +64,15 @@ async function refreshRegistrationPaymentStatus(registrationId, executor = pool)
 }
 
 async function startCompetitionPayment(publicToken) {
-  const competition = getCompetitionPublicConfig();
-  if (!competition.payment_enabled || !competition.fee_rubles) {
-    throw Object.assign(new Error('Онлайн-оплата пока не включена'), { statusCode: 503 });
-  }
-
   let providerError = null;
   const result = await withTransaction(async (client) => {
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`competition-payment:${publicToken}`]);
     const registration = await getCompetitionRegistrationByPublicToken(publicToken, client);
     if (!registration) throw notFound('Заявка не найдена');
+    const competition = await getCompetitionConfig(registration.event_key, client);
+    if (!competition.payment_enabled || !competition.fee_rubles) {
+      throw Object.assign(new Error('Онлайн-оплата пока не включена'), { statusCode: 503 });
+    }
     if (registration.status !== 'registered') {
       throw Object.assign(new Error('Эта регистрация отменена'), { statusCode: 409 });
     }
@@ -113,7 +112,7 @@ async function startCompetitionPayment(publicToken) {
     const paymentRowId = paymentInsert.rows[0].id;
 
     try {
-      const providerPayment = await initCompetitionPayment({ registration, orderId, amountKopecks });
+      const providerPayment = await initCompetitionPayment({ registration: { ...registration, event_name: competition.name }, orderId, amountKopecks });
       await client.query(
         `UPDATE competition_payments
          SET payment_id = $1, payment_url = $2, status = $3, error_code = NULL, updated_at = NOW()
@@ -244,8 +243,12 @@ async function getCompetitionPaymentSummary(publicToken, { sync = false } = {}) 
     payment = await findCompetitionPaymentForRegistration(registration.id);
   }
 
-  const competition = getCompetitionPublicConfig();
+  const competition = await getCompetitionConfig(registration.event_key);
   return {
+    event_name: competition.name,
+    event_date: competition.date,
+    public_path: competition.public_path,
+    category_name: competition.categories.find(item => item.key === registration.category)?.name || registration.category,
     team_name: registration.team_name,
     category: registration.category,
     registration_status: registration.status,

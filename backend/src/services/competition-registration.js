@@ -2,6 +2,7 @@ const { randomUUID } = require('node:crypto');
 
 const { pool, withTransaction } = require('../db');
 const { normalizePhone } = require('../utils/phones');
+const { getCompetitionConfig } = require('./competition-events');
 
 const CATEGORIES = new Set(['amateur', 'advanced']);
 const STATUSES = new Set(['registered', 'cancelled']);
@@ -26,9 +27,9 @@ function normalizedRussianPhone(value, label) {
   return { display, normalized };
 }
 
-function normalizeCompetitionRegistration(input) {
+function normalizeCompetitionRegistration(input, categories = CATEGORIES) {
   const category = String(input?.category || '').trim();
-  if (!CATEGORIES.has(category)) throw validationError('Выберите категорию команды');
+  if (!categories.has(category)) throw validationError('Выберите категорию команды');
   if (input?.terms_accepted !== true) {
     throw validationError('Подтвердите согласие с условиями проведения мероприятия');
   }
@@ -103,16 +104,13 @@ function getCompetitionPublicConfig() {
   };
 }
 
-async function createCompetitionRegistration(input) {
-  const config = getCompetitionPublicConfig();
-  if (!config.registration_enabled) {
-    throw Object.assign(new Error('Регистрация пока не открыта'), { statusCode: 503 });
-  }
-
-  const registration = normalizeCompetitionRegistration(input);
-
+async function createCompetitionRegistration(input, eventKey) {
+  const initial = await getCompetitionConfig(eventKey);
   return withTransaction(async (client) => {
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [config.event_key]);
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [initial.event_key]);
+    const config = await getCompetitionConfig(initial.event_key, client);
+    if (!config.registration_enabled) throw Object.assign(new Error('Регистрация пока не открыта'), { statusCode: 503 });
+    const registration = normalizeCompetitionRegistration(input, new Set(config.categories.map(item => item.key)));
 
     const duplicate = await client.query(
       `SELECT id, team_email, team_name, category,
@@ -192,8 +190,8 @@ async function createCompetitionRegistration(input) {
   });
 }
 
-async function listCompetitionRegistrations(executor = pool) {
-  const config = getCompetitionPublicConfig();
+async function listCompetitionRegistrations(executor = pool, eventKey) {
+  const config = await getCompetitionConfig(eventKey, executor);
   const { rows } = await executor.query(
     `SELECT
        id, team_name, category, team_email, payment_deadline, expired_at, automation_error,
@@ -213,21 +211,20 @@ async function listCompetitionRegistrations(executor = pool) {
 }
 
 async function getCompetitionRegistrationByPublicToken(publicToken, executor = pool) {
-  const config = getCompetitionPublicConfig();
   const { rows } = await executor.query(
     `SELECT id, event_key, team_name, category, male_phone, public_token, team_email, payment_deadline, fee_kopecks, expired_at,
             payment_status, paid_at, status, created_at, updated_at
      FROM competition_registrations
-     WHERE event_key = $1 AND public_token = $2
+     WHERE public_token = $1
      LIMIT 1`,
-    [config.event_key, String(publicToken || '').trim()]
+    [String(publicToken || '').trim()]
   );
   return rows[0] || null;
 }
 
-async function updateCompetitionRegistrationStatus(id, status) {
+async function updateCompetitionRegistrationStatus(id, status, eventKey) {
   if (!STATUSES.has(status)) throw validationError('Некорректный статус заявки');
-  const config = getCompetitionPublicConfig();
+  const config = await getCompetitionConfig(eventKey);
 
   return withTransaction(async (client) => {
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [config.event_key]);
@@ -270,7 +267,7 @@ async function updateCompetitionRegistrationStatus(id, status) {
        RETURNING id`,
       [status, id]
     );
-    return listCompetitionRegistrations(client);
+    return listCompetitionRegistrations(client, config.event_key);
   });
 }
 

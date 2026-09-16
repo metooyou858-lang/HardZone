@@ -29,6 +29,16 @@
   color: #f4f2eb;
 }
 
+.eventHeader {
+  padding: 48px var(--page-gutter);
+  background: var(--ink);
+  color: var(--paper);
+}
+.eventHeader > * { max-width: var(--content-width); margin-inline: auto; }
+.eventHeader h1 { font-size: clamp(28px, 5vw, 48px); line-height: 1.15; overflow-wrap: anywhere; margin-block: 16px 24px; }
+.eventHeader p { margin-block: 12px; }
+.eventHeader a { display: block; padding-top: 20px; color: var(--accent); }
+
 .posterShade {
   position: absolute;
   inset: 0;

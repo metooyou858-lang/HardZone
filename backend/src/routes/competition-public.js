@@ -2,8 +2,8 @@ const express = require('express');
 
 const {
   createCompetitionRegistration,
-  getCompetitionPublicConfig,
 } = require('../services/competition-registration');
+const { getCompetitionConfig } = require('../services/competition-events');
 const {
   getCompetitionPaymentSummary,
   handleTbankCompetitionNotification,
@@ -13,8 +13,13 @@ const logger = require('../services/logger');
 
 const router = express.Router();
 
-router.get('/', (_req, res) => {
-  res.json({ success: true, data: getCompetitionPublicConfig() });
+router.get('/', async (req, res, next) => {
+  try {
+    res.json({ success: true, data: await getCompetitionConfig(String(req.query.event || '') || undefined) });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, error: error.message });
+    return next(error);
+  }
 });
 
 router.post('/registrations', async (req, res, next) => {
@@ -22,8 +27,9 @@ router.post('/registrations', async (req, res, next) => {
     if (String(req.body?.website || '').trim()) {
       return res.status(201).json({ success: true, data: null });
     }
-    const registration = await createCompetitionRegistration(req.body);
-    const competition = getCompetitionPublicConfig();
+    const eventKey = String(req.query.event || '') || undefined;
+    const registration = await createCompetitionRegistration(req.body, eventKey);
+    const competition = await getCompetitionConfig(eventKey);
     if (!competition.payment_enabled) {
       return res.status(201).json({ success: true, data: { registration, payment_url: null } });
     }

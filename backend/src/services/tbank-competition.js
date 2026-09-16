@@ -112,7 +112,7 @@ function buildCompetitionInitPayload({ registration, orderId, amountKopecks }, c
       Taxation: config.taxation,
       Items: [
         {
-          Name: 'Организационный взнос за участие в HardZone Challenge Team',
+          Name: registration.event_name ? `Организационный взнос: ${registration.event_name}`.slice(0,128) : 'Организационный взнос за участие в HardZone Challenge Team',
           Price: amountKopecks,
           Quantity: 1,
           Amount: amountKopecks,
