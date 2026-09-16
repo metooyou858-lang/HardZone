@@ -74,7 +74,7 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
       <form onSubmit={save} className="space-y-5">
         <fieldset disabled={busy} className="space-y-5 disabled:opacity-60">
           <div className="grid items-end gap-4 md:grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_auto]">
-            <label className="min-w-0 text-sm">Категория<select className={inputClass} value={category} onChange={e => setCategory(e.target.value)}>{data.competition.categories.map(item => <option key={item.key} value={item.key}>{item.name}</option>)}</select></label>
+            <label className="min-w-0 text-sm">Категория<select className={inputClass} value={category} onChange={e => setCategory(e.target.value)}>{data.competition.categories.map(item => <option className="bg-white text-black" key={item.key} value={item.key}>{item.name}</option>)}</select></label>
             <label className="min-w-0 text-sm">Плановое количество команд<input className={inputClass} type="number" min={1} max={1000} step={1} placeholder={`По оплатам: ${data.confirmed_counts[category] || 0}`} value={selected?.planned_count ?? ""} onChange={e => selected && changeCategory({...selected,planned_count:e.target.value === "" ? null : Number(e.target.value)})} /></label>
             <button type="button" className={button} disabled={!selected || selected.complexes.length >= 20} onClick={addComplex}>Добавить комплекс</button>
           </div>
