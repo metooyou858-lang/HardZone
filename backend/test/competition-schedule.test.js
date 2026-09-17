@@ -107,3 +107,22 @@ test('conflicting schedule can be saved for correction but cannot become the fix
   await assert.rejects(updateCompetitionEvent(event.event_key,{...event,categories:[competition.categories[1]]}),/с комплексами/);
   assert.equal((await readSchedule(event.event_key)).grid,null);
 });
+
+test('deleting a complex preserves other categories and deleting the last leaves an empty persisted plan',async()=>{
+  const event=await createCompetitionEvent({name:'Удаление комплекса',date:'2026-10-10',location:'Зал',fee_rubles:3500,registration_enabled:false,categories:competition.categories,terms_text:'Тест'}); keys.push(event.event_key);
+  const first=complex(); const second=complex({venue:'Улица'});
+  let result=await saveSchedule(event.event_key,{revision:0,config:{categories:[{category_key:'amateur',planned_count:10,complexes:[first]},{category_key:'advanced',planned_count:6,complexes:[second]}]}});
+  result=await generateSchedule(event.event_key,{revision:result.revision,source_hash:result.source_hash});
+  const frozen=result.grid;
+  const remove=id=>({categories:result.config.categories.map(item=>({...item,complexes:item.complexes.filter(c=>c.id!==id)}))});
+  result=await saveSchedule(event.event_key,{revision:result.revision,config:remove(first.id)});
+  assert.deepEqual(result.preview.blocks.map(b=>b.id),[second.id]);
+  assert.equal(result.config.categories[0].planned_count,10);
+  assert.equal(result.config.categories[1].planned_count,6);
+  result=await saveSchedule(event.event_key,{revision:result.revision,config:remove(second.id)});
+  const reloaded=await readSchedule(event.event_key);
+  assert.deepEqual(reloaded.preview.blocks,[]);
+  assert.equal(reloaded.preview.start_time,null);
+  assert.deepEqual(reloaded.grid,frozen);
+  assert.equal(reloaded.grid_stale,true);
+});
