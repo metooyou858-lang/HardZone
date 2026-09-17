@@ -106,7 +106,7 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
         <p className="text-xs text-[var(--text-muted)]">Перерыв после комплекса резервирует площадку. Следующее начало задайте с учётом этого перерыва. Сохранённая сетка изменится только по кнопке формирования.</p>
         {dirty && <p className="text-sm text-[var(--warning)]">Ниже расчёт по последним сохранённым настройкам.</p>}
         {!!data.preview.errors.length && <ul role="alert" className="list-disc space-y-2 pl-5 text-sm text-[var(--danger)]">{data.preview.errors.map((message,i) => <li key={i}>{message}</li>)}</ul>}
-        <Grid grid={data.preview} compact />
+        <Grid grid={data.preview} />
       </section>
     </>}
     {data && view === "grid" && <>
@@ -116,14 +116,14 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
   </div>;
 }
 
-function Grid({ grid, compact = false }: { grid: ScheduleGrid; compact?: boolean }) {
+function Grid({ grid }: { grid: ScheduleGrid }) {
   if (!grid.blocks.length) return <p className="text-sm text-[var(--text-muted)]">После добавления комплексов здесь появится расписание.</p>;
   return <div className="space-y-4">
     <p className="text-sm"><strong>{grid.start_time} — {grid.end_time}</strong><span className="text-[var(--text-muted)]"> · {grid.event_date ? new Date(`${grid.event_date}T12:00:00`).toLocaleDateString("ru-RU") : "Дата не задана"} · Хабаровск</span></p>
     {grid.blocks.map(block => <section key={block.id} className="overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)]">
       <header className="flex flex-wrap items-start justify-between gap-3 p-4"><div><h3 className="break-words font-semibold">{block.category_name} · {block.name}</h3><p className="mt-1 text-xs text-[var(--text-muted)]">{block.venue} · Дорожек: {block.lanes} · Мест: {block.planned_count} · Заходов: {block.heats.length}</p></div><strong className="text-sm">{block.start_time} — {block.end_time}</strong></header>
       {block.briefing_time && <p className="border-t border-[var(--line-soft)] px-4 py-3 text-sm">{block.briefing_time} — {block.start_time} · Брифинг</p>}
-      {!compact && <div className="divide-y divide-[var(--line-soft)] border-t border-[var(--line-soft)]">{block.heats.map(heat => <div key={heat.number} className="grid gap-3 px-4 py-4 sm:grid-cols-[180px_minmax(0,1fr)]"><div className="text-sm"><strong>{heat.start_time} — {heat.end_time}</strong><p className="mt-1 text-[var(--text-muted)]">Заход {heat.number}</p></div><ol className="grid gap-x-6 gap-y-2 sm:grid-cols-2">{heat.slots.map(slot => <li key={slot.lane} className="flex min-w-0 gap-3 text-sm"><span className="w-5 shrink-0 text-[var(--text-muted)]">{slot.lane}</span><span className="break-words">{slot.team_name || (block.assignment === "results" ? "После результатов" : "Резерв")}</span></li>)}</ol></div>)}</div>}
+      <div className="divide-y divide-[var(--line-soft)] border-t border-[var(--line-soft)]">{block.heats.map(heat => <div key={heat.number} className="grid gap-3 px-4 py-4 sm:grid-cols-[180px_minmax(0,1fr)]"><div className="text-sm"><strong>{heat.start_time} — {heat.end_time}</strong><p className="mt-1 text-[var(--text-muted)]">Заход {heat.number}</p></div><ol className="grid gap-x-6 gap-y-2 sm:grid-cols-2">{heat.slots.map(slot => <li key={slot.lane} className="flex min-w-0 gap-3 text-sm"><span className="w-5 shrink-0 text-[var(--text-muted)]">{slot.lane}</span><span className="break-words">{slot.team_name || (block.assignment === "results" ? "После результатов" : "Резерв")}</span></li>)}</ol></div>)}</div>
       {(block.gap_minutes > 0 || block.break_after_minutes > 0) && <p className="border-t border-[var(--line-soft)] px-4 py-3 text-xs text-[var(--text-muted)]">Между заходами: {block.gap_minutes} мин{block.break_after_minutes > 0 ? ` · Перерыв после комплекса: ${block.end_time} — ${block.available_after}` : ""}</p>}
     </section>)}
   </div>;
