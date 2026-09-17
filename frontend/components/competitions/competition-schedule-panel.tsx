@@ -10,7 +10,6 @@ const inputClass = "mt-1 min-h-11 w-full min-w-0 rounded-lg border border-[var(-
 export default function CompetitionSchedulePanel({ eventKey }: { eventKey: string }) {
   const [data, setData] = useState<CompetitionSchedule | null>(null);
   const [draft, setDraft] = useState<ScheduleConfig>({categories:[]});
-  const [category, setCategory] = useState("");
   const [view, setViewState] = useState<"settings" | "grid">(() =>
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("scheduleView") === "grid" ? "grid" : "settings"
   );
@@ -32,7 +31,6 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
   const accept = useCallback((value: CompetitionSchedule) => {
     setData(value);
     setDraft({categories:value.competition.categories.map(item => value.config.categories.find(c => c.category_key === item.key) || {category_key:item.key,planned_count:null,complexes:[]})});
-    setCategory(current => current || value.competition.categories[0]?.key || "");
     setDirty(false);
   }, []);
   const load = useCallback(async () => {
@@ -43,20 +41,17 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
   }, [eventKey, accept]);
   useEffect(() => { void load(); }, [load]);
 
-  const selected = draft.categories.find(item => item.category_key === category);
-  function changeCategory(next: NonNullable<typeof selected>) {
-    setDraft(current => ({categories:current.categories.map(item => item.category_key === category ? next : item)}));
+  function changeCount(categoryKey: string, count: number | null) {
+    setDraft(current => ({categories:current.categories.map(item => item.category_key === categoryKey ? {...item,planned_count:count} : item)}));
     setDirty(true); setNotice("");
   }
   function updateComplex(patch: Partial<CompetitionComplex>) {
     setEditor(current => current ? {...current, complex: {...current.complex, ...patch}} : current);
   }
   function addComplex() {
-    if (!selected) return;
-    const last = selected.complexes.at(-1);
-    setEditor({category, isNew:true, complex:{
-      id:crypto.randomUUID(),name:`Комплекс ${selected.complexes.length + 1}`, start_time:"", briefing_time:null,
-      venue:last?.venue || "",lanes:last?.lanes || 4,duration_minutes:10,gap_minutes:3,break_after_minutes:0,
+    setEditor({category:"", isNew:true, complex:{
+      id:crypto.randomUUID(),name:"", start_time:"", briefing_time:null,
+      venue:"",lanes:4,duration_minutes:10,gap_minutes:3,break_after_minutes:0,
     }});
   }
   async function persist(config: ScheduleConfig, message: string) {
@@ -68,17 +63,24 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
   }
   async function save(e: FormEvent) {
     e.preventDefault();
-    await persist(draft,"Количество команд сохранено для всех комплексов категории.");
+    await persist(draft,"Количество команд по категориям сохранено. Расчёт обновлён.");
   }
   async function saveComplex(e: FormEvent) {
     e.preventDefault(); if (!editor) return;
-    const next = {categories:draft.categories.map(item => item.category_key !== editor.category ? item : {...item, complexes:editor.isNew ? [...item.complexes,editor.complex] : item.complexes.map(complex => complex.id === editor.complex.id ? editor.complex : complex)})};
+    const target = draft.categories.find(item => item.category_key === editor.category);
+    if (!target) { setError("Выберите категорию комплекса"); return; }
+    if (target.complexes.filter(item => item.id !== editor.complex.id).length >= 20) { setError("В категории допускается до 20 комплексов"); return; }
+    const next = {categories:draft.categories.map(item => ({...item,complexes:item.category_key === editor.category
+      ? item.complexes.some(complex => complex.id === editor.complex.id)
+        ? item.complexes.map(complex => complex.id === editor.complex.id ? editor.complex : complex)
+        : [...item.complexes,editor.complex]
+      : item.complexes.filter(complex => complex.id !== editor.complex.id)}))};
     if (await persist(next, editor.isNew ? "Комплекс добавлен. Расчёт обновлён." : "Комплекс изменён. Расчёт обновлён.")) setEditor(null);
   }
   function editComplex(id: string) {
     const owner = draft.categories.find(item => item.complexes.some(complex => complex.id === id));
     const complex = owner?.complexes.find(item => item.id === id);
-    if (owner && complex) { setCategory(owner.category_key); setEditor({category:owner.category_key, complex:{...complex}, isNew:false}); }
+    if (owner && complex) setEditor({category:owner.category_key, complex:{...complex}, isNew:false});
   }
   async function deleteComplex(id: string) {
     await persist({categories:draft.categories.map(item => ({...item,complexes:item.complexes.filter(complex => complex.id !== id)}))},"Комплекс удалён из расчёта. Сохранённая сетка обновляется отдельно.");
@@ -95,7 +97,12 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
     <form ref={editorRef} onSubmit={saveComplex} className={`scroll-mt-4 p-4 sm:p-5 ${editor.isNew ? "rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)]" : "border-t border-[var(--line-soft)]"}`}>
         <fieldset disabled={busy}>
           {[editor.complex].map(complex => <section key={complex.id} className="space-y-4">
-            {editor.isNew && <h3 className="font-semibold">Новый комплекс · {data.competition.categories.find(item => item.key === editor.category)?.name}</h3>}
+            {editor.isNew && <h3 className="font-semibold">Новый комплекс</h3>}
+            <label className="block max-w-md text-xs">Категория комплекса<select required className={inputClass} value={editor.category} onChange={e => {
+              const categoryKey = e.target.value;
+              setEditor(current => current ? {...current,category:categoryKey,complex:{...current.complex,name:current.complex.name || `Комплекс ${(draft.categories.find(item => item.category_key === categoryKey)?.complexes.length || 0) + 1}`}} : current);
+            }}><option className="bg-white text-black" value="" disabled>Выберите категорию</option>{data.competition.categories.map(item => <option className="bg-white text-black" key={item.key} value={item.key}>{item.name}</option>)}</select></label>
+            {!editor.isNew && !draft.categories.find(item => item.category_key === editor.category)?.complexes.some(item => item.id === complex.id) && <p className="text-sm text-[var(--text-muted)]">После сохранения комплекс переместится в конец плана выбранной категории и будет использовать её количество команд.</p>}
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <label className="min-w-0 text-xs">Название<input className={inputClass} required maxLength={120} value={complex.name} onChange={e => updateComplex({name:e.target.value})} /></label>
               <label className="min-w-0 text-xs">Место / площадка<input className={inputClass} required maxLength={120} placeholder="Основной зал" value={complex.venue} onChange={e => updateComplex({venue:e.target.value})} /></label>
@@ -119,20 +126,19 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
     {!data && <p className="text-sm text-[var(--text-muted)]">{busy ? "Загружаем комплексы…" : "Расписание недоступно. Повторите загрузку."}</p>}
     {data && view === "settings" && <>
       <details className="border-b border-[var(--line-soft)] pb-3">
-        <summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">Настройки категорий · {data.competition.categories.find(item => item.key === category)?.name}{dirty && <span className="ml-2 text-[var(--warning)]">Есть несохранённые изменения</span>}</summary>
+        <summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">Количество команд по категориям{dirty && <span className="ml-2 text-[var(--warning)]">Есть несохранённые изменения</span>}</summary>
       <form onSubmit={save} className="space-y-5 pt-3">
         <fieldset disabled={busy || !!editor} className="space-y-5 disabled:opacity-60">
-          <div className="grid items-end gap-4 md:grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_auto]">
-            <label className="min-w-0 text-sm">Категория<select className={inputClass} value={category} onChange={e => setCategory(e.target.value)}>{data.competition.categories.map(item => <option className="bg-white text-black" key={item.key} value={item.key}>{item.name}</option>)}</select></label>
-            <label className="min-w-0 text-sm">Плановое количество команд<input className={inputClass} type="number" min={1} max={1000} step={1} placeholder={`По оплатам: ${data.confirmed_counts[category] || 0}`} value={selected?.planned_count ?? ""} onChange={e => selected && changeCategory({...selected,planned_count:e.target.value === "" ? null : Number(e.target.value)})} /></label>
+          <div className="grid items-end gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {draft.categories.map(item => <label key={item.category_key} className="min-w-0 text-sm">{data.competition.categories.find(category => category.key === item.category_key)?.name}<input aria-label={`Плановое количество команд: ${data.competition.categories.find(category => category.key === item.category_key)?.name}`} className={inputClass} type="number" min={1} max={1000} step={1} placeholder={`По оплатам: ${data.confirmed_counts[item.category_key] || 0}`} value={item.planned_count ?? ""} onChange={e => changeCount(item.category_key,e.target.value === "" ? null : Number(e.target.value))} /></label>)}
             <button type="submit" className={button} disabled={!dirty}>Сохранить количество</button>
           </div>
-          <p className="text-xs text-[var(--text-muted)]">Одно количество для всех комплексов выбранной категории. Пустое поле — расчёт по оплаченным командам.</p>
+          <p className="text-xs text-[var(--text-muted)]">Плановое количество применяется ко всем комплексам своей категории. Пустое поле — расчёт по оплаченным командам.</p>
           {dirty && <p className="text-sm text-[var(--warning)]">Сохраните количество команд перед работой с комплексами.</p>}
         </fieldset>
       </form>
       </details>
-      <button type="button" className={primary} disabled={busy || dirty || !!editor || !selected || selected.complexes.length >= 20} onClick={addComplex}>Добавить комплекс</button>
+      <button type="button" className={primary} disabled={busy || dirty || !!editor || !draft.categories.length} onClick={addComplex}>Добавить комплекс</button>
       {editor?.isNew && editorForm}
       <section className="space-y-4 border-t border-[var(--line-soft)] pt-5">
         <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Расчёт всего мероприятия</h2><button className={primary} disabled={busy || dirty || !!editor || !data.preview.blocks.length || !!data.preview.errors.length} onClick={() => void generate()}>{data.grid ? "Пересформировать сетку" : "Сформировать сетку"}</button></div>

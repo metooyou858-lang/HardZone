@@ -12,6 +12,22 @@ const plan = (complexes=[complex()],planned_count=null) => ({categories:[{catego
 const teams = Array.from({length:10},(_,i)=>({id:String(i+1),team_name:`Команда ${i+1}`,category:'amateur',created_at:new Date(2026,8,1,0,i),status:'registered',payment_status:'paid'}));
 const keys=[];
 
+test('moving a complex preserves its id and settings, uses target count and leaves the saved grid unchanged',async()=>{
+  const event=await createCompetitionEvent({name:'Перенос комплекса',date:'2026-10-10',location:'Зал',fee_rubles:3500,registration_enabled:false,categories:competition.categories,terms_text:'Тест'}); keys.push(event.event_key);
+  const moved=complex({start_time:'11:00',briefing_time:null});
+  const existing=complex({start_time:'09:00',briefing_time:null});
+  let result=await saveSchedule(event.event_key,{revision:0,config:{categories:[{category_key:'amateur',planned_count:8,complexes:[moved]},{category_key:'advanced',planned_count:12,complexes:[existing]}]}});
+  result=await generateSchedule(event.event_key,{revision:result.revision,source_hash:result.source_hash});
+  const snapshot=result.grid;
+  result=await saveSchedule(event.event_key,{revision:result.revision,config:{categories:[{category_key:'amateur',planned_count:8,complexes:[]},{category_key:'advanced',planned_count:12,complexes:[existing,moved]}]}});
+  assert.deepEqual(result.config.categories[1].complexes,[existing,moved]);
+  assert.equal(result.preview.blocks.find(b=>b.id===moved.id).planned_count,12);
+  assert.equal(result.preview.blocks.find(b=>b.id===moved.id).assignment,'results');
+  assert.equal(result.preview.blocks.filter(b=>b.id===moved.id).length,1);
+  assert.deepEqual(result.grid,snapshot);
+  assert.equal(result.grid_stale,true);
+});
+
 test('disabled briefing does not reserve the venue from midnight, while explicit midnight remains a time',()=>{
   const config={categories:[{category_key:'amateur',planned_count:8,complexes:[complex({start_time:'10:20',briefing_time:'10:00',duration_minutes:12,break_after_minutes:5})]},{category_key:'advanced',planned_count:8,complexes:[complex({start_time:'10:55',briefing_time:null,break_after_minutes:5})]}]};
   const grid=buildSchedule(normalizeSchedule(config,competition),competition,[]);
