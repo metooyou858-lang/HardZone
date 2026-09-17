@@ -118,9 +118,10 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
     {notice && <p role="status" className="text-sm text-[var(--accent)]">{notice}</p>}
     {!data && <p className="text-sm text-[var(--text-muted)]">{busy ? "Загружаем комплексы…" : "Расписание недоступно. Повторите загрузку."}</p>}
     {data && view === "settings" && <>
-      <form onSubmit={save} className="space-y-5">
+      <details className="border-b border-[var(--line-soft)] pb-3">
+        <summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">Настройки категорий · {data.competition.categories.find(item => item.key === category)?.name}{dirty && <span className="ml-2 text-[var(--warning)]">Есть несохранённые изменения</span>}</summary>
+      <form onSubmit={save} className="space-y-5 pt-3">
         <fieldset disabled={busy || !!editor} className="space-y-5 disabled:opacity-60">
-          <h2 className="text-lg font-semibold">Команды категории</h2>
           <div className="grid items-end gap-4 md:grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_auto]">
             <label className="min-w-0 text-sm">Категория<select className={inputClass} value={category} onChange={e => setCategory(e.target.value)}>{data.competition.categories.map(item => <option className="bg-white text-black" key={item.key} value={item.key}>{item.name}</option>)}</select></label>
             <label className="min-w-0 text-sm">Плановое количество команд<input className={inputClass} type="number" min={1} max={1000} step={1} placeholder={`По оплатам: ${data.confirmed_counts[category] || 0}`} value={selected?.planned_count ?? ""} onChange={e => selected && changeCategory({...selected,planned_count:e.target.value === "" ? null : Number(e.target.value)})} /></label>
@@ -130,6 +131,7 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
           {dirty && <p className="text-sm text-[var(--warning)]">Сохраните количество команд перед работой с комплексами.</p>}
         </fieldset>
       </form>
+      </details>
       <button type="button" className={primary} disabled={busy || dirty || !!editor || !selected || selected.complexes.length >= 20} onClick={addComplex}>Добавить комплекс</button>
       {editor?.isNew && editorForm}
       <section className="space-y-4 border-t border-[var(--line-soft)] pt-5">
@@ -155,7 +157,7 @@ function Grid({ grid, onEdit, onDelete, actionsDisabled, editingId, editorForm }
       <header className="flex flex-wrap items-start justify-between gap-3 p-4"><div className="min-w-0"><div className="flex flex-wrap items-center gap-3"><h3 className="break-words font-semibold">{block.category_name} · {block.name}</h3>{onEdit && editingId !== block.id && <button type="button" className={button} disabled={actionsDisabled} onClick={() => onEdit(block.id)} aria-label={`Редактировать: ${block.category_name} · ${block.name}`}>Редактировать</button>}{onDelete && editingId !== block.id && <button type="button" className={`${button} text-[var(--danger)]`} disabled={actionsDisabled} onClick={() => onDelete(block.id)} aria-label={`Удалить: ${block.category_name} · ${block.name}`}>Удалить</button>}</div><p className="mt-1 text-xs text-[var(--text-muted)]">{block.venue} · Дорожек: {block.lanes} · Мест: {block.planned_count} · Заходов: {block.heats.length}</p></div><strong className="text-sm">{block.start_time} — {block.end_time}</strong></header>
       {editingId === block.id ? editorForm : <>
       {block.briefing_time && <p className="border-t border-[var(--line-soft)] px-4 py-3 text-sm">{block.briefing_time} — {block.start_time} · Брифинг</p>}
-      <div className="divide-y divide-[var(--line-soft)] border-t border-[var(--line-soft)]">{block.heats.map(heat => <div key={heat.number} className="grid gap-3 px-4 py-4 sm:grid-cols-[180px_minmax(0,1fr)]"><div className="text-sm"><strong>{heat.start_time} — {heat.end_time}</strong><p className="mt-1 text-[var(--text-muted)]">Заход {heat.number}</p></div><ol className="grid gap-x-6 gap-y-2 sm:grid-cols-2">{heat.slots.map(slot => <li key={slot.lane} className="flex min-w-0 gap-3 text-sm"><span className="w-5 shrink-0 text-[var(--text-muted)]">{slot.lane}</span><span className="break-words">{slot.team_name || (block.assignment === "results" ? "После результатов" : "Резерв")}</span></li>)}</ol></div>)}</div>
+      <div className="divide-y divide-[var(--line-soft)] border-t border-[var(--line-soft)]">{block.heats.map(heat => <div key={heat.number} className="grid gap-3 px-4 py-4 sm:grid-cols-[180px_minmax(0,1fr)]"><div className="text-sm"><strong>{heat.start_time} — {heat.end_time}</strong><p className="mt-1 text-[var(--text-muted)]">Заход {heat.number}</p></div><ol className="flex min-w-0 flex-wrap items-start gap-x-6 gap-y-2">{heat.slots.map(slot => <li key={slot.lane} className="flex min-w-0 max-w-full gap-3 text-sm"><span className="w-5 shrink-0 text-[var(--text-muted)]">{slot.lane}</span><span className="min-w-0 break-words">{slot.team_name || (block.assignment === "results" ? "После результатов" : "Резерв")}</span></li>)}</ol></div>)}</div>
       {(block.gap_minutes > 0 || block.break_after_minutes > 0) && <p className="border-t border-[var(--line-soft)] px-4 py-3 text-xs text-[var(--text-muted)]">Между заходами: {block.gap_minutes} мин{block.break_after_minutes > 0 ? ` · Перерыв после комплекса: ${block.end_time} — ${block.available_after}` : ""}</p>}
       </>}
     </section>)}
