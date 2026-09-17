@@ -11,6 +11,18 @@ const complex = (patch={}) => ({id:randomUUID(),name:'Комплекс 1',start_
 const plan = (complexes=[complex()],planned_count=null) => ({categories:[{category_key:'amateur',planned_count,complexes}]});
 const teams = Array.from({length:10},(_,i)=>({id:String(i+1),team_name:`Команда ${i+1}`,category:'amateur',created_at:new Date(2026,8,1,0,i),status:'registered',payment_status:'paid'}));
 const keys=[];
+
+test('disabled briefing does not reserve the venue from midnight, while explicit midnight remains a time',()=>{
+  const config={categories:[{category_key:'amateur',planned_count:8,complexes:[complex({start_time:'10:20',briefing_time:'10:00',duration_minutes:12,break_after_minutes:5})]},{category_key:'advanced',planned_count:8,complexes:[complex({start_time:'10:55',briefing_time:null,break_after_minutes:5})]}]};
+  const grid=buildSchedule(normalizeSchedule(config,competition),competition,[]);
+  assert.deepEqual(grid.errors,[]);
+  assert.equal(grid.start_time,'10:00');
+  assert.equal(grid.blocks[1].briefing_time,null);
+  config.categories[1].complexes[0].briefing_time='00:00';
+  const midnight=buildSchedule(normalizeSchedule(config,competition),competition,[]);
+  assert.equal(midnight.start_time,'00:00');
+  assert.match(midnight.errors.join(' '),/пересекаются/);
+});
 after(async()=>{
   await pool.query('DELETE FROM competition_schedules WHERE event_key=ANY($1::TEXT[])',[keys]);
   await pool.query('DELETE FROM competition_email_jobs WHERE registration_id IN (SELECT id FROM competition_registrations WHERE event_key=ANY($1::TEXT[]))',[keys]);
