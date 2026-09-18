@@ -6,6 +6,7 @@ import { previewScheduleActivity, type ScheduleActivity, type ActivityPreview } 
 
 const button = "min-h-11 rounded-xl border border-[var(--line-soft)] px-4 py-2 text-sm font-medium disabled:opacity-40";
 const primary = `${button} bg-[var(--accent)] text-[#062b26]`;
+const addButton = `${button} bg-[var(--bg-card)] text-[var(--text-main)] transition-colors enabled:hover:border-[var(--accent)] enabled:hover:bg-[var(--accent)] enabled:hover:text-[#062b26] focus-visible:bg-[var(--accent)] focus-visible:text-[#062b26]`;
 const inputClass = "mt-1 min-h-11 w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-main)] px-3 py-2 text-sm text-[var(--text-main)]";
 
 export default function CompetitionSchedulePanel({ eventKey }: { eventKey: string }) {
@@ -184,7 +185,7 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
         </fieldset>
       </form>
       </details>
-      <div className="flex flex-wrap gap-3"><button type="button" className={primary} disabled={busy || dirty || editing || !draft.categories.length} onClick={addComplex}>Добавить комплекс</button><button type="button" className={button} disabled={busy || dirty || editing} onClick={() => addActivity("break")}>Добавить перерыв</button><button type="button" className={button} disabled={busy || dirty || editing} onClick={() => addActivity("awards")}>Добавить награждение</button></div>
+      <div className="flex flex-wrap gap-3"><button type="button" className={addButton} disabled={busy || dirty || editing || !draft.categories.length} onClick={addComplex}>Добавить комплекс</button><button type="button" className={addButton} disabled={busy || dirty || editing} onClick={() => addActivity("break")}>Добавить перерыв</button><button type="button" className={addButton} disabled={busy || dirty || editing} onClick={() => addActivity("awards")}>Добавить награждение</button></div>
       {editor?.isNew && editorForm}
       {activityEditor?.isNew && activityForm}
       <section className="space-y-4 border-t border-[var(--line-soft)] pt-5">
