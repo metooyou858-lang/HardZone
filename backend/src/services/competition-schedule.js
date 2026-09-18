@@ -28,6 +28,7 @@ function normalizeSchedule(input, competition) {
   if (!Array.isArray(input?.categories) || input.categories.length > 30) throw invalid('Некорректный список категорий');
   const keys = new Set();
   const ids = new Set();
+  if (input.activities !== undefined && (!Array.isArray(input.activities) || input.activities.length > 100)) throw invalid('Допускается до 100 пунктов расписания');
   return { categories: input.categories.map(category => {
     if (!competition.categories.some(item => item.key === category?.category_key) || keys.has(category.category_key)) throw invalid('Категория отсутствует в мероприятии или повторяется');
     keys.add(category.category_key);
@@ -52,6 +53,11 @@ function normalizeSchedule(input, competition) {
         };
       }),
     };
+  }), activities: (input.activities || []).map(activity => {
+    if (!['break', 'awards'].includes(activity?.kind)) throw invalid('Некорректный тип пункта расписания');
+    if (typeof activity.id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(activity.id) || ids.has(activity.id)) throw invalid('Некорректный или повторяющийся пункт расписания');
+    ids.add(activity.id);
+    return { id:activity.id, kind:activity.kind, name:text(activity.name, 'Название', 120), venue:text(activity.venue, 'Место проведения', 120), start_time:time(activity.start_time, 'Начало'), duration_minutes:integer(activity.duration_minutes, 'Длительность', 1, 240) };
   }) };
 }
 
@@ -94,6 +100,11 @@ function buildSchedule(config, competition, registrations) {
         end_time: clock(end), available_after: clock(occupiedTo), heats, occupied_from: occupiedFrom, occupied_to: occupiedTo });
     }
   }
+  for (const activity of config.activities || []) {
+    const start = minutes(activity.start_time), end = start + activity.duration_minutes;
+    if (end > 1440) errors.push(`${activity.name}: расписание выходит за пределы дня мероприятия`);
+    blocks.push({...activity, category_key:'', category_name:'', briefing_time:null, end_time:clock(end), available_after:clock(end), occupied_from:start, occupied_to:end, heats:[]});
+  }
   for (let i = 0; i < blocks.length; i++) {
     for (let j = i + 1; j < blocks.length; j++) {
       const a = blocks[i], b = blocks[j];
@@ -129,6 +140,7 @@ async function saveSchedule(eventKey, input) {
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [eventKey]);
     const current = await readSchedule(eventKey, client);
     if (input.revision !== current.revision) throw conflict('Настройки изменились в другой вкладке. Обновите расписание перед сохранением');
+    if (input.source_hash && input.source_hash !== current.source_hash) throw conflict('Состав команд изменился. Обновите данные и проверьте смещения заново');
     const config = normalizeSchedule(input.config, current.competition);
     await client.query(`INSERT INTO competition_schedules(event_key,config,revision) VALUES($1,$2,1)
       ON CONFLICT(event_key) DO UPDATE SET config=EXCLUDED.config,revision=competition_schedules.revision+1,updated_at=NOW()`, [eventKey, config]);
@@ -149,4 +161,40 @@ async function generateSchedule(eventKey, input) {
   });
 }
 
-module.exports = { normalizeSchedule, buildSchedule, readSchedule, saveSchedule, generateSchedule };
+function planActivity(current, activity) {
+  const config = normalizeSchedule({...current.config, activities:[...(current.config.activities || []).filter(item => item.id !== activity.id),activity]}, current.competition);
+  const inserted = config.activities.find(item => item.id === activity.id);
+  const original = current.preview.blocks.filter(item => item.id !== activity.id);
+  const start = minutes(inserted.start_time), end = start + inserted.duration_minutes;
+  const related = (a,b) => a.venue.trim().toLocaleLowerCase('ru') === b.venue.trim().toLocaleLowerCase('ru') || Boolean(a.category_key && a.category_key === b.category_key);
+  const moved = [];
+  const shifts = [];
+  // Preserve the existing order; delay only conflicts introduced by this insertion.
+  for (const block of original) {
+    let next = block.occupied_from;
+    if (related(block, inserted) && next < end && block.occupied_to > start) next = end;
+    for (const prior of moved) {
+      if (prior.delta > 0 && related(prior.block, block) && next < prior.end) next = prior.end;
+    }
+    const delta = next - block.occupied_from;
+    moved.push({block, delta, end:block.occupied_to + delta});
+    if (!delta) continue;
+    if (block.occupied_to + delta > 1440) throw invalid(`«${block.name}» после сдвига выходит за пределы дня. Измените время или длительность`);
+    const target = config.activities.find(item => item.id === block.id) || config.categories.flatMap(item => item.complexes).find(item => item.id === block.id);
+    target.start_time = clock(minutes(target.start_time) + delta);
+    if (target.briefing_time) target.briefing_time = clock(minutes(target.briefing_time) + delta);
+    shifts.push({id:block.id, name:[block.category_name,block.name].filter(Boolean).join(' · '), before:block.start_time, after:target.start_time, briefing_before:block.briefing_time, briefing_after:target.briefing_time || null, minutes:delta});
+  }
+  // Counts suffice for timing; participant assignments remain untouched until grid generation.
+  const registrations = Object.entries(current.confirmed_counts).flatMap(([category,count]) => Array.from({length:count},(_,i) => ({id:String(i+1),category,status:'registered',payment_status:'paid',created_at:'2000-01-01'})));
+  const preview = buildSchedule(config,current.competition,registrations);
+  return {config, shifts, errors:preview.errors, end_before:current.preview.end_time, end_after:preview.end_time, source_hash:current.source_hash};
+}
+
+async function previewActivity(eventKey, input) {
+  const current = await readSchedule(eventKey);
+  if (input.revision !== current.revision) throw conflict('Настройки изменились. Обновите данные перед добавлением');
+  return planActivity(current,input.activity);
+}
+
+module.exports = { normalizeSchedule, buildSchedule, readSchedule, saveSchedule, generateSchedule, planActivity, previewActivity };

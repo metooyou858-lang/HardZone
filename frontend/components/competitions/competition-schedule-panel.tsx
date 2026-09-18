@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { fetchCompetitionSchedule, generateCompetitionSchedule, saveCompetitionSchedule, type CompetitionSchedule, type ScheduleConfig, type CompetitionComplex, type ScheduleGrid } from "@/lib/api/competition-schedule";
+import { previewScheduleActivity, type ScheduleActivity, type ActivityPreview } from "@/lib/api/competition-schedule";
 
 const button = "min-h-11 rounded-xl border border-[var(--line-soft)] px-4 py-2 text-sm font-medium disabled:opacity-40";
 const primary = `${button} bg-[var(--accent)] text-[#062b26]`;
@@ -24,13 +25,16 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
   const [notice, setNotice] = useState("");
   const [dirty, setDirty] = useState(false);
   const [editor, setEditor] = useState<{ category: string; complex: CompetitionComplex; isNew: boolean } | null>(null);
+  const [activityEditor,setActivityEditor] = useState<{item:ScheduleActivity;isNew:boolean}|null>(null);
+  const [activityPreview,setActivityPreview] = useState<ActivityPreview|null>(null);
+  const editing = !!editor || !!activityEditor;
   const editorRef = useRef<HTMLFormElement>(null);
   const editorId = editor?.isNew ? editor.complex.id : undefined;
   useEffect(() => { if (editorId) editorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, [editorId]);
 
   const accept = useCallback((value: CompetitionSchedule) => {
     setData(value);
-    setDraft({categories:value.competition.categories.map(item => value.config.categories.find(c => c.category_key === item.key) || {category_key:item.key,planned_count:null,complexes:[]})});
+    setDraft({...value.config,categories:value.competition.categories.map(item => value.config.categories.find(c => c.category_key === item.key) || {category_key:item.key,planned_count:null,complexes:[]})});
     setDirty(false);
   }, []);
   const load = useCallback(async () => {
@@ -42,7 +46,7 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
   useEffect(() => { void load(); }, [load]);
 
   function changeCount(categoryKey: string, count: number | null) {
-    setDraft(current => ({categories:current.categories.map(item => item.category_key === categoryKey ? {...item,planned_count:count} : item)}));
+    setDraft(current => ({...current,categories:current.categories.map(item => item.category_key === categoryKey ? {...item,planned_count:count} : item)}));
     setDirty(true); setNotice("");
   }
   function updateComplex(patch: Partial<CompetitionComplex>) {
@@ -54,10 +58,10 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
       venue:"",lanes:4,duration_minutes:10,gap_minutes:3,break_after_minutes:0,
     }});
   }
-  async function persist(config: ScheduleConfig, message: string) {
+  async function persist(config: ScheduleConfig, message: string, sourceHash?:string) {
     if (!data) return false;
     setBusy(true); setError(""); setNotice("");
-    try { accept(await saveCompetitionSchedule(eventKey,config,data.revision)); setNotice(message); return true; }
+    try { accept(await saveCompetitionSchedule(eventKey,config,data.revision,sourceHash)); setNotice(message); return true; }
     catch(e) { setError(e instanceof Error ? e.message : "Не удалось сохранить настройки"); return false; }
     finally { setBusy(false); }
   }
@@ -70,7 +74,7 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
     const target = draft.categories.find(item => item.category_key === editor.category);
     if (!target) { setError("Выберите категорию комплекса"); return; }
     if (target.complexes.filter(item => item.id !== editor.complex.id).length >= 20) { setError("В категории допускается до 20 комплексов"); return; }
-    const next = {categories:draft.categories.map(item => ({...item,complexes:item.category_key === editor.category
+    const next = {...draft,categories:draft.categories.map(item => ({...item,complexes:item.category_key === editor.category
       ? item.complexes.some(complex => complex.id === editor.complex.id)
         ? item.complexes.map(complex => complex.id === editor.complex.id ? editor.complex : complex)
         : [...item.complexes,editor.complex]
@@ -78,12 +82,35 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
     if (await persist(next, editor.isNew ? "Комплекс добавлен. Расчёт обновлён." : "Комплекс изменён. Расчёт обновлён.")) setEditor(null);
   }
   function editComplex(id: string) {
+    const activity = draft.activities?.find(item => item.id === id);
+    if (activity) { setActivityEditor({item:{...activity},isNew:false}); setActivityPreview(null); return; }
     const owner = draft.categories.find(item => item.complexes.some(complex => complex.id === id));
     const complex = owner?.complexes.find(item => item.id === id);
     if (owner && complex) setEditor({category:owner.category_key, complex:{...complex}, isNew:false});
   }
   async function deleteComplex(id: string) {
-    await persist({categories:draft.categories.map(item => ({...item,complexes:item.complexes.filter(complex => complex.id !== id)}))},"Комплекс удалён из расчёта. Сохранённая сетка обновляется отдельно.");
+    await persist({...draft,activities:draft.activities?.filter(item => item.id !== id),categories:draft.categories.map(item => ({...item,complexes:item.complexes.filter(complex => complex.id !== id)}))},"Пункт удалён из расчёта. Время остальных пунктов сохранено. Сохранённая сетка обновляется отдельно.");
+  }
+  function addActivity(kind:ScheduleActivity["kind"]) {
+    setActivityPreview(null); setError(""); setNotice("");
+    setActivityEditor({isNew:true,item:{id:crypto.randomUUID(),kind,name:kind === "break" ? "Перерыв" : "Награждение",start_time:"",venue:"",duration_minutes:15}});
+  }
+  function updateActivity(patch:Partial<ScheduleActivity>) {
+    setActivityEditor(current => current ? {...current,item:{...current.item,...patch}} : null);
+    setActivityPreview(null);
+  }
+  async function saveActivity(e:FormEvent) {
+    e.preventDefault(); if (!data || !activityEditor) return;
+    if (activityPreview) {
+      if (await persist(activityPreview.config,"Расписание сохранено. Сохранённая сетка обновляется отдельно.",activityPreview.source_hash)) { setActivityEditor(null); setActivityPreview(null); }
+      return;
+    }
+    setBusy(true); setError("");
+    try {
+      const result = await previewScheduleActivity(eventKey,activityEditor.item,data.revision);
+      setActivityPreview(result);
+    } catch(e) { setError(e instanceof Error ? e.message : "Не удалось рассчитать смещение"); }
+    finally { setBusy(false); }
   }
   async function generate() {
     if (!data || dirty) return;
@@ -116,10 +143,29 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
       </form>
   ) : null;
 
+  const activityForm = activityEditor && <form onSubmit={saveActivity} className={`p-4 sm:p-5 ${activityEditor.isNew ? "rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)]" : "border-t border-[var(--line-soft)]"}`}>
+    <fieldset disabled={busy} className="space-y-4">
+      {activityEditor.isNew && <h3 className="font-semibold">{activityEditor.item.kind === "break" ? "Новый перерыв" : "Общее награждение"}</h3>}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <label className="min-w-0 text-xs">Название<input className={inputClass} required maxLength={120} value={activityEditor.item.name} onChange={e => updateActivity({name:e.target.value})} /></label>
+        <label className="min-w-0 text-xs">Место / площадка<input className={inputClass} required maxLength={120} list="schedule-venues" value={activityEditor.item.venue} onChange={e => updateActivity({venue:e.target.value})} /><datalist id="schedule-venues">{Array.from(new Set(data?.preview.blocks.map(item => item.venue))).map(venue => <option key={venue} value={venue} />)}</datalist></label>
+        <label className="min-w-0 text-xs">Время начала<input className={inputClass} type="time" required value={activityEditor.item.start_time} onChange={e => updateActivity({start_time:e.target.value})} /></label>
+        <label className="min-w-0 text-xs">Длительность, мин<input className={inputClass} type="number" min={1} max={240} step={1} required value={Number.isNaN(activityEditor.item.duration_minutes) ? "" : activityEditor.item.duration_minutes} onChange={e => updateActivity({duration_minutes:e.target.value === "" ? NaN : Number(e.target.value)})} /></label>
+      </div>
+      {activityPreview && <div aria-live="polite" className="space-y-3 rounded-lg border border-[var(--line-soft)] p-4 text-sm">
+        <p className="font-medium">{activityPreview.shifts.length ? "После сохранения изменится время:" : "Время других пунктов остаётся прежним."}</p>
+        {activityPreview.shifts.map(shift => <div key={shift.id} className="flex flex-wrap justify-between gap-2 border-b border-[var(--line-soft)] pb-2"><span className="min-w-0 break-words">{shift.name}{shift.briefing_before && <span className="block text-xs text-[var(--text-muted)]">Брифинг: {shift.briefing_before} → {shift.briefing_after}</span>}</span><span>{shift.before} → <strong>{shift.after}</strong> (+{shift.minutes} мин)</span></div>)}
+        {activityPreview.end_before !== activityPreview.end_after && <p>Окончание мероприятия: {activityPreview.end_before || "—"} → <strong>{activityPreview.end_after}</strong></p>}
+        {!!activityPreview.errors.length && <ul role="alert" className="space-y-2 text-[var(--danger)]">{activityPreview.errors.map(message => <li key={message}>{message}</li>)}</ul>}
+      </div>}
+      <div className="flex flex-wrap items-center gap-3"><button className={primary} type="submit" disabled={!!activityPreview?.errors.length}>{busy ? "Рассчитываем…" : !activityPreview ? "Проверить расписание" : activityPreview.shifts.length ? activityEditor.isNew ? "Добавить и сдвинуть" : "Сохранить и сдвинуть" : activityEditor.isNew ? "Добавить" : "Сохранить изменения"}</button><button className={button} type="button" onClick={() => {setActivityEditor(null);setActivityPreview(null);}}>Отмена</button><span className="text-xs text-[var(--text-muted)]">Время — по Хабаровску. Сохранённая сетка обновляется отдельно.</span></div>
+    </fieldset>
+  </form>;
+
   return <div className="space-y-5 text-[var(--text-main)]">
     <header className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex gap-4"><button className="min-h-11 text-sm" aria-pressed={view === "settings"} onClick={() => setView("settings")}><span className={view === "settings" ? "border-b-2 border-[var(--accent)] pb-2" : "text-[var(--text-muted)]"}>Настройка комплексов</span></button><button className="min-h-11 text-sm" aria-pressed={view === "grid"} onClick={() => setView("grid")}><span className={view === "grid" ? "border-b-2 border-[var(--accent)] pb-2" : "text-[var(--text-muted)]"}>Сохранённая сетка</span></button></div>
-      <button className={button} disabled={busy || dirty || !!editor} onClick={() => void load()}>Обновить данные</button>
+      <button className={button} disabled={busy || dirty || editing} onClick={() => void load()}>Обновить данные</button>
     </header>
     {error && <p role="alert" className="whitespace-pre-line text-sm text-[var(--danger)]">{error}</p>}
     {notice && <p role="status" className="text-sm text-[var(--accent)]">{notice}</p>}
@@ -128,7 +174,7 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
       <details className="border-b border-[var(--line-soft)] pb-3">
         <summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">Количество команд по категориям{dirty && <span className="ml-2 text-[var(--warning)]">Есть несохранённые изменения</span>}</summary>
       <form onSubmit={save} className="space-y-5 pt-3">
-        <fieldset disabled={busy || !!editor} className="space-y-5 disabled:opacity-60">
+        <fieldset disabled={busy || editing} className="space-y-5 disabled:opacity-60">
           <div className="grid items-end gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {draft.categories.map(item => <label key={item.category_key} className="min-w-0 text-sm">{data.competition.categories.find(category => category.key === item.category_key)?.name}<input aria-label={`Плановое количество команд: ${data.competition.categories.find(category => category.key === item.category_key)?.name}`} className={inputClass} type="number" min={1} max={1000} step={1} placeholder={`По оплатам: ${data.confirmed_counts[item.category_key] || 0}`} value={item.planned_count ?? ""} onChange={e => changeCount(item.category_key,e.target.value === "" ? null : Number(e.target.value))} /></label>)}
             <button type="submit" className={button} disabled={!dirty}>Сохранить количество</button>
@@ -138,14 +184,15 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
         </fieldset>
       </form>
       </details>
-      <button type="button" className={primary} disabled={busy || dirty || !!editor || !draft.categories.length} onClick={addComplex}>Добавить комплекс</button>
+      <div className="flex flex-wrap gap-3"><button type="button" className={primary} disabled={busy || dirty || editing || !draft.categories.length} onClick={addComplex}>Добавить комплекс</button><button type="button" className={button} disabled={busy || dirty || editing} onClick={() => addActivity("break")}>Добавить перерыв</button><button type="button" className={button} disabled={busy || dirty || editing} onClick={() => addActivity("awards")}>Добавить награждение</button></div>
       {editor?.isNew && editorForm}
+      {activityEditor?.isNew && activityForm}
       <section className="space-y-4 border-t border-[var(--line-soft)] pt-5">
-        <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Расчёт всего мероприятия</h2><button className={primary} disabled={busy || dirty || !!editor || !data.preview.blocks.length || !!data.preview.errors.length} onClick={() => void generate()}>{data.grid ? "Пересформировать сетку" : "Сформировать сетку"}</button></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Расчёт всего мероприятия</h2><button className={primary} disabled={busy || dirty || editing || !data.preview.blocks.length || !!data.preview.errors.length} onClick={() => void generate()}>{data.grid ? "Пересформировать сетку" : "Сформировать сетку"}</button></div>
         <p className="text-xs text-[var(--text-muted)]">Перерыв после комплекса резервирует площадку. Следующее начало задайте с учётом этого перерыва. Сохранённая сетка изменится только по кнопке формирования.</p>
-        {(dirty || editor) && <p className="text-sm text-[var(--warning)]">Ниже расчёт по последним сохранённым настройкам.</p>}
+        {(dirty || editing) && <p className="text-sm text-[var(--warning)]">Ниже расчёт по последним сохранённым настройкам.</p>}
         {!!data.preview.errors.length && <ul role="alert" className="list-disc space-y-2 pl-5 text-sm text-[var(--danger)]">{data.preview.errors.map((message,i) => <li key={i}>{message}</li>)}</ul>}
-        <Grid grid={data.preview} onEdit={editComplex} onDelete={id => void deleteComplex(id)} actionsDisabled={busy || dirty || !!editor} editingId={editor?.isNew ? undefined : editor?.complex.id} editorForm={editorForm} />
+        <Grid grid={data.preview} onEdit={editComplex} onDelete={id => void deleteComplex(id)} actionsDisabled={busy || dirty || editing} editingId={activityEditor && !activityEditor.isNew ? activityEditor.item.id : editor?.isNew ? undefined : editor?.complex.id} editorForm={activityEditor ? activityForm : editorForm} />
       </section>
     </>}
     {data && view === "grid" && <>
@@ -159,7 +206,10 @@ function Grid({ grid, onEdit, onDelete, actionsDisabled, editingId, editorForm }
   if (!grid.blocks.length) return <p className="text-sm text-[var(--text-muted)]">После добавления комплексов здесь появится расписание.</p>;
   return <div className="space-y-4">
     <p className="text-sm"><strong>{grid.start_time} — {grid.end_time}</strong><span className="text-[var(--text-muted)]"> · {grid.event_date ? new Date(`${grid.event_date}T12:00:00`).toLocaleDateString("ru-RU") : "Дата не задана"} · Хабаровск</span></p>
-    {grid.blocks.map(block => <section key={block.id} className="overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)]">
+    {grid.blocks.map(block => block.kind ? <section key={block.id} className="overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)]">
+      <header className="flex flex-wrap items-start justify-between gap-3 p-4"><div className="min-w-0"><div className="flex flex-wrap items-center gap-3"><h3 className="break-words font-semibold">{block.name}</h3>{onEdit && editingId !== block.id && <button className={button} disabled={actionsDisabled} onClick={() => onEdit(block.id)} aria-label={`Редактировать: ${block.name}`}>Редактировать</button>}{onDelete && editingId !== block.id && <button className={`${button} text-[var(--danger)]`} disabled={actionsDisabled} onClick={() => onDelete(block.id)} aria-label={`Удалить: ${block.name}`}>Удалить</button>}</div><p className="mt-1 text-xs text-[var(--text-muted)]">{block.kind === "awards" ? "Общее награждение" : "Перерыв"} · {block.venue} · {block.duration_minutes} мин</p></div><strong className="text-sm">{block.start_time} — {block.end_time}</strong></header>
+      {editingId === block.id && editorForm}
+    </section> : <section key={block.id} className="overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)]">
       <header className="flex flex-wrap items-start justify-between gap-3 p-4"><div className="min-w-0"><div className="flex flex-wrap items-center gap-3"><h3 className="break-words font-semibold">{block.category_name} · {block.name}</h3>{onEdit && editingId !== block.id && <button type="button" className={button} disabled={actionsDisabled} onClick={() => onEdit(block.id)} aria-label={`Редактировать: ${block.category_name} · ${block.name}`}>Редактировать</button>}{onDelete && editingId !== block.id && <button type="button" className={`${button} text-[var(--danger)]`} disabled={actionsDisabled} onClick={() => onDelete(block.id)} aria-label={`Удалить: ${block.category_name} · ${block.name}`}>Удалить</button>}</div><p className="mt-1 text-xs text-[var(--text-muted)]">{block.venue} · Дорожек: {block.lanes} · Мест: {block.planned_count} · Заходов: {block.heats.length}</p></div><strong className="text-sm">{block.start_time} — {block.end_time}</strong></header>
       {editingId === block.id ? editorForm : <>
       {block.briefing_time && <p className="border-t border-[var(--line-soft)] px-4 py-3 text-sm">{block.briefing_time} — {block.start_time} · Брифинг</p>}

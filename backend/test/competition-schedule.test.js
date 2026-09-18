@@ -4,13 +4,72 @@ const { randomUUID } = require('node:crypto');
 const { pool } = require('../src/db');
 const { createCompetitionEvent, updateCompetitionEvent } = require('../src/services/competition-events');
 const { createCompetitionRegistration } = require('../src/services/competition-registration');
-const { normalizeSchedule, buildSchedule, readSchedule, saveSchedule, generateSchedule } = require('../src/services/competition-schedule');
+const { normalizeSchedule, buildSchedule, readSchedule, saveSchedule, generateSchedule, planActivity, previewActivity } = require('../src/services/competition-schedule');
 
 const competition = { name:'Соревнование',date:'2026-10-10',categories:[{key:'amateur',name:'Любители'},{key:'advanced',name:'Продвинутые'}] };
 const complex = (patch={}) => ({id:randomUUID(),name:'Комплекс 1',start_time:'09:00',briefing_time:'08:45',venue:'Основной зал',lanes:4,duration_minutes:10,gap_minutes:3,break_after_minutes:15,...patch});
 const plan = (complexes=[complex()],planned_count=null) => ({categories:[{category_key:'amateur',planned_count,complexes}]});
 const teams = Array.from({length:10},(_,i)=>({id:String(i+1),team_name:`Команда ${i+1}`,category:'amateur',created_at:new Date(2026,8,1,0,i),status:'registered',payment_status:'paid'}));
 const keys=[];
+
+const activity = (patch={}) => ({id:randomUUID(),kind:'break',name:'Перерыв',venue:'Основной зал',start_time:'09:00',duration_minutes:15,...patch});
+const currentPlan = config => ({config,competition,confirmed_counts:{amateur:0,advanced:0},preview:buildSchedule(config,competition,[]),source_hash:'test'});
+
+test('insertion delays the whole complex including briefing, propagates by category across venues, preserves unrelated venue',()=>{
+  const first=complex({start_time:'09:00',briefing_time:'08:45',break_after_minutes:0});
+  const second=complex({start_time:'09:15',briefing_time:null,venue:'Улица',break_after_minutes:0});
+  const other=complex({start_time:'09:00',briefing_time:null,venue:'Другой зал',break_after_minutes:0});
+  const config={categories:[{category_key:'amateur',planned_count:4,complexes:[first,second]},{category_key:'advanced',planned_count:4,complexes:[other]}]};
+  const result=planActivity(currentPlan(config),activity({start_time:'08:50'}));
+  assert.equal(result.shifts.length,2);
+  assert.equal(result.shifts[0].briefing_after,'09:05');
+  assert.equal(result.shifts[0].after,'09:20');
+  assert.equal(result.shifts[1].after,'09:30');
+  assert.equal(result.config.categories[1].complexes[0].start_time,'09:00');
+  assert.equal(config.categories[0].complexes[0].start_time,'09:00');
+  assert.deepEqual(result.errors,[]);
+});
+
+test('free interval absorbs insertion; awards are shared without categories and take part in timing',()=>{
+  const config=plan([complex({start_time:'10:00',briefing_time:null,break_after_minutes:0})],4);
+  const result=planActivity(currentPlan(config),activity());
+  assert.deepEqual(result.shifts,[]);
+  const awards=planActivity(currentPlan(result.config),activity({kind:'awards',name:'Награждение',start_time:'10:10',duration_minutes:30}));
+  assert.deepEqual(awards.errors,[]);
+  assert.equal(awards.end_after,'10:40');
+  assert.equal(awards.config.activities[1].category_key,undefined);
+});
+
+test('editing does not duplicate activity; shrinking and deletion do not pull later starts backwards',()=>{
+  const pause=activity();
+  const config={...plan([complex({start_time:'09:15',briefing_time:null,break_after_minutes:0})],4),activities:[pause]};
+  const result=planActivity(currentPlan(config),{...pause,duration_minutes:5});
+  assert.equal(result.config.activities.length,1);
+  assert.deepEqual(result.shifts,[]);
+  assert.equal(buildSchedule({...result.config,activities:[]},competition,[]).blocks[0].start_time,'09:15');
+});
+
+test('insertion refuses overflow and validates activities including duplicate ids',()=>{
+  const last=complex({start_time:'23:40',briefing_time:null,break_after_minutes:0});
+  assert.throws(()=>planActivity(currentPlan(plan([last],4)),activity({start_time:'23:40',duration_minutes:30})),/пределы дня/);
+  assert.throws(()=>normalizeSchedule({...plan([last],4),activities:[activity({id:last.id})]},competition),/повторяющийся/);
+  assert.throws(()=>normalizeSchedule({...plan(),activities:{}},competition),/100/);
+});
+
+test('activity preview is read-only, shifted plan preserves snapshot and source hash guards stale acceptance',async()=>{
+  const event=await createCompetitionEvent({name:'Пункты расписания',date:'2026-10-10',location:'Зал',fee_rubles:3500,registration_enabled:false,categories:competition.categories,terms_text:'Тест'}); keys.push(event.event_key);
+  let saved=await saveSchedule(event.event_key,{revision:0,config:plan([complex({briefing_time:null,break_after_minutes:0})],4)});
+  saved=await generateSchedule(event.event_key,{revision:saved.revision,source_hash:saved.source_hash});
+  const result=await previewActivity(event.event_key,{revision:saved.revision,activity:activity()});
+  assert.deepEqual((await readSchedule(event.event_key)).config,saved.config);
+  await assert.rejects(saveSchedule(event.event_key,{revision:saved.revision,config:result.config,source_hash:'stale'}),/Состав команд изменился/);
+  const changed=await saveSchedule(event.event_key,{revision:saved.revision,config:result.config,source_hash:result.source_hash});
+  assert.deepEqual(changed.grid,saved.grid);
+  assert.equal(changed.grid_stale,true);
+  const generated=await generateSchedule(event.event_key,{revision:changed.revision,source_hash:changed.source_hash});
+  assert.equal(generated.grid.blocks[0].kind,'break');
+  assert.equal(generated.grid.blocks[1].start_time,'09:15');
+});
 
 test('moving a complex preserves its id and settings, uses target count and leaves the saved grid unchanged',async()=>{
   const event=await createCompetitionEvent({name:'Перенос комплекса',date:'2026-10-10',location:'Зал',fee_rubles:3500,registration_enabled:false,categories:competition.categories,terms_text:'Тест'}); keys.push(event.event_key);

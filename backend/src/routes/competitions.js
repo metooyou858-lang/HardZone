@@ -5,9 +5,17 @@ const {
   updateCompetitionRegistrationStatus,
 } = require('../services/competition-registration');
 const { getCompetitionConfig, listCompetitionEvents, createCompetitionEvent, updateCompetitionEvent } = require('../services/competition-events');
-const { readSchedule, saveSchedule, generateSchedule } = require('../services/competition-schedule');
+const { readSchedule, saveSchedule, generateSchedule, previewActivity } = require('../services/competition-schedule');
 
 const router = express.Router();
+
+router.post('/events/:eventKey/schedule/preview-activity', async (req, res, next) => {
+  try { return res.json({success:true, data:await previewActivity(req.params.eventKey, req.body)}); }
+  catch(error) {
+    if(error.statusCode) return res.status(error.statusCode).json({success:false,error:error.message});
+    return next(error);
+  }
+});
 
 router.get('/events/:eventKey/schedule', async (req, res, next) => {
   try { return res.json({ success:true, data:await readSchedule(req.params.eventKey) }); }
