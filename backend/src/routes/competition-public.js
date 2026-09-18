@@ -13,6 +13,14 @@ const logger = require('../services/logger');
 
 const router = express.Router();
 
+router.get('/results', async (req,res,next) => {
+  res.set('Cache-Control','no-store, private, max-age=0');
+  try {
+    const config=await getCompetitionConfig(String(req.query.event || '') || undefined);
+    return res.json({success:true,data:await require('../services/competition-results').publicResults(config.event_key)});
+  } catch(error) { if(error.statusCode) return res.status(error.statusCode).json({success:false,error:error.message}); return next(error); }
+});
+
 router.get('/', async (req, res, next) => {
   try {
     res.json({ success: true, data: await getCompetitionConfig(String(req.query.event || '') || undefined) });

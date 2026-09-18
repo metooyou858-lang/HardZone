@@ -142,6 +142,7 @@ async function saveSchedule(eventKey, input) {
     if (input.revision !== current.revision) throw conflict('Настройки изменились в другой вкладке. Обновите расписание перед сохранением');
     if (input.source_hash && input.source_hash !== current.source_hash) throw conflict('Состав команд изменился. Обновите данные и проверьте смещения заново');
     const config = normalizeSchedule(input.config, current.competition);
+    await require('./competition-results').guardScheduleChanges(eventKey,current,config,client);
     await client.query(`INSERT INTO competition_schedules(event_key,config,revision) VALUES($1,$2,1)
       ON CONFLICT(event_key) DO UPDATE SET config=EXCLUDED.config,revision=competition_schedules.revision+1,updated_at=NOW()`, [eventKey, config]);
     return readSchedule(eventKey, client);
@@ -155,7 +156,8 @@ async function generateSchedule(eventKey, input) {
     if (input.revision !== current.revision || input.source_hash !== current.source_hash) throw conflict('Состав команд или настройки изменились. Обновите расчёт перед формированием сетки');
     if (!current.preview.blocks.length) throw invalid('Сначала добавьте хотя бы один комплекс');
     if (current.preview.errors.length) throw invalid(current.preview.errors.join('\n'));
-    const grid = { ...current.preview, source_hash:current.source_hash, generated_at:new Date().toISOString() };
+    await require('./competition-results').latchFinal(eventKey,current,client);
+    const grid = await require('./competition-results').gridWithResults(eventKey,{ ...current.preview, source_hash:current.source_hash, generated_at:new Date().toISOString() },client);
     await client.query('UPDATE competition_schedules SET generated_grid=$2,revision=revision+1,updated_at=NOW() WHERE event_key=$1', [eventKey, grid]);
     return readSchedule(eventKey, client);
   });

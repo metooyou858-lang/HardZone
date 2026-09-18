@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CompetitionSchedulePanel from "./competition-schedule-panel";
+import CompetitionResultsPanel from "./competition-results-panel";
 
 import {
   fetchCompetitionRegistrations,
@@ -48,10 +49,10 @@ export default function CompetitionRegistrationsPage({ eventKey, onBack, onEdit 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [category, setCategory] = useState("");
-  const [section, setSectionState] = useState<"registrations" | "schedule">(() =>
-    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("section") === "schedule" ? "schedule" : "registrations"
+  const [section, setSectionState] = useState<"registrations" | "schedule" | "results">(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("section") === "results" ? "results" : typeof window !== "undefined" && new URLSearchParams(window.location.search).get("section") === "schedule" ? "schedule" : "registrations"
   );
-  function setSection(next: "registrations" | "schedule") {
+  function setSection(next: "registrations" | "schedule" | "results") {
     setSectionState(next);
     const url = new URL(window.location.href);
     url.searchParams.set("section", next);
@@ -140,9 +141,10 @@ export default function CompetitionRegistrationsPage({ eventKey, onBack, onEdit 
       )}
 
       <nav aria-label="Разделы мероприятия" className="flex flex-wrap gap-x-6 border-b border-[var(--line-soft)]">
-        {[{key:"registrations" as const,name:"Регистрация"},{key:"schedule" as const,name:"Комплексы и заходы"}].map(item => <button key={item.key} type="button" onClick={() => setSection(item.key)} aria-pressed={section === item.key} className={`min-h-11 border-b-2 px-1 text-sm ${section === item.key ? "border-[var(--accent)] text-[var(--text-main)]" : "border-transparent text-[var(--text-muted)]"}`}>{item.name}</button>)}
+        {[{key:"registrations" as const,name:"Регистрация"},{key:"schedule" as const,name:"Комплексы и заходы"},{key:"results" as const,name:"Результаты"}].map(item => <button key={item.key} type="button" onClick={() => setSection(item.key)} aria-pressed={section === item.key} className={`min-h-11 border-b-2 px-1 text-sm ${section === item.key ? "border-[var(--accent)] text-[var(--text-main)]" : "border-transparent text-[var(--text-muted)]"}`}>{item.name}</button>)}
       </nav>
       <div hidden={section !== "schedule"}><CompetitionSchedulePanel eventKey={eventKey} /></div>
+      <div hidden={section !== "results"}><CompetitionResultsPanel eventKey={eventKey} /></div>
       {section === "registrations" && <>
       <nav aria-label="Заявки и категории" className="flex flex-wrap gap-x-5 border-b border-[var(--line-soft)]">
         {[{key:"",name:"Все заявки"}, ...(competition?.categories || [])].map(item => <button key={item.key} type="button" aria-pressed={category === item.key} onClick={() => setCategory(item.key)} className={`min-h-11 border-b-2 px-1 text-sm ${category === item.key ? "border-[var(--accent)] text-[var(--text-main)]" : "border-transparent text-[var(--text-muted)]"}`}>{item.name}{item.key && ` · ${registrations.filter(r => r.category === item.key && r.status === "registered" && r.payment_status === "paid").length}`}</button>)}

@@ -13,7 +13,7 @@ export type Heat = { number: number; start_time: string; end_time: string; slots
 export type ScheduleBlock = CompetitionComplex & {
   kind?: "break"|"awards";
   category_key: string; category_name: string; complex_number: number; planned_count: number; confirmed_count: number;
-  assignment: "registration" | "results"; end_time: string; available_after: string; heats: Heat[];
+  assignment: "registration" | "results" | "rating"; end_time: string; available_after: string; heats: Heat[];
 };
 export type ScheduleGrid = { event_name: string; event_date: string | null; blocks: ScheduleBlock[]; errors: string[]; start_time: string | null; end_time: string | null; generated_at?: string };
 export type CompetitionSchedule = {
