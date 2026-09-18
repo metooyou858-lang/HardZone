@@ -33,6 +33,19 @@ test('total ranking counts best places; equal totals and place histograms share 
   assert.ok(standings([block],state,'cat').every(r=>r.place===null && r.scores.length===0));
 });
 
+test('mixed time and reps ranks all finishers first, shares ties, preserves zero and empty',()=>{
+  const values=[{kind:'reps',value:'1000'},{kind:'time',value:'09:00'},{kind:'time',value:'08:00'},{kind:'reps',value:'120'},{kind:'reps',value:'120'},{kind:'reps',value:'0'},{kind:'time',value:''}];
+  const entries=Object.fromEntries(values.map((value,i)=>[teams[i].id,[parseResult(value,'time_or_reps')]]));
+  const ranked=rankWorkout({components:[{name:'Комплекс',kind:'time_or_reps'}],entries},teams)[0];
+  assert.deepEqual(ranked.map(r=>r.id),['3','2','1','4','5','6']);
+  assert.deepEqual(ranked.map(r=>r.place),[1,2,3,4,4,6]);
+  assert.deepEqual(ranked.map(r=>r.points),[100,95,90,85,85,77]);
+  assert.deepEqual(entries['6'],[{kind:'reps',value:0}]);
+  assert.deepEqual(entries['7'],[null]);
+  assert.throws(()=>parseResult({kind:'weight',value:'12'},'time_or_reps'));
+  assert.throws(()=>parseResult({kind:'reps',value:'12.5'},'time_or_reps'));
+});
+
 test('results lifecycle, next heat seeding, privacy latch and event isolation',async()=>{
   const event=await createCompetitionEvent({name:'Проверка результатов',date:'2026-10-10',location:'Зал',fee_rubles:3500,registration_enabled:true,categories:[{key:'cat',name:'Категория'}],terms_text:'Тест'});keys.push(event.event_key);
   const ids=[];
@@ -49,7 +62,7 @@ test('results lifecycle, next heat seeding, privacy latch and event isolation',a
   let data=await readResults(event.event_key);
   const apply=async input=>{data=await saveResults(event.event_key,{revision:data.revision,schedule_revision:data.schedule_revision,source_hash:data.source_hash,...input});return data;};
   await apply({action:'settings',complex_id:first.id,components:[config],is_final:false});
-  await apply({action:'settings',complex_id:second.id,components:[{name:'Время',kind:'time'},{name:'Вес',kind:'weight'}],is_final:true});
+  await apply({action:'settings',complex_id:second.id,components:[{name:'Время или повторения',kind:'time_or_reps'},{name:'Вес',kind:'weight'}],is_final:true});
   assert.equal(data.closes_at,'2026-10-10T00:00:00.000Z');
   assert.equal(finalStartsAt({...schedule,grid:schedule.grid},{workouts:{[second.id]:{is_final:true}}}),'2026-10-10T00:00:00.000Z');
   const entries=Object.fromEntries(ids.map((id,i)=>[id,[String((i+1)*10)]]));
@@ -66,8 +79,9 @@ test('results lifecycle, next heat seeding, privacy latch and event isolation',a
   assert.equal(publicly.categories[0].rows[0].total,100);
   assert.ok(!JSON.stringify(publicly).includes('test@example'));
   assert.ok(!JSON.stringify(publicly).includes('registration_id'));
-  const finalEntries=Object.fromEntries(ids.map((id,i)=>[id,[`0${i+1}:00`,String(100+i)]]));
+  const finalEntries=Object.fromEntries(ids.map((id,i)=>[id,[{kind:i===2?'reps':'time',value:i===2?'120':`0${i+1}:00`},String(100+i)]]));
   await apply({action:'save',complex_id:second.id,entries:finalEntries});
+  assert.deepEqual((await readResults(event.event_key)).state.workouts[second.id].entries[ids[2]][0],{kind:'reps',value:120});
   await assert.rejects(apply({action:'reopen',complex_id:first.id}),/уже есть результаты/);
   await assert.rejects(saveSchedule(event.event_key,{revision:schedule.revision,config:{categories:[{category_key:'cat',planned_count:4,complexes:[second]}]}}),/Нельзя удалить/);
   await latchFinal(event.event_key,schedule,pool,Date.parse('2026-10-10T00:00:00Z'));

@@ -3,7 +3,7 @@ const { readSchedule } = require('./competition-schedule');
 
 const invalid = message => Object.assign(new Error(message), {statusCode:422});
 const conflict = message => Object.assign(new Error(message), {statusCode:409});
-const kinds = ['time','reps','weight'];
+const kinds = ['time','reps','weight','time_or_reps'];
 const hasEntries = workout => Object.values(workout?.entries || {}).some(values => values.some(value => value !== null));
 const blocksOf = schedule => (schedule.grid?.blocks || schedule.preview.blocks).filter(block => !block.kind);
 
@@ -13,6 +13,11 @@ function points(place) {
 
 function parseResult(value, kind) {
   if (value === '' || value === null || value === undefined) return null;
+  if (kind === 'time_or_reps') {
+    if (!value || typeof value!=='object' || !['time','reps'].includes(value.kind)) throw invalid('Выберите время или повторения для результата команды');
+    const parsed=parseResult(value.value,value.kind);
+    return parsed===null ? null : {kind:value.kind,value:parsed};
+  }
   if (typeof value !== 'string') throw invalid('Результат должен быть строкой');
   if (kind === 'time') {
     if (!/^\d{1,3}:[0-5]\d$/.test(value)) throw invalid('Время: используйте ММ:СС, например 07:38');
@@ -32,10 +37,15 @@ function roster(block) {
 function rankWorkout(workout, teams) {
   return (workout?.components || []).map((component,index) => {
     const scored = teams.map(team => ({...team,value:workout.entries?.[team.id]?.[index] ?? null})).filter(item => item.value !== null);
-    scored.sort((a,b) => component.kind === 'time' ? a.value-b.value : b.value-a.value);
+    const compare=(a,b)=> {
+      if (component.kind!=='time_or_reps') return component.kind === 'time' ? a.value-b.value : b.value-a.value;
+      if (a.value.kind!==b.value.kind) return a.value.kind==='time' ? -1 : 1;
+      return a.value.kind==='time' ? a.value.value-b.value.value : b.value.value-a.value.value;
+    };
+    scored.sort(compare);
     let place = 0;
     return scored.map((item,i) => {
-      if (i === 0 || item.value !== scored[i-1].value) place = i+1;
+      if (i === 0 || compare(item,scored[i-1])!==0) place = i+1;
       return {...item,place,points:points(place)};
     });
   });

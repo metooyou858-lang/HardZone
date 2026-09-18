@@ -5,7 +5,7 @@ import {fetchCompetitionResults,saveCompetitionResults,resultText,type ResultsDa
 
 const button='min-h-11 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-4 py-2 text-sm enabled:hover:bg-[var(--accent)] enabled:hover:text-[#062b26] disabled:opacity-40';
 const input='min-h-11 w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-main)] px-3 py-2 text-sm';
-const kindNames={time:'Время, ММ:СС',reps:'Повторения',weight:'Вес, кг'};
+const kindNames={time:'Время, ММ:СС',reps:'Повторения',weight:'Вес, кг',time_or_reps:'Время или повторения'};
 
 export default function CompetitionResultsPanel({eventKey}:{eventKey:string}) {
   const [data,setData]=useState<ResultsData|null>(null);
@@ -20,6 +20,7 @@ export default function CompetitionResultsPanel({eventKey}:{eventKey:string}) {
   const [components,setComponents]=useState<ResultComponent[]>([{name:'Результат',kind:'time'}]);
   const [final,setFinal]=useState(false);
   const [entries,setEntries]=useState<Record<string,string[]>>({});
+  const [entryModes,setEntryModes]=useState<Record<string,('time'|'reps')[]>>({});
   const blocks=data?.blocks.filter(block=>block.category_key===category) || [];
   const block=blocks.find(item=>item.id===complexId);
   const workout=data?.state.workouts[complexId];
@@ -30,7 +31,8 @@ export default function CompetitionResultsPanel({eventKey}:{eventKey:string}) {
     const result=value.state.workouts[id];
     const parts=result?.components || [{name:'Результат',kind:'time' as const}];
     setComplexId(id);setComponents(parts);setFinal(result?.is_final || false);setSettings(!result);setDirty(false);
-    setEntries(Object.fromEntries((current?.teams || []).map(team=>[team.id,parts.map((part,i)=>resultText(result?.entries[team.id]?.[i],part.kind))])));
+    setEntries(Object.fromEntries((current?.teams || []).map(team=>[team.id,parts.map((part,i)=>{const value=result?.entries[team.id]?.[i];return value && typeof value==='object'?resultText(value.value,value.kind):resultText(value,part.kind);})])));
+    setEntryModes(Object.fromEntries((current?.teams || []).map(team=>[team.id,parts.map((_,i)=>{const value=result?.entries[team.id]?.[i];return value && typeof value==='object'?value.kind:'time';})])));
   }
   const load=useCallback(async()=>{
     setBusy(true);setError('');
@@ -46,7 +48,8 @@ export default function CompetitionResultsPanel({eventKey}:{eventKey:string}) {
     if (!data || !block) return;
     setBusy(true);setError('');setNotice('');
     try {
-      const value=await saveCompetitionResults(eventKey,data,{action,complex_id:block.id,components,is_final:final,entries});
+      const submitted=Object.fromEntries(Object.entries(entries).map(([id,values])=>[id,values.map((value,i)=>workout?.components[i]?.kind==='time_or_reps'?{kind:entryModes[id]?.[i] || 'time',value}:value)]));
+      const value=await saveCompetitionResults(eventKey,data,{action,complex_id:block.id,components,is_final:final,entries:submitted});
       setData(value);choose(value,block.id);
       setNotice(action==='confirm'?'Результаты подтверждены. Общий рейтинг и состав следующего комплекса обновлены. В разделе заходов нажмите «Обновить данные».':action==='reopen'?'Результаты открыты для исправления. Следующий комплекс ожидает повторного подтверждения.':'Сохранено.');
     }catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить');}finally{setBusy(false);}
@@ -62,7 +65,7 @@ export default function CompetitionResultsPanel({eventKey}:{eventKey:string}) {
     {data && <>
       <p className="text-sm text-[var(--text-muted)]">{data.hidden?'Результаты скрыты от участников. Организаторам доступны все данные.':data.closes_at?`Все результаты скроются от участников с началом финала: ${new Date(data.closes_at).toLocaleString('ru-RU',{timeZone:'Asia/Vladivostok',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})} по Хабаровску.`:'Отметьте последний комплекс категории как финальный: с его началом все публичные результаты будут скрыты.'}</p>
       <nav className="flex flex-wrap gap-2" aria-label="Категория результатов">{data.competition.categories.map(item=><button key={item.key} className={`${button} ${category===item.key?'border-[var(--accent)]':''}`} disabled={busy || dirty} aria-pressed={category===item.key} onClick={()=>{setCategory(item.key);choose(data,data.blocks.find(block=>block.category_key===item.key)?.id || '');setNotice('');setError('');}}>{item.name}</button>)}</nav>
-      {!data.has_grid && <p className="text-sm text-[var(--warning)]">Настройте оценку комплексов, затем сформируйте сетку в разделе «Комплексы и заходы». После этого появятся команды для ввода результатов.</p>}
+      {!data.has_grid && <p className="text-sm text-[var(--warning)]">Ввод результатов пока недоступен: сетка не сформирована. <a className="underline underline-offset-4" href={`/competitions?event=${encodeURIComponent(eventKey)}&section=schedule&scheduleView=settings`}>Открыть расчёт и сформировать сетку</a>. Затем вернитесь в результаты и нажмите «Обновить данные».</p>}
       {data.grid_stale && <p className="text-sm text-[var(--warning)]">Сетка устарела. Обновите её перед внесением результатов.</p>}
       {view==='entry' && <>
         <nav className="flex flex-wrap gap-2" aria-label="Комплекс результатов">{blocks.map(item=><button key={item.id} className={`${button} ${complexId===item.id?'border-[var(--accent)]':''}`} disabled={busy || dirty} aria-pressed={complexId===item.id} onClick={()=>{choose(data,item.id);setNotice('');setError('');}}>{item.name}</button>)}</nav>
@@ -73,10 +76,24 @@ export default function CompetitionResultsPanel({eventKey}:{eventKey:string}) {
             <label className="block max-w-sm text-xs">Количество зачётов<select className={`${input} mt-1`} value={components.length} onChange={e=>{setComponents(e.target.value==='2'?[components[0],{name:'Результат 2',kind:'weight'}]:[components[0]]);setDirty(true);}}><option className="bg-white text-black" value={1}>Один результат</option><option className="bg-white text-black" value={2}>Два отдельных результата</option></select></label>
             {components.map((part,index)=><div key={index} className="grid gap-3 sm:grid-cols-2"><label className="text-xs">Название зачёта<input className={`${input} mt-1`} required maxLength={80} value={part.name} onChange={e=>{setComponents(components.map((p,i)=>i===index?{...p,name:e.target.value}:p));setDirty(true);}} /></label><label className="text-xs">Тип результата<select className={`${input} mt-1`} value={part.kind} onChange={e=>{setComponents(components.map((p,i)=>i===index?{...p,kind:e.target.value as ResultKind}:p));setDirty(true);}}>{Object.entries(kindNames).map(([kind,name])=><option className="bg-white text-black" key={kind} value={kind}>{name}</option>)}</select></label></div>)}
             <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={final} onChange={e=>{setFinal(e.target.checked);setDirty(true);}} />Финальный комплекс</label>
-            <p className="text-xs text-[var(--text-muted)]">Меньшее время лучше; больше повторений или веса лучше. Каждый зачёт приносит до 100 баллов. Равные результаты делят место, следующие места пропускаются.</p>
+            <p className="text-xs text-[var(--text-muted)]">В режиме «Время или повторения» завершившие комплекс идут выше не завершивших: сначала меньшее время, затем больше выполненных повторений. Каждый зачёт приносит до 100 баллов. Равные результаты делят место.</p>
             <div className="flex flex-wrap gap-2"><button className={button} type="submit">Сохранить оценку</button><button className={button} type="button" onClick={()=>choose(data,block.id)}>Отмена изменений</button></div>
           </fieldset></form>}
-          {workout && <><div className="divide-y divide-[var(--line-soft)] border-t border-[var(--line-soft)]">{block.teams.map(team=><div key={team.id} className="grid items-start gap-4 p-4 lg:grid-cols-[minmax(180px,1fr)_2fr]"><div className="min-w-0"><p className="break-words font-medium">{team.name}</p><p className="mt-1 text-xs text-[var(--text-muted)]">Заход {team.heat} · Дорожка {team.lane}</p></div><div className={`grid gap-3 ${workout.components.length===2?'sm:grid-cols-2':''}`}>{workout.components.map((part,index)=>{const rank=block.rankings[index]?.find(item=>item.id===team.id);return <label key={index} className="min-w-0 text-xs">{part.name} · {kindNames[part.kind]}<input className={`${input} mt-1`} disabled={busy || confirmed || !data.has_grid || data.grid_stale || settings} inputMode={part.kind==='time'?'text':part.kind==='weight'?'decimal':'numeric'} placeholder={part.kind==='time'?'ММ:СС':'0'} value={entries[team.id]?.[index] || ''} onChange={e=>{setEntries(current=>({...current,[team.id]:workout.components.map((_,i)=>i===index?e.target.value:current[team.id]?.[i] || '')}));setDirty(true);}} />{rank && <span className="mt-1 block text-[var(--text-muted)]">{rank.place}-е место · {rank.points} баллов{dirty?' · до изменений':''}</span>}</label>;})}</div></div>)}</div>
+          {workout && <>
+          {settings && <p className="border-t border-[var(--line-soft)] p-4 text-sm text-[var(--warning)]">Сейчас открыты настройки оценки. Сохраните их или нажмите «Свернуть настройки», чтобы перейти к вводу.</p>}
+          <div className="divide-y divide-[var(--line-soft)] border-t border-[var(--line-soft)]">{block.teams.map(team=><div key={team.id} className="grid items-start gap-4 p-4 lg:grid-cols-[minmax(180px,1fr)_2fr]"><div className="min-w-0"><p className="break-words font-medium">{team.name}</p><p className="mt-1 text-xs text-[var(--text-muted)]">Заход {team.heat} · Дорожка {team.lane}</p></div><div className={`grid gap-3 ${workout.components.length===2?'sm:grid-cols-2':''}`}>{workout.components.map((part,index)=>{
+            const rank=block.rankings[index]?.find(item=>item.id===team.id);
+            const mode=part.kind==='time_or_reps' ? entryModes[team.id]?.[index] || 'time' : part.kind;
+            const disabled=busy || confirmed || !data.has_grid || data.grid_stale || settings;
+            return <div key={index} className="min-w-0 space-y-2 text-xs"><span>{part.name} · {kindNames[part.kind]}</span>
+              {part.kind==='time_or_reps' && <select className={input} aria-label={`Формат результата: ${team.name}, ${part.name}`} disabled={disabled} value={mode} onChange={e=>{
+                setEntryModes(current=>({...current,[team.id]:workout.components.map((_,i)=>i===index?e.target.value as 'time'|'reps':current[team.id]?.[i] || 'time')}));
+                setEntries(current=>({...current,[team.id]:workout.components.map((_,i)=>i===index?'':current[team.id]?.[i] || '')}));setDirty(true);
+              }}><option className="bg-white text-black" value="time">Завершили — время</option><option className="bg-white text-black" value="reps">Не завершили — повторения</option></select>}
+              <input className={input} aria-label={`${team.name}, ${part.name}: ${kindNames[mode]}`} disabled={disabled} inputMode={mode==='time'?'text':mode==='weight'?'decimal':'numeric'} placeholder={mode==='time'?'ММ:СС':'0'} value={entries[team.id]?.[index] || ''} onChange={e=>{setEntries(current=>({...current,[team.id]:workout.components.map((_,i)=>i===index?e.target.value:current[team.id]?.[i] || '')}));setDirty(true);}} />
+              {rank && <span className="block text-[var(--text-muted)]">{rank.place}-е место · {rank.points} баллов{dirty?' · до изменений':''}</span>}
+            </div>;
+          })}</div></div>)}</div>
           {!block.teams.length && <p className="p-4 text-sm text-[var(--text-muted)]">{block.complex_number>1?'Команды появятся после подтверждения предыдущих комплексов.':'В сохранённой сетке нет команд.'}</p>}
           {!confirmed && <footer className="flex flex-wrap gap-3 border-t border-[var(--line-soft)] p-4"><button className={button} disabled={busy || settings || !block.teams.length || !data.has_grid || data.grid_stale} onClick={()=>void save('save')}>Сохранить черновик</button><button className={button} disabled={busy || settings || !block.teams.length || !data.has_grid || data.grid_stale} onClick={()=>void save('confirm')}>Подтвердить результаты комплекса</button>{dirty && <button className={button} disabled={busy} onClick={()=>choose(data,block.id)}>Отменить изменения</button>}</footer>}</>}
         </article>}
