@@ -120,7 +120,7 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
   async function generate() {
     if (!data || dirty) return;
     setBusy(true); setError(""); setNotice("");
-    try { accept(await generateCompetitionSchedule(eventKey,data.revision,data.source_hash)); setView("grid"); setNotice("Сетка сохранена. Состав первого комплекса — по оплаченным заявкам."); }
+    try { const result=await generateCompetitionSchedule(eventKey,data.revision,data.source_hash); accept(result); setView("grid"); setNotice(result.grid?.blocks.length ? "Сетка сохранена. Состав первого комплекса — по оплаченным заявкам." : "Сетка обновлена: в плане нет комплексов и других пунктов расписания."); }
     catch(e) { setError(e instanceof Error ? e.message : "Не удалось сформировать сетку"); }
     finally { setBusy(false); }
   }
@@ -205,7 +205,7 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
       {editor?.isNew && editorForm}
       {activityEditor?.isNew && activityForm}
       <section className="space-y-4 border-t border-[var(--line-soft)] pt-5">
-        <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Расчёт всего мероприятия</h2><button className={primary} disabled={busy || dirty || editing || !data.preview.blocks.length || !!data.preview.errors.length} onClick={() => void generate()}>{data.grid ? "Пересформировать сетку" : "Сформировать сетку"}</button></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Расчёт всего мероприятия</h2><button className={primary} disabled={busy || dirty || editing || (!data.preview.blocks.length && !data.grid) || !!data.preview.errors.length} onClick={() => void generate()}>{data.grid ? "Пересформировать сетку" : "Сформировать сетку"}</button></div>
         <p className="text-xs text-[var(--text-muted)]">Перерыв после комплекса резервирует площадку. Следующее начало задайте с учётом этого перерыва. Сохранённая сетка изменится только по кнопке формирования.</p>
         {(dirty || editing) && <p className="text-sm text-[var(--warning)]">Ниже расчёт по последним сохранённым настройкам.</p>}
         {!!data.preview.errors.length && <ul role="alert" className="list-disc space-y-2 pl-5 text-sm text-[var(--danger)]">{data.preview.errors.map((message,i) => <li key={i}>{message}</li>)}</ul>}

@@ -212,4 +212,16 @@ test('deleting a complex preserves other categories and deleting the last leaves
   assert.equal(reloaded.preview.start_time,null);
   assert.deepEqual(reloaded.grid,frozen);
   assert.equal(reloaded.grid_stale,true);
+  await assert.rejects(generateSchedule(event.event_key,{revision:reloaded.revision-1,source_hash:reloaded.source_hash}),/изменились/);
+  const updated=await generateSchedule(event.event_key,{revision:reloaded.revision,source_hash:reloaded.source_hash});
+  assert.deepEqual(updated.grid.blocks,[]);
+  assert.equal(updated.grid_stale,false);
+  assert.deepEqual(updated.config,reloaded.config);
+  assert.deepEqual((await readSchedule(event.event_key)).grid,updated.grid);
+});
+
+test('a new empty plan cannot generate its first grid',async()=>{
+  const event=await createCompetitionEvent({name:'Пустой план',date:'2026-10-10',location:'Зал',fee_rubles:3500,registration_enabled:false,categories:competition.categories,terms_text:'Тест'}); keys.push(event.event_key);
+  const current=await readSchedule(event.event_key);
+  await assert.rejects(generateSchedule(event.event_key,{revision:current.revision,source_hash:current.source_hash}),/хотя бы один комплекс/);
 });

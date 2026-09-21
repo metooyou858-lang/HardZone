@@ -161,7 +161,7 @@ async function generateSchedule(eventKey, input) {
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [eventKey]);
     const current = await readSchedule(eventKey, client);
     if (input.revision !== current.revision || input.source_hash !== current.source_hash) throw conflict('Состав команд или настройки изменились. Обновите расчёт перед формированием сетки');
-    if (!current.preview.blocks.length) throw invalid('Сначала добавьте хотя бы один комплекс');
+    if (!current.preview.blocks.length && !current.grid) throw invalid('Сначала добавьте хотя бы один комплекс');
     if (current.preview.errors.length) throw invalid(current.preview.errors.join('\n'));
     await require('./competition-results').latchFinal(eventKey,current,client);
     const grid = await require('./competition-results').gridWithResults(eventKey,{ ...current.preview, source_hash:current.source_hash, generated_at:new Date().toISOString() },client);
