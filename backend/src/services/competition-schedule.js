@@ -105,18 +105,19 @@ function buildSchedule(config, competition, registrations) {
     if (end > 1440) errors.push(`${activity.name}: расписание выходит за пределы дня мероприятия`);
     blocks.push({...activity, category_key:'', category_name:'', briefing_time:null, end_time:clock(end), available_after:clock(end), occupied_from:start, occupied_to:end, heats:[]});
   }
+  const venueConflicts = [];
   for (let i = 0; i < blocks.length; i++) {
     for (let j = i + 1; j < blocks.length; j++) {
       const a = blocks[i], b = blocks[j];
       if (a.venue.toLocaleLowerCase('ru') === b.venue.toLocaleLowerCase('ru') && a.occupied_from < b.occupied_to && b.occupied_from < a.occupied_to) {
-        errors.push(`Площадка «${a.venue}»: пересекаются «${a.category_name} · ${a.name}» и «${b.category_name} · ${b.name}»`);
+        venueConflicts.push(`Площадка «${a.venue}»: пересекаются «${[a.category_name,a.name].filter(Boolean).join(' · ')}» (${clock(a.occupied_from)}–${clock(a.occupied_to)}) и «${[b.category_name,b.name].filter(Boolean).join(' · ')}» (${clock(b.occupied_from)}–${clock(b.occupied_to)})`);
       }
     }
   }
   blocks.sort((a, b) => a.occupied_from - b.occupied_from || a.category_name.localeCompare(b.category_name, 'ru'));
   return {
     event_name: competition.name, event_date: competition.date,
-    blocks, errors,
+    blocks, errors: [...errors,...venueConflicts], venue_conflicts: venueConflicts,
     start_time: blocks.length ? clock(Math.min(...blocks.map(item => item.occupied_from))) : null,
     end_time: blocks.length ? clock(Math.max(...blocks.map(item => item.occupied_to))) : null,
   };
@@ -147,6 +148,9 @@ async function saveSchedule(eventKey, input) {
     if (input.revision !== current.revision) throw conflict('Настройки изменились в другой вкладке. Обновите расписание перед сохранением');
     if (input.source_hash && input.source_hash !== current.source_hash) throw conflict('Состав команд изменился. Обновите данные и проверьте смещения заново');
     const config = normalizeSchedule(input.config, current.competition);
+    const registrations = (await client.query("SELECT id,team_name,category,created_at,status,payment_status FROM competition_registrations WHERE event_key=$1 AND status='registered' AND payment_status='paid'", [eventKey])).rows;
+    const preview = buildSchedule(config,current.competition,registrations);
+    if (preview.venue_conflicts.length) throw invalid(preview.venue_conflicts.join('\n'));
     if (input.results_revision !== undefined && input.results_revision !== current.results_revision) throw conflict('Настройки результатов изменились. Обновите расписание');
     await require('./competition-results').saveScheduleScoring(eventKey,current,input.config,client);
     await require('./competition-results').guardScheduleChanges(eventKey,current,config,client);

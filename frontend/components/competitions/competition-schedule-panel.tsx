@@ -57,6 +57,7 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
     setEditor(current => current ? {...current, complex: {...current.complex, ...patch}} : current);
   }
   function addComplex() {
+    setError("");
     setEditor({category:"", isNew:true, complex:{
       id:crypto.randomUUID(),name:"", start_time:"", briefing_time:null,
       venue:"",lanes:4,duration_minutes:10,gap_minutes:3,break_after_minutes:0,
@@ -87,6 +88,7 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
     if (await persist(next, editor.isNew ? "Комплекс добавлен. Расчёт обновлён." : "Комплекс изменён. Расчёт обновлён.")) setEditor(null);
   }
   function editComplex(id: string) {
+    setError("");
     const activity = draft.activities?.find(item => item.id === id);
     if (activity) { setActivityEditor({item:{...activity},isNew:false}); setActivityPreview(null); return; }
     const owner = draft.categories.find(item => item.complexes.some(complex => complex.id === id));
@@ -155,7 +157,8 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
               {complex.scoring_locked && <p className="text-xs text-[var(--text-muted)]">В этом комплексе уже есть результаты. Настройки зачётов зафиксированы.</p>}
             </fieldset>}
           </section>)}
-          <div className="mt-4 flex flex-wrap items-center gap-3"><button type="submit" className={primary}>{busy ? "Сохраняем…" : editor.isNew ? "Создать комплекс" : "Сохранить изменения"}</button><button type="button" className={button} onClick={() => setEditor(null)}>Отмена</button><span className="text-xs text-[var(--text-muted)]">Расчёт обновится после сохранения. Время — по Хабаровску.</span></div>
+          {error && <p role="alert" className="mt-4 whitespace-pre-line text-sm text-[var(--danger)]">{error}</p>}
+          <div className="mt-4 flex flex-wrap items-center gap-3"><button type="submit" className={primary}>{busy ? "Сохраняем…" : editor.isNew ? "Создать комплекс" : "Сохранить изменения"}</button><button type="button" className={button} onClick={() => {setEditor(null);setError("");}}>Отмена</button><span className="text-xs text-[var(--text-muted)]">Расчёт обновится после сохранения. Время — по Хабаровску.</span></div>
         </fieldset>
       </form>
   ) : null;
@@ -184,7 +187,7 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
       <div className="flex gap-4"><button className="min-h-11 text-sm" aria-pressed={view === "settings"} onClick={() => setView("settings")}><span className={view === "settings" ? "border-b-2 border-[var(--accent)] pb-2" : "text-[var(--text-muted)]"}>Настройка комплексов</span></button><button className="min-h-11 text-sm" aria-pressed={view === "grid"} onClick={() => setView("grid")}><span className={view === "grid" ? "border-b-2 border-[var(--accent)] pb-2" : "text-[var(--text-muted)]"}>Сохранённая сетка</span></button></div>
       <button className={button} disabled={busy || dirty || editing} onClick={() => void load()}>Обновить данные</button>
     </header>
-    {error && <p role="alert" className="whitespace-pre-line text-sm text-[var(--danger)]">{error}</p>}
+    {error && !editor && <p role="alert" className="whitespace-pre-line text-sm text-[var(--danger)]">{error}</p>}
     {notice && <p role="status" className="text-sm text-[var(--accent)]">{notice}</p>}
     {!data && <p className="text-sm text-[var(--text-muted)]">{busy ? "Загружаем комплексы…" : "Расписание недоступно. Повторите загрузку."}</p>}
     {data && view === "settings" && <>

@@ -186,11 +186,23 @@ test('saved grid is isolated, frozen across edits and new payments, with optimis
   await assert.rejects(readSchedule('missing-event'),/не найдено/);
 });
 
-test('conflicting schedule can be saved for correction but cannot become the fixed grid',async()=>{
+test('venue overlaps are rejected before saving; adjacent and independent venues remain valid',async()=>{
   const event=await createCompetitionEvent({name:'Конфликты',date:'2026-10-10',location:'Зал',fee_rubles:3500,registration_enabled:false,categories:competition.categories,terms_text:'Тест'}); keys.push(event.event_key);
-  const result=await saveSchedule(event.event_key,{revision:0,config:plan([complex(),complex()],4)});
-  assert.ok(result.preview.errors.length);
-  await assert.rejects(generateSchedule(event.event_key,{revision:result.revision,source_hash:result.source_hash}),/пересекаются/);
+  const first=complex();
+  let result=await saveSchedule(event.event_key,{revision:0,config:plan([first],4)});
+  const unchanged=await readSchedule(event.event_key);
+  await assert.rejects(saveSchedule(event.event_key,{revision:result.revision,config:plan([first,complex()],4)}),/пересекаются.*08:45.*09:25/);
+  assert.deepEqual(await readSchedule(event.event_key),unchanged);
+  const second=complex({start_time:'09:30',briefing_time:'09:20'});
+  const config={categories:[...plan([first],4).categories,{category_key:'advanced',planned_count:4,complexes:[second]}]};
+  await assert.rejects(saveSchedule(event.event_key,{revision:result.revision,config}),/пересекаются/);
+  second.briefing_time='09:25';
+  result=await saveSchedule(event.event_key,{revision:result.revision,config});
+  second.start_time='09:00';second.briefing_time=null;second.venue='Улица';
+  result=await saveSchedule(event.event_key,{revision:result.revision,config});
+  second.venue=first.venue.toUpperCase();
+  await assert.rejects(saveSchedule(event.event_key,{revision:result.revision,config}),/пересекаются/);
+  await assert.rejects(saveSchedule(event.event_key,{revision:result.revision,config:{...result.config,activities:[activity({start_time:'09:10'})]}}),/пересекаются/);
   await assert.rejects(updateCompetitionEvent(event.event_key,{...event,categories:[competition.categories[1]]}),/с комплексами/);
   assert.equal((await readSchedule(event.event_key)).grid,null);
 });
