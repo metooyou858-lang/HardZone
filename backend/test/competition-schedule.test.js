@@ -79,7 +79,7 @@ test('moving a complex preserves its id and settings, uses target count and leav
   result=await generateSchedule(event.event_key,{revision:result.revision,source_hash:result.source_hash});
   const snapshot=result.grid;
   result=await saveSchedule(event.event_key,{revision:result.revision,config:{categories:[{category_key:'amateur',planned_count:8,complexes:[]},{category_key:'advanced',planned_count:12,complexes:[existing,moved]}]}});
-  assert.deepEqual(result.config.categories[1].complexes,[existing,moved]);
+  assert.deepEqual(result.config.categories[1].complexes,[existing,moved].map(item=>({...item,scoring:{components:[{name:'Результат',kind:'time'}],is_final:false},scoring_locked:false})));
   assert.equal(result.preview.blocks.find(b=>b.id===moved.id).planned_count,12);
   assert.equal(result.preview.blocks.find(b=>b.id===moved.id).assignment,'results');
   assert.equal(result.preview.blocks.filter(b=>b.id===moved.id).length,1);

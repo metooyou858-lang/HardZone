@@ -10,6 +10,23 @@ const keys=[];
 const teams=Array.from({length:8},(_,i)=>({id:String(i+1),name:`Команда ${i+1}`}));
 const config={name:'Результат',kind:'reps'};
 
+test('scoring moves into timing, survives activity preview, and leaves grid current',async()=>{
+  const event=await createCompetitionEvent({name:'Настройки в тайминге',date:'2026-10-10',location:'Зал',fee_rubles:3500,registration_enabled:true,categories:[{key:'cat',name:'Категория'}],terms_text:'Тест'});keys.push(event.event_key);
+  const complex={id:randomUUID(),name:'Первый',start_time:'09:00',briefing_time:null,venue:'Зал',lanes:2,duration_minutes:10,gap_minutes:3,break_after_minutes:0,scoring:{components:[config],is_final:false}};
+  let schedule=await saveSchedule(event.event_key,{revision:0,results_revision:0,config:{categories:[{category_key:'cat',planned_count:2,complexes:[complex]}]}});
+  schedule=await generateSchedule(event.event_key,{revision:schedule.revision,source_hash:schedule.source_hash});
+  const hash=schedule.source_hash;
+  const staleRevision=schedule.results_revision;
+  schedule.config.categories[0].complexes[0].scoring.components.push({name:'Вес',kind:'weight'});
+  schedule=await saveSchedule(event.event_key,{revision:schedule.revision,results_revision:schedule.results_revision,config:schedule.config});
+  assert.equal(schedule.source_hash,hash);
+  assert.equal(schedule.grid_stale,false);
+  assert.equal((await readResults(event.event_key)).state.workouts[complex.id].components.length,2);
+  await assert.rejects(saveSchedule(event.event_key,{revision:schedule.revision,results_revision:staleRevision,config:schedule.config}),/результатов изменились/);
+  const preview=require('../src/services/competition-schedule').planActivity(schedule,{id:randomUUID(),kind:'break',name:'Перерыв',venue:'Зал',start_time:'08:00',duration_minutes:10});
+  assert.equal(preview.config.categories[0].complexes[0].scoring.components.length,2);
+});
+
 test('place points and shared places use gaps; zero is a result, empty is not',()=>{
   assert.deepEqual([1,2,3,4,5,6,7,10,11,31,32,100].map(points),[100,95,90,85,80,77,74,65,62,2,0,0]);
   const entries=Object.fromEntries(teams.map((t,i)=>[t.id,[[10,9,8,7,6,6,5,0][i]]]));

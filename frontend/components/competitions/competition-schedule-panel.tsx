@@ -3,6 +3,9 @@
 import { FormEvent, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { fetchCompetitionSchedule, generateCompetitionSchedule, saveCompetitionSchedule, type CompetitionSchedule, type ScheduleConfig, type CompetitionComplex, type ScheduleGrid } from "@/lib/api/competition-schedule";
 import { previewScheduleActivity, type ScheduleActivity, type ActivityPreview } from "@/lib/api/competition-schedule";
+import type { ResultKind } from "@/lib/api/competition-results";
+
+const resultKinds = {time:"Время, ММ:СС",reps:"Повторения",weight:"Вес, кг",time_or_reps:"Время или повторения"};
 
 const button = "min-h-11 rounded-xl border border-[var(--line-soft)] px-4 py-2 text-sm font-medium disabled:opacity-40";
 const primary = `${button} bg-[var(--accent)] text-[#062b26]`;
@@ -57,12 +60,13 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
     setEditor({category:"", isNew:true, complex:{
       id:crypto.randomUUID(),name:"", start_time:"", briefing_time:null,
       venue:"",lanes:4,duration_minutes:10,gap_minutes:3,break_after_minutes:0,
+      scoring:{components:[{name:"Результат",kind:"time"}],is_final:false},
     }});
   }
   async function persist(config: ScheduleConfig, message: string, sourceHash?:string) {
     if (!data) return false;
     setBusy(true); setError(""); setNotice("");
-    try { accept(await saveCompetitionSchedule(eventKey,config,data.revision,sourceHash)); setNotice(message); return true; }
+    try { accept(await saveCompetitionSchedule(eventKey,config,data.revision,sourceHash,data.results_revision)); setNotice(message); return true; }
     catch(e) { setError(e instanceof Error ? e.message : "Не удалось сохранить настройки"); return false; }
     finally { setBusy(false); }
   }
@@ -138,6 +142,16 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
               <div className="min-w-0 space-y-2"><label className="flex min-h-11 items-center gap-2 text-xs"><input type="checkbox" checked={complex.briefing_time !== null} onChange={e => updateComplex({briefing_time:e.target.checked ? "" : null})} />Проводить брифинг</label>{complex.briefing_time !== null && <label className="block text-xs">Начало брифинга<input className={inputClass} type="time" required value={complex.briefing_time} onChange={e => updateComplex({briefing_time:e.target.value})} /></label>}</div>
               {([{key:"lanes",name:"Количество дорожек",min:1,max:100},{key:"duration_minutes",name:"Время одного захода, мин",min:1,max:240},{key:"gap_minutes",name:"Между заходами, мин",min:0,max:240},{key:"break_after_minutes",name:"После комплекса, мин",min:0,max:240}] as const).map(item => <label key={item.key} className="min-w-0 text-xs">{item.name}<input className={inputClass} required type="number" step={1} min={item.min} max={item.max} value={Number.isNaN(complex[item.key]) ? "" : complex[item.key]} onChange={e => updateComplex({[item.key]:e.target.value === "" ? NaN : Number(e.target.value)})} /></label>)}
             </div>
+            {complex.scoring && <fieldset disabled={complex.scoring_locked} className="space-y-3 border-t border-[var(--line-soft)] pt-4 disabled:opacity-60">
+              <legend className="px-1 text-sm font-medium">Оценка комплекса</legend>
+              <label className="block max-w-sm text-xs">Количество зачётов<select className={inputClass} value={complex.scoring.components.length} onChange={e=>updateComplex({scoring:{...complex.scoring!,components:e.target.value==='2'?[complex.scoring!.components[0],{name:'Результат 2',kind:'weight'}]:[complex.scoring!.components[0]]}})}><option className="bg-white text-black" value={1}>Один результат</option><option className="bg-white text-black" value={2}>Два отдельных результата</option></select></label>
+              {complex.scoring.components.map((part,index)=><div key={index} className="grid gap-4 sm:grid-cols-2">
+                <label className="text-xs">Название зачёта<input className={inputClass} required maxLength={80} value={part.name} onChange={e=>updateComplex({scoring:{...complex.scoring!,components:complex.scoring!.components.map((item,i)=>i===index?{...item,name:e.target.value}:item)}})} /></label>
+                <label className="text-xs">Тип результата<select className={inputClass} value={part.kind} onChange={e=>updateComplex({scoring:{...complex.scoring!,components:complex.scoring!.components.map((item,i)=>i===index?{...item,kind:e.target.value as ResultKind}:item)}})}>{Object.entries(resultKinds).map(([kind,name])=><option className="bg-white text-black" key={kind} value={kind}>{name}</option>)}</select></label>
+              </div>)}
+              <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={complex.scoring.is_final} onChange={e=>updateComplex({scoring:{...complex.scoring!,is_final:e.target.checked}})} />Финальный комплекс</label>
+              {complex.scoring_locked && <p className="text-xs text-[var(--text-muted)]">В этом комплексе уже есть результаты. Настройки зачётов зафиксированы.</p>}
+            </fieldset>}
           </section>)}
           <div className="mt-4 flex flex-wrap items-center gap-3"><button type="submit" className={primary}>{busy ? "Сохраняем…" : editor.isNew ? "Создать комплекс" : "Сохранить изменения"}</button><button type="button" className={button} onClick={() => setEditor(null)}>Отмена</button><span className="text-xs text-[var(--text-muted)]">Расчёт обновится после сохранения. Время — по Хабаровску.</span></div>
         </fieldset>

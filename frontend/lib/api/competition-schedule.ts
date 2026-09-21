@@ -1,9 +1,11 @@
 import { apiFetch } from "./client";
 import type { CompetitionPublicConfig } from "./competitions";
+import type { ResultComponent } from "./competition-results";
 
 export type CompetitionComplex = {
   id: string; name: string; start_time: string; briefing_time: string | null; venue: string;
   lanes: number; duration_minutes: number; gap_minutes: number; break_after_minutes: number;
+  scoring?: {components:ResultComponent[];is_final:boolean}; scoring_locked?:boolean;
 };
 export type CategorySchedule = { category_key: string; planned_count: number | null; complexes: CompetitionComplex[] };
 export type ScheduleActivity = {id:string; kind:"break"|"awards"; name:string; venue:string; start_time:string; duration_minutes:number};
@@ -17,6 +19,7 @@ export type ScheduleBlock = CompetitionComplex & {
 };
 export type ScheduleGrid = { event_name: string; event_date: string | null; blocks: ScheduleBlock[]; errors: string[]; start_time: string | null; end_time: string | null; generated_at?: string };
 export type CompetitionSchedule = {
+  results_revision: number;
   competition: CompetitionPublicConfig; config: ScheduleConfig; revision: number; confirmed_counts: Record<string, number>;
   preview: ScheduleGrid; source_hash: string; grid: ScheduleGrid | null; grid_stale: boolean;
 };
@@ -24,8 +27,8 @@ export type CompetitionSchedule = {
 export async function fetchCompetitionSchedule(eventKey: string): Promise<CompetitionSchedule> {
   return (await apiFetch<{data:CompetitionSchedule}>(`/competitions/events/${encodeURIComponent(eventKey)}/schedule`)).data;
 }
-export async function saveCompetitionSchedule(eventKey: string, config: ScheduleConfig, revision: number, source_hash?:string): Promise<CompetitionSchedule> {
-  return (await apiFetch<{data:CompetitionSchedule}>(`/competitions/events/${encodeURIComponent(eventKey)}/schedule`, {method:"PUT",body:JSON.stringify({config,revision,source_hash})})).data;
+export async function saveCompetitionSchedule(eventKey: string, config: ScheduleConfig, revision: number, source_hash?:string, results_revision?:number): Promise<CompetitionSchedule> {
+  return (await apiFetch<{data:CompetitionSchedule}>(`/competitions/events/${encodeURIComponent(eventKey)}/schedule`, {method:"PUT",body:JSON.stringify({config,revision,source_hash,results_revision})})).data;
 }
 export async function previewScheduleActivity(eventKey:string, activity:ScheduleActivity, revision:number):Promise<ActivityPreview> {
   return (await apiFetch<{data:ActivityPreview}>(`/competitions/events/${encodeURIComponent(eventKey)}/schedule/preview-activity`, {method:"POST",body:JSON.stringify({activity,revision})})).data;

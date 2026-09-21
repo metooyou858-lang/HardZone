@@ -187,9 +187,34 @@ async function guardScheduleChanges(eventKey,current,next,executor) {
       if (!hasEntries(workout) && !workout?.is_final) continue;
       const target=next.categories.find(item=>item.category_key===category.category_key);
       if (target?.complexes[index]?.id!==complex.id) throw invalid('Нельзя удалить, перенести или изменить порядок комплекса с результатами или отметкой финала');
-      if (workout?.is_final && target.complexes.length!==index+1) throw invalid('После финального комплекса нельзя добавить ещё один. Сначала измените отметку финала в результатах');
+      if (workout?.is_final && target.complexes.length!==index+1) throw invalid('После финального комплекса нельзя добавить ещё один. Сначала измените отметку финала в тайминге');
     }
   }
+}
+
+async function saveScheduleScoring(eventKey,current,config,executor) {
+  // Latch against the old schedule before changing a final marker.
+  const {row}=await latchFinal(eventKey,current,executor);
+  const state=structuredClone(row?.state || {workouts:{}});
+  let changed=false;
+  for (const category of config.categories) for (const [index,complex] of category.complexes.entries()) {
+    if (!complex.scoring) continue;
+    const {components,is_final}=complex.scoring;
+    if (!Array.isArray(components) || components.length<1 || components.length>2) throw invalid('Выберите один или два зачёта');
+    const normalized=components.map(item=>{
+      if (!item || !kinds.includes(item.kind) || typeof item.name!=='string' || !item.name.trim() || item.name.trim().length>80) throw invalid('Заполните название и тип каждого зачёта');
+      return {name:item.name.trim(),kind:item.kind};
+    });
+    if (typeof is_final!=='boolean') throw invalid('Некорректная отметка финала');
+    if (is_final && index!==category.complexes.length-1) throw invalid('Финальным может быть только последний комплекс категории');
+    const existing=state.workouts[complex.id];
+    if (existing && JSON.stringify(existing.components)===JSON.stringify(normalized) && existing.is_final===is_final) continue;
+    if (hasEntries(existing) || existing?.status==='confirmed') throw invalid('Настройки зачётов нельзя менять после ввода результатов');
+    state.workouts[complex.id]={components:normalized,is_final,entries:{},status:'draft'};
+    changed=true;
+  }
+  if (changed) await executor.query(`INSERT INTO competition_results(event_key,state,revision) VALUES($1,$2,1)
+    ON CONFLICT(event_key) DO UPDATE SET state=EXCLUDED.state,revision=competition_results.revision+1,updated_at=NOW()`,[eventKey,state]);
 }
 
 async function gridWithResults(eventKey,grid,executor) {
@@ -213,4 +238,4 @@ async function publicResults(eventKey) {
   });
 }
 
-module.exports={points,parseResult,rankWorkout,standings,seedResults,finalStartsAt,latchFinal,readResults,saveResults,guardScheduleChanges,gridWithResults,publicResults};
+module.exports={points,parseResult,rankWorkout,standings,seedResults,finalStartsAt,latchFinal,readResults,saveResults,saveScheduleScoring,guardScheduleChanges,gridWithResults,publicResults};

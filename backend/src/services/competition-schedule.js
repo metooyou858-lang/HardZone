@@ -129,7 +129,12 @@ async function readSchedule(eventKey, executor = pool) {
     FROM competition_registrations WHERE event_key=$1 AND status='registered' AND payment_status='paid' ORDER BY created_at DESC, id DESC`, [competition.event_key])).rows;
   const config = row?.config || { categories: [] };
   const sourceHash = createHash('sha256').update(JSON.stringify({ config, name:competition.name, date:competition.date, categories:competition.categories, registrations })).digest('hex');
-  return { competition, config, revision:row?.revision || 0,
+  const results = (await executor.query('SELECT state,revision FROM competition_results WHERE event_key=$1', [competition.event_key])).rows[0];
+  const editableConfig = {...config,categories:config.categories.map(category=>({...category,complexes:category.complexes.map(complex=>{
+    const workout=results?.state.workouts[complex.id];
+    return {...complex,scoring:{components:workout?.components || [{name:'Результат',kind:'time'}],is_final:Boolean(workout?.is_final)},scoring_locked:Object.values(workout?.entries || {}).some(values=>values.some(value=>value!==null)) || workout?.status==='confirmed'};
+  })}))};
+  return { competition, config:editableConfig, results_revision:results?.revision || 0, revision:row?.revision || 0,
     confirmed_counts: Object.fromEntries(competition.categories.map(item => [item.key, registrations.filter(r => r.category === item.key).length])),
     preview:buildSchedule(config, competition, registrations), source_hash:sourceHash,
     grid:row?.generated_grid || null, grid_stale:Boolean(row?.generated_grid && row.generated_grid.source_hash !== sourceHash) };
@@ -142,6 +147,8 @@ async function saveSchedule(eventKey, input) {
     if (input.revision !== current.revision) throw conflict('Настройки изменились в другой вкладке. Обновите расписание перед сохранением');
     if (input.source_hash && input.source_hash !== current.source_hash) throw conflict('Состав команд изменился. Обновите данные и проверьте смещения заново');
     const config = normalizeSchedule(input.config, current.competition);
+    if (input.results_revision !== undefined && input.results_revision !== current.results_revision) throw conflict('Настройки результатов изменились. Обновите расписание');
+    await require('./competition-results').saveScheduleScoring(eventKey,current,input.config,client);
     await require('./competition-results').guardScheduleChanges(eventKey,current,config,client);
     await client.query(`INSERT INTO competition_schedules(event_key,config,revision) VALUES($1,$2,1)
       ON CONFLICT(event_key) DO UPDATE SET config=EXCLUDED.config,revision=competition_schedules.revision+1,updated_at=NOW()`, [eventKey, config]);
@@ -165,6 +172,10 @@ async function generateSchedule(eventKey, input) {
 
 function planActivity(current, activity) {
   const config = normalizeSchedule({...current.config, activities:[...(current.config.activities || []).filter(item => item.id !== activity.id),activity]}, current.competition);
+  for (const category of config.categories) for (const complex of category.complexes) {
+    const original=current.config.categories.flatMap(item=>item.complexes).find(item=>item.id===complex.id);
+    if (original?.scoring) complex.scoring=original.scoring;
+  }
   const inserted = config.activities.find(item => item.id === activity.id);
   const original = current.preview.blocks.filter(item => item.id !== activity.id);
   const start = minutes(inserted.start_time), end = start + inserted.duration_minutes;
