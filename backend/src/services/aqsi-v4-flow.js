@@ -17,6 +17,7 @@ const {
 } = require('./aqsi');
 const { confirmOpenOrderPayment } = require('./order-sync');
 const logger = require('./logger');
+const { findReceiptForOrder, retryCanceledReceipt } = require('./aqsi-receipt-recovery');
 
 const TERMINAL_CANCELLED_STATUSES = new Set(['Canceled', 'Timeout', 'Error']);
 const TERMINAL_ACTIVE_STATUSES = new Set(['Pending', 'Processing', 'Finishing']);
@@ -805,6 +806,16 @@ async function syncAqsiV4(orderId) {
   }
 
   const PENDING_RECEIPT = new Set(['Pending', 'Processing', 'Finishing']);
+  if (receiptOp.status === 'Canceled' && !extractReceiptFiscalData(receiptOp)) {
+    const recovered = await retryCanceledReceipt(currentOrder, receiptOp);
+    if (!recovered.operation) return recovered;
+    receiptOp = recovered.operation;
+  }
+  const initialFiscal = extractReceiptFiscalData(receiptOp);
+  if (receiptOp.status === 'Completed' && !(initialFiscal?.fiscal_fd && initialFiscal?.fiscal_fn && initialFiscal?.fiscal_fp)) {
+    const found = await findReceiptForOrder(currentOrder);
+    if (found) receiptOp = { status: 'Completed', result: found };
+  }
   const receiptResultReady = hasUsableReceiptResult(receiptOp);
   if (PENDING_RECEIPT.has(receiptOp.status) && !receiptResultReady) {
     return { status: 'receipt_pending', operation_status: receiptOp.status };
@@ -825,73 +836,9 @@ async function syncAqsiV4(orderId) {
 
   const fiscalData = extractReceiptFiscalData(receiptOp);
 
-  // Completed без docInfo — пробуем найти чек через список AQSI по slip ID
   if (!fiscalData || !fiscalData.fiscal_fd || !fiscalData.fiscal_fn || !fiscalData.fiscal_fp) {
     const noFiscalMsg = 'Чек завершён, но реквизиты ФД/ФН/ФП не получены — используйте «Восстановить»';
     logger.error('orders', { action: 'sync_v4_receipt_no_docinfo', order_id: orderId, raw_result: receiptOp.result });
-
-    if (currentOrder.aqsi_slip_id) {
-      try {
-        // listAqsiReceipts требует обязательные filtered.processedAtTzFrom/To — берём из времени операции
-        const opTs = currentOrder.aqsi_payment_operation_at
-          ? new Date(currentOrder.aqsi_payment_operation_at).getTime()
-          : Date.now();
-        const receiptsResponse = await listAqsiReceipts({
-          'filtered.processedAtTzFrom': new Date(opTs - 2 * 60 * 60 * 1000).toISOString(),
-          'filtered.processedAtTzTo': new Date(opTs + 2 * 60 * 60 * 1000).toISOString(),
-          'filtered.type': 1,
-        });
-        const items = Array.isArray(receiptsResponse?.items) ? receiptsResponse.items : [];
-        const found = items.find((r) => r.slipId === currentOrder.aqsi_slip_id || r.slip?.id === currentOrder.aqsi_slip_id) ?? items[0] ?? null;
-        if (found) {
-          logger.info('orders', { action: 'sync_v4_found_receipt_in_list', order_id: orderId, receipt_id: found.id });
-          const docInfo = found.docInfo ?? found.info?.docInfo ?? null;
-          const fd = docInfo?.docNumber != null ? String(docInfo.docNumber) : null;
-          const fn = docInfo?.fiscalStorageNumber ?? null;
-          const fp = docInfo?.docFiscalAttributeInt != null
-            ? String(docInfo.docFiscalAttributeInt)
-            : (docInfo?.docFiscalAttribute ?? null);
-
-          if (fd && fn && fp) {
-            const fiscal_kkt_reg = docInfo?.deviceRegNumber ?? null;
-            const fiscal_date = found.info?.dateTime ?? found.dateTime ?? null;
-            const receipt_id = found.id ?? null;
-
-            await pool.query(
-              `UPDATE orders SET
-                 fiscal_fd = COALESCE($2, fiscal_fd),
-                 fiscal_fn = COALESCE($3, fiscal_fn),
-                 fiscal_fp = COALESCE($4, fiscal_fp),
-                 fiscal_kkt_reg = COALESCE($5, fiscal_kkt_reg),
-                 fiscal_date = COALESCE($6, fiscal_date),
-                 aqsi_receipt_id = COALESCE($7, aqsi_receipt_id),
-                 aqsi_receipt_status = 'completed'
-               WHERE id = $1`,
-              [orderId, fd, fn, fp, fiscal_kkt_reg, fiscal_date, receipt_id]
-            );
-
-            await confirmOpenOrderPayment(orderId, 'card');
-
-            await pool.query(
-              `UPDATE orders SET
-                 aqsi_payment_operation_id = NULL,
-                 aqsi_payment_operation_at = NULL,
-                 aqsi_payment_status = NULL,
-                 aqsi_receipt_operation_id = NULL,
-                 aqsi_error = NULL
-               WHERE id = $1`,
-              [orderId]
-            ).catch(() => {});
-
-            logger.info('orders', { action: 'sync_v4_recovered_from_receipt_list', order_id: orderId });
-            return { status: 'confirmed', has_marking_errors: false };
-          }
-        }
-      } catch (searchErr) {
-        logger.warn('orders', { action: 'sync_v4_receipt_search_failed', order_id: orderId, message: searchErr.message });
-      }
-    }
-
     await pool.query(
       'UPDATE orders SET aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
       [orderId, 'error', noFiscalMsg]

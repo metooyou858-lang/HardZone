@@ -42,6 +42,15 @@ If UI/payment behavior is changed, treat the V4 flow as the primary path unless 
 
 ## Receipt Recovery Rules
 
+### Ручное восстановление отменённой V4-фискализации
+
+- `sync-aqsi-v4` повторяет только `Canceled` и только при сохранённом слипе с одобренной покупкой на сумму заказа. `Pending`, `Processing`, `Finishing`, `Error` и `Timeout` не запускают повторную отправку.
+- До повтора проверяется весь журнал AQSI за период оплаты: ответ `{rows,pages,count}`, совпадение по `payments[].slip.id`. Чужой первый чек никогда не подставляется. Уже найденный чек сохраняется без нового запроса на фискализацию.
+- Таблица `aqsi_receipt_recovery_attempts` сохраняет прежний и новый operation ID. Запись `sending` фиксируется до обращения к AQSI и защищает от двойного нажатия, параллельных процессов и рестарта.
+- При сетевой неопределённости запись остаётся `uncertain`/`sending`: повторная отправка запрещена до сверки. Явный `OperationInProgress` сохраняется как `rejected` и допускает новое ручное нажатие после освобождения кассы.
+- Background sync не повторяет отменённые чеки автоматически. Эквайринг повторно не вызывается. Наличные без слипа требуют отдельной сверки.
+- Это исправляет восстановление после отмены, но не устанавливает причину первоначального зависания кассы.
+
 AQSI receipt recovery must treat card terminal payments and cash receipt processing as one shared fiscalization surface, even though they start from different endpoints.
 
 - Card terminal flow uses `aqsi_payment_operation_id`, `aqsi_slip_id`, and `aqsi_receipt_operation_id`.
