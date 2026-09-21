@@ -1,6 +1,7 @@
 "use client";
 
 import {Fragment,useEffect,useState} from 'react';
+import {maskResultInput,validResultTime} from '@/lib/competition-result-input';
 import {fetchCompetitionResults,saveCompetitionResults,resultText,type ResultsData,type ResultKind} from '@/lib/api/competition-results';
 
 const button='min-h-11 rounded-lg border border-[var(--line-soft)] px-4 py-2 text-sm disabled:opacity-40';
@@ -61,6 +62,16 @@ export default function CompetitionResultsPanel({eventKey}:{eventKey:string}) {
   }
   async function save(action:'save'|'confirm'|'reopen') {
     if (!data || !block || !workout) return;
+    if (action!=='reopen') {
+      for (const team of block.teams) for (const [index,part] of workout.components.entries()) {
+        const mode=part.kind==='time_or_reps'?modes[team.id]?.[index] || 'time':part.kind;
+        const value=entries[team.id]?.[index] || '';
+        if (mode==='time' && value && !validResultTime(value)) {
+          setError(`${team.name}, ${part.name}: введите время ММ:СС, секунды от 00 до 59.`);
+          return;
+        }
+      }
+    }
     setBusy(true);setError('');setNotice('');
     try {
       const submitted=Object.fromEntries(Object.entries(entries).map(([id,values])=>[id,values.map((value,index)=>workout.components[index].kind==='time_or_reps'?{kind:modes[id]?.[index] || 'time',value}:value)]));
@@ -95,7 +106,7 @@ export default function CompetitionResultsPanel({eventKey}:{eventKey:string}) {
             const rank=block.rankings[index]?.find(item=>item.id===team.id);
             return <Fragment key={index}><td className={cell}><div className="flex min-w-44 items-center gap-2">
               {part.kind==='time_or_reps' && <select className={`${input} !w-24 shrink-0`} aria-label={`Тип результата: ${team.name}, ${part.name}`} disabled={busy || confirmed || blocked} value={mode} onChange={e=>{setModes(current=>({...current,[team.id]:workout.components.map((_,i)=>i===index?e.target.value as 'time'|'reps':current[team.id]?.[i] || 'time')}));setEntries(current=>({...current,[team.id]:workout.components.map((_,i)=>i===index?'':current[team.id]?.[i] || '')}));setDirty(true);setNotice('');}}><option className="bg-white text-black" value="time">Время</option><option className="bg-white text-black" value="reps">Повторы</option></select>}
-              <input className={`${input} min-w-24 tabular-nums`} aria-label={`${team.name}, ${part.name}`} disabled={busy || confirmed || blocked} inputMode={mode==='time'?'text':mode==='weight'?'decimal':'numeric'} placeholder={mode==='time'?'ММ:СС':'0'} value={entries[team.id]?.[index] ?? ''} onChange={e=>{setEntries(current=>({...current,[team.id]:workout.components.map((_,i)=>i===index?e.target.value:current[team.id]?.[i] || '')}));setDirty(true);setNotice('');}} />
+              <input className={`${input} min-w-24 tabular-nums`} aria-label={`${team.name}, ${part.name}`} disabled={busy || confirmed || blocked} inputMode={mode==='weight'?'decimal':'numeric'} placeholder={mode==='time'?'ММ:СС':'0'} value={entries[team.id]?.[index] ?? ''} onChange={e=>{const value=maskResultInput(e.target.value,mode);setEntries(current=>({...current,[team.id]:workout.components.map((_,i)=>i===index?value:current[team.id]?.[i] || '')}));setDirty(true);setError('');setNotice('');}} />
             </div></td><td className={`${cell} text-right tabular-nums`}>{dirty?'—':rank?.place ?? '—'}</td><td className={`${cell} text-right tabular-nums`}>{dirty?'—':rank?.points ?? '—'}</td></Fragment>;
           })}</tr>)}</tbody></table>
           {!block.teams.length && <p className="p-4 text-sm text-[var(--text-muted)]">{block.complex_number>1?'Участники появятся после завершения предыдущих комплексов.':'В сетке пока нет участников.'}</p>}
