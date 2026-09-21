@@ -77,6 +77,31 @@ test('pending receipt is only checked and never resent', async () => {
   assert.equal(sends, 0);
 });
 
+test('Error and Timeout do not trigger a new receipt', async () => {
+  const o = await createOrder();
+  for (const status of ['Error', 'Timeout']) {
+    operation = async () => ({ status });
+    assert.equal((await syncAqsiV4(o.id)).status, 'receipt_error');
+  }
+  assert.equal(sends, 0);
+});
+
+test('missing slip and declined payment cannot trigger recovery', async () => {
+  const o = await createOrder();
+  slip = async () => ({ id: 'recovery-slip', content: { type: 'purchase', responseCode: '051', amount: 557000 } });
+  await assert.rejects(syncAqsiV4(o.id), /не подтвердил оплату/);
+  await pool.query('UPDATE orders SET aqsi_slip_id=NULL WHERE id=$1', [o.id]);
+  await assert.rejects(syncAqsiV4(o.id), /подтверждённая оплата/);
+  assert.equal(sends, 0);
+});
+
+test('interrupted sending record survives process restart and blocks a duplicate', async () => {
+  const o = await createOrder();
+  await pool.query("INSERT INTO aqsi_receipt_recovery_attempts (order_id,previous_operation_id,status) VALUES ($1,'recovery-old','sending')", [o.id]);
+  await assert.rejects(syncAqsiV4(o.id), /уже выполнялась/);
+  assert.equal(sends, 0);
+});
+
 test('existing receipt is found on the second page by payments slip, without another send', async () => {
   const o = await createOrder();
   list = async ({ page }) => ({ rows: [receipt(page === 1 ? 'someone-else' : 'recovery-slip')], pages: 2, count: 2 });
