@@ -10,6 +10,31 @@ const keys=[];
 const teams=Array.from({length:8},(_,i)=>({id:String(i+1),name:`Команда ${i+1}`}));
 const config={name:'Результат',kind:'reps'};
 
+test('scoring switches at 21 entrants, uses whole roster for partial entries and skips tied positions',()=>{
+  assert.deepEqual([1,5,6,10,11,20].map(place=>points(place,20)),[100,80,77,65,62,35]);
+  assert.deepEqual([1,5,6,10,11,20,21,64,65,66].map(place=>points(place,21)),[100,80,77,65,63,45,44,1,0,0]);
+  const entrants=Array.from({length:21},(_,i)=>({id:String(i+1),name:`Участник ${i+1}`}));
+  const entries=Object.fromEntries(entrants.map((team,i)=>[team.id,[i<11?100-i:null]]));
+  assert.equal(rankWorkout({components:[config],entries},entrants)[0][10].points,63);
+  entries['2']=[100];
+  assert.deepEqual(rankWorkout({components:[config],entries},entrants)[0].slice(0,4).map(row=>[row.place,row.points]),[[1,100],[1,100],[3,90],[4,85]]);
+});
+
+test('equal total favors more first places, then more second places',()=>{
+  const entrants=teams.slice(0,3);
+  const blocks=[1,2,3].map(n=>({id:String(n),category_key:'cat',complex_number:n,name:`Комплекс ${n}`,heats:[{number:1,slots:entrants.map(team=>({registration_id:team.id,team_name:team.name,lane:1}))}]}));
+  const workout=values=>({status:'confirmed',components:[config],entries:Object.fromEntries(entrants.map((team,i)=>[team.id,[values[i]]]))});
+  const state={workouts:{1:workout([30,20,10]),2:workout([10,20,30])}};
+  const tied=standings(blocks,state,'cat');
+  assert.deepEqual(tied.map(row=>[row.id,row.total,row.place]),[['1',190,1],['3',190,1],['2',190,3]]);
+  const four=teams.slice(0,4);
+  const larger=blocks.map(block=>({...block,heats:[{number:1,slots:four.map(team=>({registration_id:team.id,team_name:team.name,lane:1}))}]}));
+  const values=[[40,40,20,10],[30,20,40,10],[10,20,40,30]];
+  const scores={workouts:Object.fromEntries(values.map((values,i)=>[String(i+1),{status:'confirmed',components:[config],entries:Object.fromEntries(four.map((team,index)=>[team.id,[values[index]]]))}]))};
+  const ranking=standings(larger,scores,'cat').filter(row=>['1','2'].includes(row.id));
+  assert.deepEqual(ranking.map(row=>[row.id,row.total]),[['1',280],['2',280]]);
+});
+
 test('scoring moves into timing, survives activity preview, and leaves grid current',async()=>{
   const event=await createCompetitionEvent({name:'Настройки в тайминге',date:'2026-10-10',location:'Зал',fee_rubles:3500,registration_enabled:true,categories:[{key:'cat',name:'Категория'}],terms_text:'Тест'});keys.push(event.event_key);
   const complex={id:randomUUID(),name:'Первый',start_time:'09:00',briefing_time:null,venue:'Зал',lanes:2,duration_minutes:10,gap_minutes:3,break_after_minutes:0,scoring:{components:[config],is_final:false}};

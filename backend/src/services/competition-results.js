@@ -7,8 +7,11 @@ const kinds = ['time','reps','weight','time_or_reps'];
 const hasEntries = workout => Object.values(workout?.entries || {}).some(values => values.some(value => value !== null));
 const blocksOf = schedule => (schedule.grid?.blocks || schedule.preview.blocks).filter(block => !block.kind);
 
-function points(place) {
-  return place <= 5 ? 105 - place * 5 : Math.max(0, 95 - place * 3);
+function points(place, participantCount = 20) {
+  if (place <= 5) return 105 - place * 5;
+  if (participantCount <= 20 || place <= 10) return Math.max(0, 80 - (place - 5) * 3);
+  if (place <= 20) return 65 - (place - 10) * 2;
+  return Math.max(0, 45 - (place - 20));
 }
 
 function parseResult(value, kind) {
@@ -46,7 +49,7 @@ function rankWorkout(workout, teams) {
     let place = 0;
     return scored.map((item,i) => {
       if (i === 0 || compare(item,scored[i-1])!==0) place = i+1;
-      return {...item,place,points:points(place)};
+      return {...item,place,points:points(place,teams.length)};
     });
   });
 }
