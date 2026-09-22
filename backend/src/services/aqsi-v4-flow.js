@@ -17,7 +17,7 @@ const {
 } = require('./aqsi');
 const { confirmOpenOrderPayment } = require('./order-sync');
 const logger = require('./logger');
-const { findReceiptForOrder, retryCanceledReceipt } = require('./aqsi-receipt-recovery');
+const { findReceiptForOrder, retryFailedReceipt } = require('./aqsi-receipt-recovery');
 
 const TERMINAL_CANCELLED_STATUSES = new Set(['Canceled', 'Timeout', 'Error']);
 const TERMINAL_ACTIVE_STATUSES = new Set(['Pending', 'Processing', 'Finishing']);
@@ -806,13 +806,15 @@ async function syncAqsiV4(orderId) {
   }
 
   const PENDING_RECEIPT = new Set(['Pending', 'Processing', 'Finishing']);
-  if (receiptOp.status === 'Canceled' && !extractReceiptFiscalData(receiptOp)) {
-    const recovered = await retryCanceledReceipt(currentOrder, receiptOp);
+  const initialFiscal = extractReceiptFiscalData(receiptOp);
+  const hasFiscalResult = Boolean(initialFiscal?.fiscal_fd && initialFiscal?.fiscal_fn && initialFiscal?.fiscal_fp);
+  if (hasFiscalResult) {
+    receiptOp = { ...receiptOp, status: 'Completed' };
+  } else if (TERMINAL_CANCELLED_STATUSES.has(receiptOp.status)) {
+    const recovered = await retryFailedReceipt(currentOrder, receiptOp);
     if (!recovered.operation) return recovered;
     receiptOp = recovered.operation;
-  }
-  const initialFiscal = extractReceiptFiscalData(receiptOp);
-  if (receiptOp.status === 'Completed' && !(initialFiscal?.fiscal_fd && initialFiscal?.fiscal_fn && initialFiscal?.fiscal_fp)) {
+  } else {
     const found = await findReceiptForOrder(currentOrder);
     if (found) receiptOp = { status: 'Completed', result: found };
   }

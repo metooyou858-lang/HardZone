@@ -44,11 +44,14 @@ async function findReceiptForOrder(order) {
   throw recoveryError('Журнал чеков AQSI проверен не полностью. Повторная отправка остановлена.');
 }
 
-async function retryCanceledReceipt(order, canceledOperation) {
+async function retryFailedReceipt(order, failedOperation) {
   const found = await findReceiptForOrder(order);
   if (found) return { operation: { status: 'Completed', result: found } };
-  if (!order.aqsi_slip_id || canceledOperation.status !== 'Canceled') {
-    throw recoveryError('Для повторной фискализации требуется подтверждённая оплата и отменённая операция чека.');
+  if (!order.aqsi_slip_id || !['Canceled', 'Error', 'Timeout'].includes(failedOperation.status)) {
+    throw recoveryError('Для повторной фискализации требуется подтверждённая оплата и завершённая неуспешная операция чека.');
+  }
+  if (aqsi.extractReceiptFiscalData(failedOperation)) {
+    throw recoveryError('Операция содержит фискальные данные, но они неполны. Требуется сверка с AQSI; новый чек не отправлен.');
   }
   const slip = await aqsi.getAqsiSlip(order.aqsi_slip_id);
   if (slip?.id !== order.aqsi_slip_id || !aqsi.isSlipPaid(slip) || slip.content?.type !== 'purchase'
@@ -118,4 +121,4 @@ async function retryCanceledReceipt(order, canceledOperation) {
   return { status: 'receipt_pending', operation_status: 'Pending' };
 }
 
-module.exports = { findReceiptForOrder, retryCanceledReceipt };
+module.exports = { findReceiptForOrder, retryFailedReceipt };

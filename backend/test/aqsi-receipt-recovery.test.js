@@ -77,12 +77,47 @@ test('pending receipt is only checked and never resent', async () => {
   assert.equal(sends, 0);
 });
 
-test('Error and Timeout do not trigger a new receipt', async () => {
-  const o = await createOrder();
+test('Error and Timeout retry fiscalization using the existing paid slip', async () => {
   for (const status of ['Error', 'Timeout']) {
+    const o = await createOrder();
     operation = async () => ({ status });
-    assert.equal((await syncAqsiV4(o.id)).status, 'receipt_error');
+    assert.equal((await syncAqsiV4(o.id)).status, 'receipt_pending');
   }
+  assert.equal(sends, 2);
+});
+
+test('every documented status recovers a fiscal result without resending', async () => {
+  for (const status of ['Pending', 'Processing', 'Finishing', 'Completed', 'Canceled', 'Timeout', 'Error']) {
+    const o = await createOrder();
+    operation = async () => ({ status, result: receipt() });
+    assert.equal((await syncAqsiV4(o.id)).status, 'confirmed');
+  }
+  assert.equal(sends, 0);
+});
+
+test('every documented status can recover an existing receipt from the journal', async () => {
+  for (const status of ['Pending', 'Processing', 'Finishing', 'Completed', 'Canceled', 'Timeout', 'Error']) {
+    const o = await createOrder();
+    operation = async () => ({ status });
+    list = async () => ({ rows: [receipt()], pages: 1, count: 1 });
+    assert.equal((await syncAqsiV4(o.id)).status, 'confirmed');
+  }
+  assert.equal(sends, 0);
+});
+
+test('active operations and unknown statuses do not create duplicate receipts', async () => {
+  for (const status of ['Pending', 'Processing', 'Finishing', 'Unknown']) {
+    const o = await createOrder();
+    operation = async () => ({ status });
+    assert.equal((await syncAqsiV4(o.id)).status, status === 'Unknown' ? 'receipt_error' : 'receipt_pending');
+  }
+  assert.equal(sends, 0);
+});
+
+test('incomplete fiscal data in a failed operation prevents duplicate issuance', async () => {
+  const o = await createOrder();
+  operation = async () => ({ status: 'Error', result: { info: { docInfo: { docNumber: 123 } } } });
+  await assert.rejects(syncAqsiV4(o.id), /фискальные данные/);
   assert.equal(sends, 0);
 });
 
