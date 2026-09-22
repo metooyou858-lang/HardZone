@@ -2,6 +2,7 @@
 
 const express = require('express');
 const flow = require('../services/aqsi-v4-flow');
+const { pool } = require('../db');
 const authMiddleware = require('../middleware/auth');
 const { getPublicErrorMessage } = require('../utils/http-response');
 
@@ -43,6 +44,33 @@ router.post('/:id/sync-aqsi-v4', requireSalesAqsiRecovery, async (req, res) => {
   try {
     const result = await flow.syncAqsiV4(req.params.id);
     return res.json({ success: true, data: result });
+  } catch (err) {
+    const statusCode = err.statusCode || 500;
+    return res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });
+  }
+});
+
+// История продаж использует старый URL; V4-операции нельзя сверять через Orders/simple.
+router.post('/:id/sync-aqsi', requireSalesAqsiRecovery, async (req, res, next) => {
+  try {
+    const { rows: [order] } = await pool.query('SELECT * FROM orders WHERE id = $1', [req.params.id]);
+    if (!order || !(order.aqsi_slip_id || order.aqsi_payment_operation_id)) {
+      return next();
+    }
+    const result = await flow.syncAqsiV4(order.id);
+    const { rows: [fresh] } = await pool.query('SELECT * FROM orders WHERE id = $1', [order.id]);
+    const paid = ['confirmed', 'refunded'].includes(fresh.status);
+    if (!paid) {
+      const message = result.message || (result.status === 'receipt_pending'
+        ? 'Фискализация ещё выполняется. Повторите проверку через несколько секунд; оплачивать заказ заново не нужно.'
+        : result.status === 'payment_pending'
+          ? 'Касса ещё выполняет оплату. Повторите проверку через несколько секунд.'
+          : `Восстановление не завершено: ${result.status}`);
+      return res.status(409).json({ success: false, error: message });
+    }
+    return res.json({ success: true, data: {
+      paid, payment_type: fresh.payment_type, aqsi_status: fresh.aqsi_receipt_status, order: fresh,
+    } });
   } catch (err) {
     const statusCode = err.statusCode || 500;
     return res.status(statusCode).json({ success: false, error: getPublicErrorMessage(err, statusCode) });

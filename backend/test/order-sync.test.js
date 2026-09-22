@@ -13,12 +13,16 @@ let mockSendOrderToAqsiV4 = null;
 let mockPollOperation = null;
 let mockGetOperation = null;
 let mockSendV4ReceiptRequest = null;
+let mockListAqsiReceipts = null;
+let mockGetAqsiSlip = null;
 
 aqsi.getAqsiOrder = (...args) => mockGetAqsiOrder(...args);
 aqsi.sendOrderToAqsiV4 = (...args) => mockSendOrderToAqsiV4(...args);
 aqsi.pollOperation = (...args) => mockPollOperation(...args);
 aqsi.getOperation = (...args) => mockGetOperation(...args);
 aqsi.sendV4ReceiptRequest = (...args) => mockSendV4ReceiptRequest(...args);
+aqsi.listAqsiReceipts = (...args) => mockListAqsiReceipts(...args);
+aqsi.getAqsiSlip = (...args) => mockGetAqsiSlip(...args);
 
 const app = require('../src/app');
 const { pool, query } = require('../src/db');
@@ -455,4 +459,40 @@ test('cash AQSI rejection stays visible in paid history and can be retried', asy
   assert.equal(retriedRows[0].aqsi_receipt_id, 'ci-cash-retry-receipt');
   assert.equal(retriedRows[0].aqsi_receipt_status, 'completed');
   assert.equal(retriedRows[0].aqsi_error, null);
+});
+
+test('history recovery URL retries V4 Error and confirms the resulting receipt', async () => {
+  const user = await createUser();
+  const headers = { 'x-hardzone-session': createSessionToken({ ...user, id: Number(user.id) }) };
+  const order = await createOpenOrder({ total_amount: 6500, items_count: 1,
+    aqsi_receipt_operation_id: 'history-old', aqsi_receipt_status: 'error' });
+  await query("INSERT INTO order_items (order_id,kind,name,sale_price,quantity) VALUES ($1,'service','CI subscription',6500,1)", [order.id]);
+  await query("UPDATE orders SET aqsi_slip_id='history-slip', aqsi_payment_status='completed' WHERE id=$1", [order.id]);
+  mockGetAqsiOrder = async () => { assert.fail('V4 order must not use legacy AQSI'); };
+  mockGetOperation = async () => ({ status: 'Error', message: 'Cashier missing' });
+  mockListAqsiReceipts = async () => ({ rows: [], pages: 0, count: 0 });
+  mockGetAqsiSlip = async () => ({ id: 'history-slip', content: { type: 'purchase', responseCode: '000', amount: 650000 } });
+  let sends = 0;
+  mockSendV4ReceiptRequest = async () => { sends += 1; return { operationId: 'history-new' }; };
+  const started = await request(`/api/orders/${order.id}/sync-aqsi`, { method: 'POST', headers });
+  assert.equal(started.response.status, 409);
+  assert.match(started.body.error, /Фискализация ещё выполняется/);
+  assert.equal(sends, 1);
+  mockGetOperation = async () => ({ status: 'Completed', result: {
+    id: 'history-receipt', info: { docInfo: { docNumber: 6501, fiscalStorageNumber: 'fn', docFiscalAttributeInt: 456 } },
+  } });
+  const completed = await request(`/api/orders/${order.id}/sync-aqsi`, { method: 'POST', headers });
+  assert.equal(completed.response.status, 200);
+  assert.equal(completed.body.data.paid, true);
+  assert.equal(completed.body.data.order.fiscal_fd, '6501');
+  assert.equal(sends, 1);
+});
+
+test('history recovery URL preserves not-sent response for a genuinely unsent order', async () => {
+  const user = await createUser();
+  const order = await createOpenOrder();
+  const result = await request(`/api/orders/${order.id}/sync-aqsi`, { method: 'POST',
+    headers: { 'x-hardzone-session': createSessionToken({ ...user, id: Number(user.id) }) } });
+  assert.equal(result.response.status, 409);
+  assert.match(result.body.error, /ещё не отправлен/);
 });
