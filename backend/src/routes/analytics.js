@@ -1049,11 +1049,11 @@ router.get('/', async (req, res) => {
               AND NOT COALESCE(psp.allow_personal_training, false)
           ),
           paid_service_purchases AS (
-            SELECT DISTINCT o.id, o.client_id,
+            SELECT DISTINCT o.id, COALESCE(oi.recipient_client_id, o.client_id) AS client_id,
               (COALESCE(o.confirmed_at, o.created_at) AT TIME ZONE $17)::date AS sold_on
             FROM orders o
             JOIN order_items oi ON oi.order_id = o.id
-            WHERE o.client_id IS NOT NULL
+            WHERE COALESCE(oi.recipient_client_id, o.client_id) IS NOT NULL
               AND o.status IN ('confirmed', 'partially_refunded')
               AND oi.kind IN ('service', 'subscription')
               AND oi.quantity > COALESCE(oi.refunded_quantity, 0)
@@ -1223,11 +1223,11 @@ router.get('/', async (req, res) => {
               AND NOT COALESCE(psp.allow_personal_training, false)
           ),
           paid_service_purchase_lines AS (
-            SELECT o.id AS order_id, o.client_id, oi.name AS service_name,
+            SELECT o.id AS order_id, COALESCE(oi.recipient_client_id, o.client_id) AS client_id, oi.name AS service_name,
               (COALESCE(o.confirmed_at, o.created_at) AT TIME ZONE $3)::date AS sold_on
             FROM orders o
             JOIN order_items oi ON oi.order_id = o.id
-            WHERE o.client_id IS NOT NULL
+            WHERE COALESCE(oi.recipient_client_id, o.client_id) IS NOT NULL
               AND o.status IN ('confirmed', 'partially_refunded')
               AND oi.kind IN ('service', 'subscription')
               AND oi.quantity > COALESCE(oi.refunded_quantity, 0)

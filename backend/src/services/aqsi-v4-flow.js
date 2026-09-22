@@ -377,6 +377,9 @@ async function initiatePayment(orderId) {
       );
 
       const missingMarkedItem = itemRows.find((item) => item.marking_required && !item.marking_code);
+      if (itemRows.some((item) => ['service', 'subscription'].includes(item.kind) && !(item.recipient_client_id || order.client_id))) {
+        txError = httpError(422, 'Выберите получателя каждой услуги');
+      }
       if (missingMarkedItem) {
         txError = httpError(422, `Для товара "${missingMarkedItem.name}" нужно отсканировать код маркировки`);
       }

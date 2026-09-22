@@ -498,6 +498,7 @@ async function mergeDuplicateClient(db, {
     'UPDATE orders SET client_id = $1 WHERE client_id = $2',
     [masterClientId, duplicateClientId]
   );
+  await db.query('UPDATE order_items SET recipient_client_id = $1 WHERE recipient_client_id = $2', [masterClientId, duplicateClientId]);
 
   const { rows: duplicateReviews } = await db.query(
     'SELECT * FROM trainer_reviews WHERE client_id = $1 ORDER BY id FOR UPDATE',
@@ -653,7 +654,9 @@ router.get('/duplicates', requireClientsRead, async (_req, res) => {
             (
               SELECT count(*)
               FROM orders o
-              WHERE o.client_id = c.id
+              WHERE o.client_id = c.id OR EXISTS (
+                SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.recipient_client_id = c.id
+              )
             )::INT AS orders_count,
             (
               SELECT count(*)

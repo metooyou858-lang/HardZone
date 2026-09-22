@@ -22,6 +22,8 @@ export type BannerState = {
 } | null;
 
 export type BasketLine = {
+  recipientClientId?: string | null;
+  recipientName?: string | null;
   key: string;
   itemIds: string[];
   productId: string | null;
@@ -433,7 +435,9 @@ export function groupOrderItems(items: OrderItem[]) {
   for (const item of items) {
     const discountPercent = asAmount(item.discount_percent);
     const discountMoney = asAmount(item.discount_money);
-    const key = item.marking_required
+    const key = item.kind === 'service' || item.kind === 'subscription'
+      ? `service:${item.id}`
+      : item.marking_required
       ? `marked:${item.id}`
       : item.product_id
         ? `product:${item.product_id}:${item.sale_price}:${discountPercent}:${discountMoney}`
@@ -454,6 +458,8 @@ export function groupOrderItems(items: OrderItem[]) {
 
     grouped.set(key, {
       key,
+      recipientClientId: item.recipient_client_id,
+      recipientName: item.recipient_name,
       itemIds: [item.id],
       productId: item.product_id,
       kind: item.kind,

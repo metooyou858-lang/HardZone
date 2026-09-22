@@ -4,20 +4,20 @@ import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "rea
 
 import type { ClientListItem } from "@/lib/api/clients";
 import type { OrderDetail } from "@/lib/api/orders";
-import { type BasketLine, type DiscountMode, ReceiptIcon } from "@/components/sales/sales-shared";
+import { type BasketLine, type DiscountMode, ReceiptIcon, getClientName } from "@/components/sales/sales-shared";
 import { scannerEventToUsChar } from "@/components/sales/sales-marking-utils";
 import { CheckoutClientCard } from "@/components/sales/checkout-client-card";
 import { CheckoutBasketLine } from "@/components/sales/checkout-basket-line";
 import { CheckoutTotals } from "@/components/sales/checkout-totals";
 
 type CheckoutPanelProps = {
+  changeRecipient: (itemId: string, clientId: string | null) => Promise<void>;
   orderLoading: boolean;
   order: OrderDetail | null;
   basketLines: BasketLine[];
   selectedClient: ClientListItem | null;
   clientSelectionLocked: boolean;
   clientSaving: boolean;
-  serviceRequiresClient: boolean;
   orderClientId: string | null;
   clientPickerOpen: boolean;
   setClientPickerOpen: (value: boolean) => void;
@@ -73,13 +73,13 @@ type CheckoutPanelProps = {
 };
 
 export function CheckoutPanel({
+  changeRecipient,
   orderLoading,
   order,
   basketLines,
   selectedClient,
   clientSelectionLocked,
   clientSaving,
-  serviceRequiresClient,
   orderClientId,
   clientPickerOpen,
   setClientPickerOpen,
@@ -209,7 +209,7 @@ export function CheckoutPanel({
           selectedClient={selectedClient}
           clientSelectionLocked={clientSelectionLocked}
           clientSaving={clientSaving}
-          serviceRequiresClient={serviceRequiresClient}
+          serviceRequiresClient={sendBlockedByClient}
           orderClientId={orderClientId}
           clientPickerOpen={clientPickerOpen}
           setClientPickerOpen={setClientPickerOpen}
@@ -244,6 +244,8 @@ export function CheckoutPanel({
               <CheckoutBasketLine
                 key={line.key}
                 line={line}
+                inheritedRecipientName={selectedClient ? getClientName(selectedClient) : order?.client_name}
+                changeRecipient={changeRecipient}
                 orderLocked={orderLocked}
                 canCreateSales={canCreateSales}
                 lineBusyKey={lineBusyKey}

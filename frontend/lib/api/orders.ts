@@ -31,6 +31,8 @@ export type Order = {
 };
 
 export type OrderItem = {
+  recipient_client_id?: string | null;
+  recipient_name?: string | null;
   id: string;
   order_id: string;
   kind: OrderItemKind;
@@ -128,6 +130,7 @@ export async function updateOrderItem(
   orderId: string,
   itemId: string,
   data: {
+    recipient_client_id?: string | number | null;
     quantity?: number;
     discount_percent?: number;
     discount_money?: number;

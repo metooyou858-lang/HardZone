@@ -80,15 +80,13 @@ function addDays(dateOnly, days) {
 }
 
 async function activateOrderServices(client, order) {
-  if (!order?.client_id) {
-    return;
-  }
-
   const { rows: serviceItems } = await client.query(
     `SELECT
+       oi.id,
+       COALESCE(oi.recipient_client_id, $2) AS recipient_client_id,
        oi.product_id,
-       MAX(oi.kind) AS kind,
-       SUM(oi.quantity)::int AS quantity,
+       oi.kind,
+       oi.quantity,
        psp.subscription_type,
        psp.visits_total,
        psp.validity_days,
@@ -96,20 +94,16 @@ async function activateOrderServices(client, order) {
      FROM order_items oi
      LEFT JOIN product_subscription_params psp ON psp.product_id = oi.product_id
      WHERE oi.order_id = $1
-       AND oi.kind IN ('service', 'subscription')
-     GROUP BY
-       oi.product_id,
-       psp.subscription_type,
-       psp.visits_total,
-       psp.validity_days,
-       psp.activation_type`,
-    [order.id]
+       AND oi.kind IN ('service', 'subscription')`,
+    [order.id, order.client_id]
   );
 
   for (const item of serviceItems) {
     if (!item.product_id || !item.subscription_type) {
       continue;
     }
+    if (!item.recipient_client_id) throw new Error('Выберите получателя каждой услуги');
+    await client.query('UPDATE order_items SET recipient_client_id = $2 WHERE id = $1', [item.id, item.recipient_client_id]);
 
     const quantity = toPositiveInteger(item.quantity) ?? 1;
     const visitsPerUnit =
@@ -127,23 +121,25 @@ async function activateOrderServices(client, order) {
        SET status = 'expired', updated_at = NOW()
        WHERE client_id = $1
          AND product_id = $2
-         AND status = 'active'`,
-      [order.client_id, item.product_id]
+         AND status = 'active'
+         AND order_id IS DISTINCT FROM $3`,
+      [item.recipient_client_id, item.product_id, order.id]
     );
 
     await client.query(
       `INSERT INTO client_subscriptions
         (client_id, product_id, type, visits_total, visits_left,
-         started_at, expires_at, order_id, status)
-       VALUES ($1, $2, $3, $4, $4, $5, $6, $7, 'active')`,
+         started_at, expires_at, order_id, status, order_item_id)
+       VALUES ($1, $2, $3, $4, $4, $5, $6, $7, 'active', $8)`,
       [
-        order.client_id,
+        item.recipient_client_id,
         item.product_id,
         item.subscription_type,
         totalVisits,
         startedAt,
         expiresAt,
         order.id,
+        item.id,
       ]
     );
   }

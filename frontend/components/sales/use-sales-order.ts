@@ -49,6 +49,7 @@ export function useSalesOrder({
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [orderLoading, setOrderLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [recipientSaving, setRecipientSaving] = useState(false);
   const [slipPending, setSlipPending] = useState(false);
   const [conflictingOperationId, setConflictingOperationId] = useState<string | null>(null);
 
@@ -105,13 +106,14 @@ export function useSalesOrder({
     order?.aqsi_slip_id
   );
   const paymentBusy = slipPending || orderAwaitingPayment;
-  const orderLocked = confirming || slipPending || orderAwaitingPayment;
+  const orderLocked = confirming || slipPending || orderAwaitingPayment || recipientSaving;
   const clientSelectionLocked = orderLocked || clientApi.clientSaving;
   const orderClientId = clientApi.selectedClient?.id ?? order?.client_id ?? null;
   const serviceRequiresClient = basketApi.basketLines.some(
     (line) => line.kind === "service" || line.kind === "subscription"
   );
-  const sendBlockedByClient = serviceRequiresClient && !orderClientId;
+  const sendBlockedByClient = basketApi.basketLines.some((line) =>
+    (line.kind === 'service' || line.kind === 'subscription') && !(line.recipientClientId || orderClientId));
   const sendBlockedByMarking = basketApi.basketLines.some((line) => {
     if (!line.markingRequired) return false;
     return (basketApi.markingDrafts[line.key] ?? line.markingCode ?? "").trim().length === 0;
@@ -257,7 +259,7 @@ export function useSalesOrder({
     }
     if (!order || order.items.length === 0) return;
 
-    if (serviceRequiresClient && !clientApi.selectedClient?.id && !order.client_id) {
+    if (sendBlockedByClient) {
       setBanner({ tone: "error", text: "Выберите клиента для услуги" });
       return;
     }
@@ -429,7 +431,7 @@ export function useSalesOrder({
     }
     if (!order || order.items.length === 0) return;
 
-    if (serviceRequiresClient && !clientApi.selectedClient?.id && !order.client_id) {
+    if (sendBlockedByClient) {
       setBanner({ tone: "error", text: "Выберите клиента для услуги" });
       return;
     }
@@ -549,6 +551,16 @@ export function useSalesOrder({
     decrementLine: basketApi.decrementLine,
     incrementLine: basketApi.incrementLine,
     removeLine: basketApi.removeLine,
+    changeRecipient: async (itemId: string, clientId: string | null) => {
+      if (!order || orderLocked || !canCreateSales) return;
+      setRecipientSaving(true);
+      try {
+        await updateOrderItem(order.id, itemId, { recipient_client_id: clientId });
+        await basketApi.refreshOrder(order.id);
+      } finally {
+        setRecipientSaving(false);
+      }
+    },
     // Discounts
     receiptDiscountMode: discountApi.receiptDiscountMode,
     setReceiptDiscountMode: discountApi.setReceiptDiscountMode,

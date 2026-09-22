@@ -1,6 +1,7 @@
 "use client";
 
 import type { RefObject, KeyboardEvent as ReactKeyboardEvent } from "react";
+import { ServiceRecipientPicker } from "@/components/sales/service-recipient-picker";
 
 import {
   type BasketLine,
@@ -12,6 +13,8 @@ import {
 } from "@/components/sales/sales-shared";
 
 type CheckoutBasketLineProps = {
+  inheritedRecipientName?: string | null;
+  changeRecipient: (itemId: string, clientId: string | null) => Promise<void>;
   line: BasketLine;
   orderLocked: boolean;
   canCreateSales: boolean;
@@ -38,6 +41,8 @@ type CheckoutBasketLineProps = {
 };
 
 export function CheckoutBasketLine({
+  inheritedRecipientName,
+  changeRecipient,
   line,
   orderLocked,
   canCreateSales,
@@ -73,6 +78,10 @@ export function CheckoutBasketLine({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-[var(--text-main)]">{line.name}</p>
+          {(line.kind === 'service' || line.kind === 'subscription') && <ServiceRecipientPicker
+            name={line.recipientName} inheritedName={inheritedRecipientName}
+            disabled={orderLocked || busy || !canCreateSales}
+            onChange={(clientId) => changeRecipient(line.itemIds[0], clientId)} />}
           <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--text-muted)]">
             {line.sku && <span className="font-[family:var(--font-mono)]">{line.sku}</span>}
             <span>{formatMoney(line.salePrice)} за шт.</span>

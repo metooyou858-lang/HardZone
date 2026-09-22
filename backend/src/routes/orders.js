@@ -407,7 +407,8 @@ async function buildServiceRefundAdjustments(client, order, orderItemsById, refu
     );
     const params = paramRows[0];
 
-    if (!params?.subscription_type || !order.client_id) {
+    const recipientId = sourceItem.recipient_client_id || order.client_id;
+    if (!params?.subscription_type || !recipientId) {
       continue;
     }
 
@@ -417,10 +418,11 @@ async function buildServiceRefundAdjustments(client, order, orderItemsById, refu
        WHERE order_id = $1
          AND client_id = $2
          AND product_id = $3
+         AND (order_item_id = $4 OR order_item_id IS NULL)
        ORDER BY id DESC
        LIMIT 1
        FOR UPDATE`,
-      [order.id, order.client_id, sourceItem.product_id]
+      [order.id, recipientId, sourceItem.product_id, sourceItem.id]
     );
     const subscription = subscriptionRows[0];
 
@@ -779,7 +781,9 @@ router.get('/:id', async (req, res) => {
     }
 
     const { rows: items } = await pool.query(
-      'SELECT * FROM order_items WHERE order_id = $1 ORDER BY created_at',
+      `SELECT oi.*, NULLIF(CONCAT_WS(' ', c.last_name, c.first_name), '') AS recipient_name
+       FROM order_items oi LEFT JOIN clients c ON c.id = oi.recipient_client_id
+       WHERE oi.order_id = $1 ORDER BY oi.created_at`,
       [req.params.id]
     );
 
@@ -1056,6 +1060,17 @@ router.patch('/:id/items/:itemId', requireSalesCreate, async (req, res) => {
     const nextQuantity = req.body.quantity !== undefined
       ? parsePositiveInteger(req.body.quantity)
       : Number(item.quantity);
+    const recipientId = req.body.recipient_client_id === undefined
+      ? item.recipient_client_id : req.body.recipient_client_id === null ? null : Number(req.body.recipient_client_id);
+    if (req.body.recipient_client_id !== undefined) {
+      if (!['service', 'subscription'].includes(item.kind) || (recipientId != null && (!Number.isInteger(recipientId) || recipientId <= 0))) {
+        return res.status(422).json({ success: false, error: 'Некорректный получатель услуги' });
+      }
+      if (recipientId != null) {
+        const { rows } = await client.query('SELECT id FROM clients WHERE id = $1', [recipientId]);
+        if (!rows.length) return res.status(404).json({ success: false, error: 'Клиент не найден' });
+      }
+    }
     if (req.body.marking_code !== undefined && req.body.marking_code !== null) {
       const raw = req.body.marking_code;
       logger.info('marking_raw', {
@@ -1116,6 +1131,15 @@ router.patch('/:id/items/:itemId', requireSalesCreate, async (req, res) => {
 
     await client.query('BEGIN');
 
+    if (req.body.recipient_client_id !== undefined) {
+      await client.query('SELECT id FROM orders WHERE id = $1 FOR UPDATE', [req.params.id]);
+      const lockedOrder = await getOpenOrder(client, req.params.id);
+      if (lockedOrder.error || lockedOrder.order?.aqsi_payment_status === 'starting') {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ success: false, error: 'Чек уже передан на оплату' });
+      }
+    }
+
     if (item.marking_required && nextMarkingCode) {
       const { rows: duplicateMarkingRows } = await client.query(
         `SELECT id
@@ -1141,7 +1165,8 @@ router.patch('/:id/items/:itemId', requireSalesCreate, async (req, res) => {
          quantity = $3,
          discount_percent = $4,
          discount_money = $5,
-         marking_code = $6
+         marking_code = $6,
+         recipient_client_id = $7
        WHERE id = $1 AND order_id = $2
        RETURNING *`,
       [
@@ -1151,6 +1176,7 @@ router.patch('/:id/items/:itemId', requireSalesCreate, async (req, res) => {
         normalizedDiscounts.discountPercent,
         normalizedDiscounts.discountMoney,
         item.marking_required ? nextMarkingCode ?? null : item.marking_code,
+        recipientId,
       ]
     );
 
@@ -1273,7 +1299,7 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
         }
       }
 
-      if (!validationError && orderRequiresClient(itemRows) && !nextClientId) {
+      if (!validationError && itemRows.some((item) => ['service', 'subscription'].includes(item.kind) && !(item.recipient_client_id || nextClientId))) {
         validationError = { code: 422, message: 'Выберите клиента для услуги' };
       }
 

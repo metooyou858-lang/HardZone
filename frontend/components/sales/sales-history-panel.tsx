@@ -272,6 +272,9 @@ export function SalesHistoryPanel({
                                 {/* Col 1: название */}
                                 <div className="min-w-0">
                                   <p className="truncate text-sm font-medium text-[var(--text-main)]">{item.name}</p>
+                                  {(item.kind === 'service' || item.kind === 'subscription') && (item.recipient_name || historyOrder.client_name) && (
+                                    <p className="text-xs text-[var(--accent)]">Получатель: {item.recipient_name || historyOrder.client_name}</p>
+                                  )}
                                   {item.sku && <p className="mt-0.5 text-xs text-[var(--text-muted)]">{item.sku}</p>}
                                   {refundedQuantity > 0 && (
                                     <p className="mt-1 text-xs text-[var(--warning)]">
