@@ -73,11 +73,12 @@ export async function fetchOrder(id: string): Promise<OrderDetail> {
   return response.data;
 }
 
-export async function fetchOrders(status?: OrderStatus, limit = 50, paid?: boolean): Promise<Order[]> {
+export async function fetchOrders(status?: OrderStatus, limit = 50, paid?: boolean, offset = 0): Promise<Order[]> {
   const params = new URLSearchParams();
   if (status) params.set("status", status);
   if (paid) params.set("paid", "true");
   params.set("limit", String(limit));
+  params.set("offset", String(offset));
 
   const response = await apiFetch<ApiEnvelope<Order[]>>(`/orders?${params.toString()}`);
   return response.data;

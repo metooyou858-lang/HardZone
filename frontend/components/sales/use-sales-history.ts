@@ -57,7 +57,9 @@ export function useSalesHistory({
   canRecoverSalesAqsi,
   onCatalogChanged,
 }: UseSalesHistoryOptions) {
-  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
+  const [historyFilter, updateHistoryFilter] = useState<HistoryFilter>("all");
+  const [historyPage, setHistoryPage] = useState(0);
+  const [hasOlderOrders, setHasOlderOrders] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -67,6 +69,17 @@ export function useSalesHistory({
   const [refundingId, setRefundingId] = useState<string | null>(null);
   const [syncingOrderId, setSyncingOrderId] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+
+  function setHistoryFilter(value: HistoryFilter) {
+    updateHistoryFilter(value);
+    setHistoryPage(0);
+    setExpandedOrderId(null);
+  }
+
+  function changeHistoryPage(page: number) {
+    setHistoryPage(Math.max(0, page));
+    setExpandedOrderId(null);
+  }
 
   function reloadHistory() {
     setReloadToken((value) => value + 1);
@@ -259,8 +272,11 @@ export function useSalesHistory({
     hasLoadedOnceRef.current = false;
 
     let cancelled = false;
+    let loading = false;
 
     async function loadHistory({ silent = false }: { silent?: boolean } = {}) {
+      if (loading) return;
+      loading = true;
       if (!silent) {
         setHistoryLoading(true);
       }
@@ -268,9 +284,25 @@ export function useSalesHistory({
 
       try {
         const statusParam = (historyFilter === "all" || historyFilter === "error") ? undefined : historyFilter as OrderStatus;
-        const nextOrders = await fetchOrders(statusParam, 50, true);
+        const pageSize = 50;
+        const offset = historyPage * pageSize;
+        let nextOrders: Order[];
+        if (historyFilter === "error") {
+          // Ошибки определяются по нескольким полям: фильтруем до разбивки на страницы.
+          const matchingOrders: Order[] = [];
+          for (let scanOffset = 0; matchingOrders.length <= offset + pageSize; scanOffset += 100) {
+            const batch = await fetchOrders(undefined, 100, true, scanOffset);
+            if (cancelled) return;
+            matchingOrders.push(...batch.filter((item) => shouldDisplayInHistory(item, historyFilter)));
+            if (batch.length < 100) break;
+          }
+          nextOrders = matchingOrders.slice(offset, offset + pageSize + 1);
+        } else {
+          nextOrders = await fetchOrders(statusParam, pageSize + 1, true, offset);
+        }
         if (!cancelled) {
-          setOrders(nextOrders.filter((item) => shouldDisplayInHistory(item, historyFilter)));
+          setOrders(nextOrders.slice(0, pageSize));
+          setHasOlderOrders(nextOrders.length > pageSize);
           hasLoadedOnceRef.current = true;
         }
       } catch (error) {
@@ -278,6 +310,7 @@ export function useSalesHistory({
           setHistoryError(error instanceof Error ? error.message : "Не удалось загрузить историю продаж");
         }
       } finally {
+        loading = false;
         if (!cancelled && !silent) {
           setHistoryLoading(false);
         }
@@ -293,11 +326,14 @@ export function useSalesHistory({
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [enabled, externalReloadToken, historyFilter, reloadToken]);
+  }, [enabled, externalReloadToken, historyFilter, historyPage, reloadToken]);
 
   return {
     historyFilter,
     setHistoryFilter,
+    historyPage,
+    changeHistoryPage,
+    hasOlderOrders,
     historyError,
     historyLoading,
     orders,

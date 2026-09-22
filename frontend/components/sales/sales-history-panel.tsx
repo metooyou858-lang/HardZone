@@ -23,6 +23,9 @@ type SalesHistoryPanelProps = {
   setHistoryFilter: (value: HistoryFilter) => void;
   historyError: string | null;
   historyLoading: boolean;
+  historyPage: number;
+  changeHistoryPage: (page: number) => void;
+  hasOlderOrders: boolean;
   orders: Order[];
   expandedOrderId: string | null;
   orderDetails: Record<string, OrderDetail>;
@@ -41,6 +44,9 @@ export function SalesHistoryPanel({
   setHistoryFilter,
   historyError,
   historyLoading,
+  historyPage,
+  changeHistoryPage,
+  hasOlderOrders,
   orders,
   expandedOrderId,
   orderDetails,
@@ -78,6 +84,20 @@ export function SalesHistoryPanel({
         </div>
       </div>
 
+      <nav aria-label="Страницы истории продаж" className="mt-4 flex flex-wrap items-center justify-end gap-3 text-sm">
+        <button type="button" disabled={historyLoading || historyPage === 0}
+          onClick={() => changeHistoryPage(historyPage - 1)}
+          className="min-h-11 rounded-xl border border-[var(--line-soft)] px-4 text-[var(--text-main)] transition-colors hover:bg-[var(--bg-card-soft)] disabled:cursor-default disabled:opacity-40">
+          Более новые
+        </button>
+        <span aria-live="polite" className="text-[var(--text-muted)]">Страница {historyPage + 1}</span>
+        <button type="button" disabled={historyLoading || !hasOlderOrders}
+          onClick={() => changeHistoryPage(historyPage + 1)}
+          className="min-h-11 rounded-xl border border-[var(--line-soft)] px-4 text-[var(--text-main)] transition-colors hover:bg-[var(--bg-card-soft)] disabled:cursor-default disabled:opacity-40">
+          Более старые
+        </button>
+      </nav>
+
       {historyError && (
         <div className="mt-4 rounded-2xl border border-[rgba(255,116,57,0.3)] bg-[rgba(255,116,57,0.1)] px-4 py-3 text-sm text-[var(--danger)]">
           {historyError}
@@ -97,7 +117,7 @@ export function SalesHistoryPanel({
         {historyLoading ? (
           <div className="py-16 text-center text-sm text-[var(--text-muted)]">Загружаем историю...</div>
         ) : orders.length === 0 ? (
-          <div className="py-16 text-center text-sm text-[var(--text-muted)]">Заказов пока нет</div>
+          <div className="py-16 text-center text-sm text-[var(--text-muted)]">Нет продаж по выбранному фильтру</div>
         ) : (
           <div className="divide-y divide-[var(--line-soft)]">
             {orders.map((historyOrder, index) => {
