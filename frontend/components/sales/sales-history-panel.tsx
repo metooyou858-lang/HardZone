@@ -88,13 +88,13 @@ export function SalesHistoryPanel({
         <button type="button" disabled={historyLoading || historyPage === 0}
           onClick={() => changeHistoryPage(historyPage - 1)}
           className="min-h-11 rounded-xl border border-[var(--line-soft)] px-4 text-[var(--text-main)] transition-colors hover:bg-[var(--bg-card-soft)] disabled:cursor-default disabled:opacity-40">
-          Более новые
+          Назад
         </button>
         <span aria-live="polite" className="text-[var(--text-muted)]">Страница {historyPage + 1}</span>
         <button type="button" disabled={historyLoading || !hasOlderOrders}
           onClick={() => changeHistoryPage(historyPage + 1)}
           className="min-h-11 rounded-xl border border-[var(--line-soft)] px-4 text-[var(--text-main)] transition-colors hover:bg-[var(--bg-card-soft)] disabled:cursor-default disabled:opacity-40">
-          Более старые
+          Вперёд
         </button>
       </nav>
 
