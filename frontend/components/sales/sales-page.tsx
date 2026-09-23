@@ -96,8 +96,8 @@ export default function SalesPage({ initialClientId = null }: SalesPageProps) {
   });
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div className={tab === "cash" ? "space-y-4 md:flex md:h-full md:min-h-0 md:flex-col md:gap-4 md:space-y-0" : "space-y-4"}>
+      <div className="flex shrink-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="font-[family:var(--font-heading)] text-3xl font-semibold tracking-tight text-[var(--text-main)]">
             Продажи
@@ -139,13 +139,13 @@ export default function SalesPage({ initialClientId = null }: SalesPageProps) {
       </div>
 
       {banner && (
-        <div className={`rounded-2xl border px-4 py-3 text-sm ${getBannerClass(banner.tone)}`}>
+        <div className={`shrink-0 rounded-2xl border px-4 py-3 text-sm ${getBannerClass(banner.tone)}`}>
           {banner.text}
         </div>
       )}
 
       {tab === "cash" ? (
-        <div className="grid gap-4 xl:h-[calc(100vh-11rem)] xl:min-h-[640px] xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,1fr)] xl:overflow-hidden">
+        <div className="grid gap-3 md:min-h-0 md:flex-1 md:grid-cols-[minmax(0,1fr)_minmax(340px,0.85fr)] md:overflow-hidden">
           <CatalogPanel
             searchInputRef={searchInputRef}
             query={catalogApi.query}

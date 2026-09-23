@@ -86,7 +86,7 @@ export function CheckoutClientCard({
   }
 
   return (
-    <div ref={containerRef} className="mb-4">
+    <div ref={containerRef} className="mb-1 max-h-[35%] shrink-0 overflow-y-auto">
       {selectedClient ? (
         <div className="flex items-center gap-3 rounded-[18px] border border-[rgba(94,244,216,0.15)] bg-[rgba(94,244,216,0.06)] px-4 py-2.5">
           <div className="min-w-0 flex-1">

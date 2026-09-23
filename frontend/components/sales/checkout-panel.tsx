@@ -183,14 +183,14 @@ export function CheckoutPanel({
   }
 
   return (
-    <aside className="flex min-h-0 max-h-full flex-col overflow-hidden rounded-[28px] bg-[var(--bg-card)] shadow-[0_4px_32px_rgba(0,0,0,0.22)]">
-      <div className="border-b border-[var(--line-soft)] p-5">
+    <aside className="flex h-[calc(100dvh-2rem)] min-h-0 flex-col overflow-hidden rounded-2xl bg-[var(--bg-card)] md:h-full">
+      <div className="shrink-0 border-b border-[var(--line-soft)] px-3 py-2">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="font-[family:var(--font-heading)] text-xl font-semibold text-[var(--text-main)]">
+            <p className="font-[family:var(--font-heading)] text-base font-semibold text-[var(--text-main)]">
               Текущий чек
             </p>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
+            <p className="text-xs text-[var(--text-muted)]">
               {orderLoading
                 ? "Создаём новый чек..."
                 : order
@@ -198,13 +198,10 @@ export function CheckoutPanel({
                   : "Чек создастся при первой позиции"}
             </p>
           </div>
-          <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
-            <ReceiptIcon />
-          </span>
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col p-5">
+      <div className="flex min-h-0 flex-1 flex-col px-3 pt-2">
         <CheckoutClientCard
           selectedClient={selectedClient}
           clientSelectionLocked={clientSelectionLocked}
@@ -223,7 +220,7 @@ export function CheckoutPanel({
           applyClientSelection={applyClientSelection}
         />
 
-        <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+        <div aria-label="Позиции чека" className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
           {orderLoading ? (
             <div className="py-16 text-center text-sm text-[var(--text-muted)]">
               Подготавливаем чек...
@@ -239,7 +236,7 @@ export function CheckoutPanel({
               </p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div>
               {basketLines.map((line) => (
               <CheckoutBasketLine
                 key={line.key}

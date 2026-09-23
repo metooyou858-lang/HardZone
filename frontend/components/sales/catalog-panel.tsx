@@ -7,7 +7,6 @@ import {
   type CatalogGroup,
   formatMoney,
   getCatalogAccentMeta,
-  ScanIcon,
   searchInputCls,
   SearchIcon,
   SERVICES_GROUP_ID,
@@ -47,7 +46,7 @@ export function CatalogPanel({
   addCatalogProduct,
 }: CatalogPanelProps) {
   return (          <section className="flex min-h-0 flex-col rounded-[28px] bg-[var(--bg-card)] shadow-[0_4px_32px_rgba(0,0,0,0.22)]">
-            <div className="border-b border-[var(--line-soft)] p-5">
+            <div className="shrink-0 border-b border-[var(--line-soft)] p-3">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div className="min-w-0 flex-1">
                   <label className="relative block">
@@ -59,21 +58,15 @@ export function CatalogPanel({
                       type="text"
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
-                      placeholder="Поиск по названию или SKU..."
+                      placeholder="Найти или сканировать товар"
                       className={`${searchInputCls} pl-12`}
                     />
                   </label>
                 </div>
 
-                <div className="inline-flex items-center gap-2 rounded-[18px] border border-[var(--line-soft)] bg-[var(--bg-card-soft)] px-3 py-2 text-xs text-[var(--text-muted)]">
-                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
-                    <ScanIcon />
-                  </span>
-                  <span>Сканер: штрихкод или код маркировки, 6+ символов за 100мс + Enter</span>
-                </div>
               </div>
 
-              <div className="mt-4 flex flex-wrap items-center gap-2">
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 {catalogGroups.map((group) => (
                   <button
                     key={group.id}
@@ -95,7 +88,7 @@ export function CatalogPanel({
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
               {catalogGroupsLoading || catalogLoading ? (
                 <div className="py-16 text-center text-sm text-[var(--text-muted)]">Загрузка каталога...</div>
               ) : catalog.length === 0 ? (
@@ -107,7 +100,7 @@ export function CatalogPanel({
                   <p className="mt-2 text-sm text-[var(--text-muted)]">Попробуйте другой запрос или отсканируйте штрихкод</p>
                 </div>
               ) : (
-                <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
+                <div className="grid gap-2 xl:grid-cols-2 2xl:grid-cols-3">
                   {catalog.map((product) => {
                     const lineBusy = lineBusyKey === product.id;
                     const disabled = !canCreateSales || !product.sale_price || orderLoading || orderLocked;

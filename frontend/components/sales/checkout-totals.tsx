@@ -76,15 +76,15 @@ export function CheckoutTotals({
   const payDisabled = !canPaySales || isDisabled;
 
   return (
-    <div className="border-t border-[var(--line-soft)] p-5">
-      <div className="rounded-[24px] border border-[rgba(94,244,216,0.12)] bg-[linear-gradient(135deg,rgba(94,244,216,0.08),rgba(22,27,39,0.98))] p-5">
+    <div className="max-h-[55%] shrink-0 overflow-y-auto border-t border-[var(--line-soft)] bg-[var(--bg-card)] p-3">
+      <div>
 
         {canCreateSales && basketLinesCount > 0 && !showDiscountBlock && (
           <button
             type="button"
             onClick={() => setDiscountOpen(true)}
             disabled={orderLocked}
-            className="mb-4 flex w-full items-center justify-between text-xs text-[var(--text-muted)] transition-colors hover:text-[var(--text-main)] disabled:opacity-50"
+            className="mb-1 flex min-h-8 w-full items-center justify-between text-xs text-[var(--text-muted)] transition-colors hover:text-[var(--text-main)] disabled:opacity-50"
           >
             <span>Скидка на чек</span>
             <span className="text-[var(--line-soft)]">+</span>
@@ -157,7 +157,7 @@ export function CheckoutTotals({
                 {formatMoney(basketGrossTotal)}
               </p>
             )}
-            <p className="mt-1.5 text-3xl font-semibold text-[var(--text-main)]">
+            <p className="text-2xl font-semibold text-[var(--text-main)]">
               {formatMoney(order?.total_amount ?? 0)}
             </p>
             {hasAnyDiscount && (
@@ -185,7 +185,7 @@ export function CheckoutTotals({
             onClick={() => void handleInitiatePayment()}
             disabled={payDisabled}
             style={payDisabled ? undefined : { background: "var(--accent-grad)" }}
-            className={`mt-4 inline-flex w-full items-center justify-center rounded-[18px] px-4 py-3.5 text-sm font-semibold transition-all ${
+            className={`mr-2 mt-2 inline-flex min-h-11 w-[calc(50%-0.25rem)] items-center justify-center rounded-xl px-2 py-2 text-xs font-semibold transition-all ${
               payDisabled
                 ? "cursor-not-allowed bg-[var(--bg-card-soft)] text-[var(--text-muted)]"
                 : "text-[var(--text-inverse)] hover:brightness-110"
@@ -231,7 +231,7 @@ export function CheckoutTotals({
               setCashStep(true);
             }}
             disabled={payDisabled}
-            className={`mt-2 inline-flex w-full items-center justify-center rounded-[18px] border border-[var(--line-soft)] px-4 py-2.5 text-xs transition-all ${
+            className={`mt-2 inline-flex min-h-11 w-[calc(50%-0.25rem)] items-center justify-center rounded-xl border border-[var(--line-soft)] px-2 py-2 text-xs transition-all ${
               payDisabled
                 ? "cursor-not-allowed text-[var(--text-muted)] opacity-40"
                 : "text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
