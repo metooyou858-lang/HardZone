@@ -187,10 +187,9 @@ async function guardScheduleChanges(eventKey,current,next,executor) {
   for (const category of current.config.categories) {
     for (const [index,complex] of category.complexes.entries()) {
       const workout=row.state.workouts[complex.id];
-      if (!hasEntries(workout) && !workout?.is_final) continue;
+      if (workout?.status !== 'confirmed') continue;
       const target=next.categories.find(item=>item.category_key===category.category_key);
       if (target?.complexes[index]?.id!==complex.id) throw invalid('Нельзя удалить, перенести или изменить порядок комплекса с результатами или отметкой финала');
-      if (workout?.is_final && target.complexes.length!==index+1) throw invalid('После финального комплекса нельзя добавить ещё один. Сначала измените отметку финала в тайминге');
     }
   }
 }

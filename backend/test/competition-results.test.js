@@ -5,7 +5,7 @@ const {pool}=require('../src/db');
 const {createCompetitionEvent}=require('../src/services/competition-events');
 const {createCompetitionRegistration}=require('../src/services/competition-registration');
 const {saveSchedule,readSchedule,generateSchedule}=require('../src/services/competition-schedule');
-const {points,parseResult,rankWorkout,standings,readResults,saveResults,publicResults,latchFinal,finalStartsAt}=require('../src/services/competition-results');
+const {points,parseResult,rankWorkout,standings,readResults,saveResults,publicResults,latchFinal,finalStartsAt,guardScheduleChanges}=require('../src/services/competition-results');
 const keys=[];
 const teams=Array.from({length:8},(_,i)=>({id:String(i+1),name:`Команда ${i+1}`}));
 const config={name:'Результат',kind:'reps'};
@@ -73,6 +73,22 @@ test('total ranking counts best places; equal totals and place histograms share 
   assert.deepEqual(rating.map(r=>[r.id,r.total,r.place]),[['1',190,1],['3',190,1],['2',190,3]]);
   state.workouts.a.status='draft';
   assert.ok(standings([block],state,'cat').every(r=>r.place===null && r.scores.length===0));
+});
+
+test('draft results and a final marker do not lock schedule editing, confirmed results do', async()=>{
+  const first={id:'first'}, second={id:'second'};
+  const current={config:{categories:[{category_key:'cat',complexes:[first,second]}]}};
+  const next={categories:[{category_key:'cat',complexes:[second]}]};
+  const executor={query:async()=>({rows:[{state:{workouts:{
+    first:{status:'draft',entries:{'1':[100]},is_final:false},
+    second:{status:'draft',entries:{},is_final:true},
+  }}}]})};
+  await assert.doesNotReject(guardScheduleChanges('event',current,next,executor));
+  executor.query=async()=>({rows:[{state:{workouts:{
+    first:{status:'confirmed',entries:{'1':[100]},is_final:false},
+    second:{status:'draft',entries:{},is_final:true},
+  }}}]});
+  await assert.rejects(guardScheduleChanges('event',current,next,executor),/Нельзя удалить/);
 });
 
 test('mixed time and reps ranks all finishers first, shares ties, preserves zero and empty',()=>{
