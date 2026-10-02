@@ -91,7 +91,8 @@ function seedResults(grid,state) {
   const result = structuredClone(grid);
   const blocks = result.blocks.filter(block=>!block.kind);
   for (const block of blocks) {
-    if (block.complex_number === 1) continue;
+    const redistributes = block.complex_number > 1 && block.redistribute_by_overall !== false;
+    if (!redistributes) continue;
     const previous=blocks.filter(item=>item.category_key===block.category_key && item.complex_number<block.complex_number);
     const ready=previous.length && previous.every(item=>state.workouts[item.id]?.status==='confirmed');
     const ranked=ready ? standings(blocks,state,block.category_key,block.complex_number-1).slice().reverse() : [];
@@ -145,7 +146,7 @@ async function saveResults(eventKey,input) {
     if (existing?.status==='confirmed' && input.action!=='reopen') throw invalid('Сначала откройте результаты для редактирования');
     if (input.action==='reopen') {
       if (existing?.status!=='confirmed') throw invalid('Комплекс ещё не подтверждён');
-      if (later.some(item=>hasEntries(state.workouts[item.id]))) throw invalid('У следующих комплексов уже есть результаты. Исправление предыдущего изменит их посев');
+      if (later.some(item=>item.redistribute_by_overall !== false && hasEntries(state.workouts[item.id]))) throw invalid('У следующего блока с перераспределением уже есть результаты. Исправление изменит его состав');
       existing.status='draft';
     } else if (input.action==='settings') {
       if (hasEntries(existing)) throw invalid('Тип оценки нельзя менять после ввода результатов');
@@ -187,6 +188,8 @@ async function guardScheduleChanges(eventKey,current,next,executor) {
   for (const category of current.config.categories) {
     for (const [index,complex] of category.complexes.entries()) {
       const workout=row.state.workouts[complex.id];
+      const previous=current.config.categories.find(item=>item.category_key===category.category_key)?.complexes[index];
+      if (hasEntries(workout) && Boolean(previous?.redistribute_by_overall) !== Boolean(complex.redistribute_by_overall)) throw invalid('Нельзя менять перераспределение блока после ввода результатов');
       if (workout?.status !== 'confirmed') continue;
       const target=next.categories.find(item=>item.category_key===category.category_key);
       if (target?.complexes[index]?.id!==complex.id) throw invalid('Нельзя удалить, перенести или изменить порядок комплекса с результатами или отметкой финала');

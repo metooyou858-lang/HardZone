@@ -24,6 +24,63 @@ function text(value, label, max) {
   return result;
 }
 
+function dependencyId(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(value)) throw invalid('Некорректный опорный блок');
+  return value;
+}
+
+function validateDependencies(config) {
+  const complexes = config.categories.flatMap(category => category.complexes);
+  const byId = new Map(complexes.map(complex => [complex.id, complex]));
+  for (const complex of complexes) {
+    if (!complex.depends_on_complex_id) continue;
+    if (!byId.has(complex.depends_on_complex_id)) throw invalid(`«${complex.name}»: опорный блок не найден. Сначала снимите зависимость`);
+    if (complex.depends_on_complex_id === complex.id) throw invalid(`«${complex.name}»: блок не может зависеть сам от себя`);
+  }
+  const visiting = new Set();
+  const visited = new Set();
+  function visit(complex) {
+    if (visited.has(complex.id)) return;
+    if (visiting.has(complex.id)) throw invalid('Зависимости времени образуют замкнутую цепочку');
+    visiting.add(complex.id);
+    if (complex.depends_on_complex_id) visit(byId.get(complex.depends_on_complex_id));
+    visiting.delete(complex.id);
+    visited.add(complex.id);
+  }
+  for (const complex of complexes) visit(complex);
+}
+
+function resolveDependentTimes(config, registrations) {
+  const resolved = structuredClone(config);
+  const complexes = resolved.categories.flatMap(category => category.complexes.map(complex => ({ complex, category })));
+  const byId = new Map(complexes.map(item => [item.complex.id, item]));
+  const resolvedIds = new Set();
+  function resolve(item) {
+    if (resolvedIds.has(item.complex.id)) return;
+    const parent = item.complex.depends_on_complex_id ? byId.get(item.complex.depends_on_complex_id) : null;
+    if (parent) {
+      resolve(parent);
+      const parentCount = parent.category.planned_count ?? registrations.filter(row => row.category === parent.category.category_key && row.status === 'registered' && row.payment_status === 'paid').length;
+      const parentHeats = Math.ceil(parentCount / parent.complex.lanes);
+      const parentStart = minutes(parent.complex.start_time);
+      const parentEnd = parentStart + parentHeats * parent.complex.duration_minutes + Math.max(0, parentHeats - 1) * parent.complex.gap_minutes + parent.complex.break_after_minutes;
+      const nextStart = parentEnd + item.complex.start_after_minutes;
+      if (nextStart >= 1440) throw invalid(`«${item.complex.name}» после опорного блока выходит за пределы дня`);
+      const delta = nextStart - minutes(item.complex.start_time);
+      item.complex.start_time = clock(nextStart);
+      if (item.complex.briefing_time) {
+        const briefing = minutes(item.complex.briefing_time) + delta;
+        if (briefing < 0 || briefing >= 1440) throw invalid(`«${item.complex.name}»: время брифинга после смещения выходит за пределы дня`);
+        item.complex.briefing_time = clock(briefing);
+      }
+    }
+    resolvedIds.add(item.complex.id);
+  }
+  for (const item of complexes) resolve(item);
+  return resolved;
+}
+
 function normalizeSchedule(input, competition) {
   if (!Array.isArray(input?.categories) || input.categories.length > 30) throw invalid('Некорректный список категорий');
   const keys = new Set();
@@ -43,13 +100,16 @@ function normalizeSchedule(input, competition) {
         return {
           id: complex.id,
           name: text(complex.name, 'Название комплекса', 120),
-          start_time: time(complex.start_time, `${label}, начало`),
+          start_time: complex.start_time ? time(complex.start_time, `${label}, начало`) : complex.depends_on_complex_id ? '00:00' : time(complex.start_time, `${label}, начало`),
           briefing_time: complex.briefing_time ? time(complex.briefing_time, `${label}, брифинг`) : null,
           venue: text(complex.venue, 'Место проведения', 120),
           lanes: integer(complex.lanes, `${label}, дорожки`, 1, 100),
           duration_minutes: integer(complex.duration_minutes, `${label}, время захода`, 1, 240),
           gap_minutes: integer(complex.gap_minutes, `${label}, перерыв между заходами`, 0, 240),
           break_after_minutes: integer(complex.break_after_minutes, `${label}, перерыв после комплекса`, 0, 240),
+          depends_on_complex_id: dependencyId(complex.depends_on_complex_id),
+          start_after_minutes: complex.depends_on_complex_id ? integer(complex.start_after_minutes ?? 0, `${label}, интервал после опорного блока`, 0, 1440) : 0,
+          redistribute_by_overall: index > 0 && complex.redistribute_by_overall !== false,
         };
       }),
     };
@@ -62,6 +122,8 @@ function normalizeSchedule(input, competition) {
 }
 
 function buildSchedule(config, competition, registrations) {
+  validateDependencies(config);
+  config = resolveDependentTimes(config, registrations);
   const errors = [];
   const blocks = [];
   for (const category of config.categories) {
@@ -89,14 +151,15 @@ function buildSchedule(config, competition, registrations) {
         const places = heatIndex === 0 ? count % complex.lanes || complex.lanes : complex.lanes;
         const heatStart = start + heatIndex * (complex.duration_minutes + complex.gap_minutes);
         const slots = Array.from({ length: places }, (_, laneIndex) => {
-          const team = index === 0 ? teams[offset + laneIndex] : null;
+          const team = complex.redistribute_by_overall === false || index === 0 ? teams[offset + laneIndex] : null;
           return { lane: laneIndex + 1, registration_id: team?.id || null, team_name: team?.team_name || null };
         });
         offset += places;
         return { number: heatIndex + 1, start_time: clock(heatStart), end_time: clock(heatStart + complex.duration_minutes), slots };
       });
       blocks.push({ ...complex, category_key: category.category_key, category_name: categoryName, complex_number: index + 1,
-        planned_count: count, confirmed_count: teams.length, assignment: index === 0 ? 'registration' : 'results',
+        redistribute_by_overall: index > 0 && complex.redistribute_by_overall !== false,
+        planned_count: count, confirmed_count: teams.length, assignment: index > 0 && complex.redistribute_by_overall !== false ? 'results' : 'registration',
         end_time: clock(end), available_after: clock(occupiedTo), heats, occupied_from: occupiedFrom, occupied_to: occupiedTo });
     }
   }
@@ -131,9 +194,9 @@ async function readSchedule(eventKey, executor = pool) {
   const config = row?.config || { categories: [] };
   const sourceHash = createHash('sha256').update(JSON.stringify({ config, name:competition.name, date:competition.date, categories:competition.categories, registrations })).digest('hex');
   const results = (await executor.query('SELECT state,revision FROM competition_results WHERE event_key=$1', [competition.event_key])).rows[0];
-  const editableConfig = {...config,categories:config.categories.map(category=>({...category,complexes:category.complexes.map(complex=>{
+  const editableConfig = {...config,categories:config.categories.map(category=>({...category,complexes:category.complexes.map((complex,index)=>{
     const workout=results?.state.workouts[complex.id];
-    return {...complex,scoring:{components:workout?.components || [{name:'Результат',kind:'time'}],is_final:Boolean(workout?.is_final)},scoring_locked:Object.values(workout?.entries || {}).some(values=>values.some(value=>value!==null)) || workout?.status==='confirmed'};
+    return {...complex,depends_on_complex_id:complex.depends_on_complex_id || null,start_after_minutes:complex.depends_on_complex_id ? Number(complex.start_after_minutes || 0) : 0,redistribute_by_overall:index > 0 && complex.redistribute_by_overall !== false,scoring:{components:workout?.components || [{name:'Результат',kind:'time'}],is_final:Boolean(workout?.is_final)},scoring_locked:Object.values(workout?.entries || {}).some(values=>values.some(value=>value!==null)) || workout?.status==='confirmed'};
   })}))};
   return { competition, config:editableConfig, results_revision:results?.revision || 0, revision:row?.revision || 0,
     confirmed_counts: Object.fromEntries(competition.categories.map(item => [item.key, registrations.filter(r => r.category === item.key).length])),
@@ -147,8 +210,10 @@ async function saveSchedule(eventKey, input) {
     const current = await readSchedule(eventKey, client);
     if (input.revision !== current.revision) throw conflict('Настройки изменились в другой вкладке. Обновите расписание перед сохранением');
     if (input.source_hash && input.source_hash !== current.source_hash) throw conflict('Состав команд изменился. Обновите данные и проверьте смещения заново');
-    const config = normalizeSchedule(input.config, current.competition);
+    let config = normalizeSchedule(input.config, current.competition);
     const registrations = (await client.query("SELECT id,team_name,category,created_at,status,payment_status FROM competition_registrations WHERE event_key=$1 AND status='registered' AND payment_status='paid'", [eventKey])).rows;
+    validateDependencies(config);
+    config = resolveDependentTimes(config, registrations);
     const preview = buildSchedule(config,current.competition,registrations);
     if (preview.venue_conflicts.length) throw invalid(preview.venue_conflicts.join('\n'));
     if (input.results_revision !== undefined && input.results_revision !== current.results_revision) throw conflict('Настройки результатов изменились. Обновите расписание');

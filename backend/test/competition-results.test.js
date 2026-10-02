@@ -5,7 +5,7 @@ const {pool}=require('../src/db');
 const {createCompetitionEvent}=require('../src/services/competition-events');
 const {createCompetitionRegistration}=require('../src/services/competition-registration');
 const {saveSchedule,readSchedule,generateSchedule}=require('../src/services/competition-schedule');
-const {points,parseResult,rankWorkout,standings,readResults,saveResults,publicResults,latchFinal,finalStartsAt,guardScheduleChanges}=require('../src/services/competition-results');
+const {points,parseResult,rankWorkout,standings,seedResults,readResults,saveResults,publicResults,latchFinal,finalStartsAt,guardScheduleChanges}=require('../src/services/competition-results');
 const keys=[];
 const teams=Array.from({length:8},(_,i)=>({id:String(i+1),name:`Команда ${i+1}`}));
 const config={name:'Результат',kind:'reps'};
@@ -73,6 +73,23 @@ test('total ranking counts best places; equal totals and place histograms share 
   assert.deepEqual(rating.map(r=>[r.id,r.total,r.place]),[['1',190,1],['3',190,1],['2',190,3]]);
   state.workouts.a.status='draft';
   assert.ok(standings([block],state,'cat').every(r=>r.place===null && r.scores.length===0));
+});
+
+test('only marked block is redistributed by cumulative results of all previous blocks',()=>{
+  const entrants=teams.slice(0,3);
+  const slots=()=>entrants.map((team,index)=>({registration_id:team.id,team_name:team.name,lane:index+1}));
+  const blocks=[
+    {id:'first',name:'Первый',category_key:'cat',complex_number:1,redistribute_by_overall:false,heats:[{number:1,slots:slots()}]},
+    {id:'second',name:'Второй',category_key:'cat',complex_number:2,redistribute_by_overall:false,heats:[{number:1,slots:slots()}]},
+    {id:'third',name:'Третий',category_key:'cat',complex_number:3,redistribute_by_overall:true,heats:[{number:1,slots:slots().map(slot=>({...slot,registration_id:null,team_name:null}))}]},
+  ];
+  const workout=values=>({status:'confirmed',components:[config],entries:Object.fromEntries(entrants.map((team,index)=>[team.id,[values[index]]]))});
+  const firstOnly=seedResults({blocks},{workouts:{first:workout([30,20,10]),second:{...workout([10,30,20]),status:'draft'}}});
+  assert.deepEqual(firstOnly.blocks[1].heats[0].slots.map(slot=>slot.registration_id),entrants.map(team=>team.id));
+  assert.ok(firstOnly.blocks[2].heats[0].slots.every(slot=>slot.registration_id===null));
+  const ready=seedResults({blocks},{workouts:{first:workout([30,20,10]),second:workout([10,30,20])}});
+  assert.deepEqual(ready.blocks[2].heats[0].slots.map(slot=>slot.registration_id),['3','1','2']);
+  assert.equal(ready.blocks[2].assignment,'rating');
 });
 
 test('draft results and a final marker do not lock schedule editing, confirmed results do', async()=>{

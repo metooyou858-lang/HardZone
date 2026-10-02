@@ -12,6 +12,12 @@ const primary = `${button} bg-[var(--accent)] text-[#062b26]`;
 const addButton = `${button} bg-[var(--bg-card)] text-[var(--text-main)] transition-colors enabled:hover:border-[var(--accent)] enabled:hover:bg-[var(--accent)] enabled:hover:text-[#062b26] focus-visible:bg-[var(--accent)] focus-visible:text-[#062b26]`;
 const inputClass = "mt-1 min-h-11 w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-main)] px-3 py-2 text-sm text-[var(--text-main)]";
 
+function addMinutes(value: string, delta: number) {
+  const [hours, minutes] = value.split(":").map(Number);
+  const total = hours * 60 + minutes + delta;
+  return total >= 0 && total < 1440 ? `${Math.floor(total / 60).toString().padStart(2,"0")}:${(total % 60).toString().padStart(2,"0")}` : null;
+}
+
 export default function CompetitionSchedulePanel({ eventKey }: { eventKey: string }) {
   const [data, setData] = useState<CompetitionSchedule | null>(null);
   const [draft, setDraft] = useState<ScheduleConfig>({categories:[]});
@@ -61,6 +67,8 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
     setEditor({category:"", isNew:true, complex:{
       id:crypto.randomUUID(),name:"", start_time:"", briefing_time:null,
       venue:"",lanes:4,duration_minutes:10,gap_minutes:3,break_after_minutes:0,
+      depends_on_complex_id:null,start_after_minutes:0,
+      redistribute_by_overall:false,
       scoring:{components:[{name:"Результат",kind:"time"}],is_final:false},
     }});
   }
@@ -127,6 +135,29 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
     finally { setBusy(false); }
   }
 
+  const editorCategory = editor ? draft.categories.find(item => item.category_key === editor.category) : undefined;
+  const editorExistingIndex = editor ? editorCategory?.complexes.findIndex(item => item.id === editor.complex.id) ?? -1 : -1;
+  const editorComplexNumber = editor ? (editorExistingIndex >= 0 ? editorExistingIndex + 1 : (editorCategory?.complexes.length || 0) + 1) : 0;
+  const canRedistribute = editorComplexNumber > 1;
+  const complexOptions = draft.categories.flatMap(category => category.complexes.map(complex => ({
+    id:complex.id,
+    name:`${data?.competition.categories.find(item => item.key === category.category_key)?.name || category.category_key} · ${complex.name}`,
+    dependsOn:complex.depends_on_complex_id,
+  })));
+  const dependencyOptions = editor ? complexOptions.filter(option => {
+    if (option.id === editor.complex.id) return false;
+    let current: typeof option | undefined = option;
+    const visited = new Set<string>();
+    while (current?.dependsOn && !visited.has(current.id)) {
+      if (current.dependsOn === editor.complex.id) return false;
+      visited.add(current.id);
+      current = complexOptions.find(item => item.id === current?.dependsOn);
+    }
+    return true;
+  }) : [];
+  const dependencyBlock = editor?.complex.depends_on_complex_id ? data?.preview.blocks.find(block => block.id === editor.complex.depends_on_complex_id) : undefined;
+  const calculatedStart = dependencyBlock ? addMinutes(dependencyBlock.available_after, editor?.complex.start_after_minutes || 0) : null;
+
   const editorForm = editor && data ? (
     <form ref={editorRef} onSubmit={saveComplex} className={`scroll-mt-4 p-4 sm:p-5 ${editor.isNew ? "rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)]" : "border-t border-[var(--line-soft)]"}`}>
         <fieldset disabled={busy}>
@@ -140,9 +171,15 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <label className="min-w-0 text-xs">Название<input className={inputClass} required maxLength={120} value={complex.name} onChange={e => updateComplex({name:e.target.value})} /></label>
               <label className="min-w-0 text-xs">Место / площадка<input className={inputClass} required maxLength={120} placeholder="Основной зал" value={complex.venue} onChange={e => updateComplex({venue:e.target.value})} /></label>
-              <label className="min-w-0 text-xs">Начало первого захода<input className={inputClass} type="time" required value={complex.start_time} onChange={e => updateComplex({start_time:e.target.value})} /></label>
-              <div className="min-w-0 text-xs"><label className="relative flex h-4 w-fit cursor-pointer items-center gap-2 before:absolute before:-inset-y-3 before:inset-x-0"><input className="relative z-10" type="checkbox" checked={complex.briefing_time !== null} onChange={e => updateComplex({briefing_time:e.target.checked ? "" : null})} />Брифинг</label><input aria-label="Начало брифинга" className={`${inputClass} disabled:opacity-40`} type="time" required={complex.briefing_time !== null} disabled={complex.briefing_time === null} value={complex.briefing_time ?? ""} onChange={e => updateComplex({briefing_time:e.target.value})} /></div>
+              <label className="min-w-0 text-xs">Расчёт времени<select className={inputClass} value={complex.depends_on_complex_id || ""} onChange={e => updateComplex({depends_on_complex_id:e.target.value || null,start_after_minutes:0,briefing_time:e.target.value ? null : complex.briefing_time})}><option className="bg-white text-black" value="">Указать время вручную</option>{dependencyOptions.map(option => <option className="bg-white text-black" key={option.id} value={option.id}>После: {option.name}</option>)}</select></label>
+              {complex.depends_on_complex_id ? <label className="min-w-0 text-xs">Интервал после опорного блока, мин<input className={inputClass} type="number" required min={0} max={1440} step={1} value={complex.start_after_minutes} onChange={e => updateComplex({start_after_minutes:e.target.value === "" ? NaN : Number(e.target.value)})} /></label> : <label className="min-w-0 text-xs">Начало первого захода<input className={inputClass} type="time" required value={complex.start_time} onChange={e => updateComplex({start_time:e.target.value})} /></label>}
+              <div className="min-w-0 text-xs"><label className={`relative flex h-4 w-fit items-center gap-2 before:absolute before:-inset-y-3 before:inset-x-0 ${complex.depends_on_complex_id ? "opacity-40" : "cursor-pointer"}`}><input className="relative z-10" type="checkbox" disabled={!!complex.depends_on_complex_id} checked={complex.briefing_time !== null} onChange={e => updateComplex({briefing_time:e.target.checked ? "" : null})} />Брифинг</label><input aria-label="Начало брифинга" className={`${inputClass} disabled:opacity-40`} type="time" required={complex.briefing_time !== null} disabled={complex.briefing_time === null || !!complex.depends_on_complex_id} value={complex.briefing_time ?? ""} onChange={e => updateComplex({briefing_time:e.target.value})} /></div>
               {([{key:"lanes",name:"Количество дорожек",min:1,max:100},{key:"duration_minutes",name:"Время одного захода, мин",min:1,max:240},{key:"gap_minutes",name:"Между заходами, мин",min:0,max:240},{key:"break_after_minutes",name:"После комплекса, мин",min:0,max:240}] as const).map(item => <label key={item.key} className="min-w-0 text-xs">{item.name}<input className={inputClass} required type="number" step={1} min={item.min} max={item.max} value={Number.isNaN(complex[item.key]) ? "" : complex[item.key]} onChange={e => updateComplex({[item.key]:e.target.value === "" ? NaN : Number(e.target.value)})} /></label>)}
+            </div>
+            {complex.depends_on_complex_id && <p className="text-xs text-[var(--text-muted)]">{dependencyBlock ? calculatedStart ? `Первый заход начнётся в ${calculatedStart}. При переносе опорного блока это время изменится автоматически.` : "Рассчитанное время выходит за пределы дня. Уменьшите интервал." : "После сохранения время будет рассчитано от окончания выбранного блока."}</p>}
+            <div className="space-y-1 border-t border-[var(--line-soft)] pt-4">
+              <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" disabled={!canRedistribute || complex.scoring_locked} checked={canRedistribute && complex.redistribute_by_overall} onChange={e=>updateComplex({redistribute_by_overall:e.target.checked})} />Перераспределить участников по общему рейтингу перед этим блоком</label>
+              <p className="text-xs text-[var(--text-muted)]">{!canRedistribute ? "Первый блок всегда формируется по регистрации." : complex.redistribute_by_overall ? editorComplexNumber === 2 ? "После утверждения блока 1 участники будут распределены заново по сумме баллов." : `После утверждения блоков 1–${editorComplexNumber - 1} участники будут распределены заново по сумме баллов.` : "Состав заходов и дорожек останется по исходной регистрации."}</p>
             </div>
             {complex.scoring && <fieldset disabled={complex.scoring_locked} className="space-y-3 border-t border-[var(--line-soft)] pt-4 disabled:opacity-60">
               <legend className="px-1 text-sm font-medium">Оценка комплекса</legend>
@@ -217,7 +254,7 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
     </>}
     {data && view === "grid" && <>
       {(data.grid_stale || dirty) && <p className="rounded-xl border border-[var(--line-soft)] p-4 text-sm text-[var(--warning)]">Состав команд или настройки изменились. Здесь остаётся прежняя сетка. Проверьте расчёт во вкладке настройки и пересформируйте её, если нужно.</p>}
-      {data.grid ? <><p className="text-sm text-[var(--text-muted)]">Первый комплекс — поздние заявки выступают раньше. Следующие комплексы заполняются после подтверждения результатов: лидеры общего рейтинга выступают последними.</p><Grid grid={data.grid} /></> : <p className="border-y border-[var(--line-soft)] py-10 text-center text-sm text-[var(--text-muted)]">Сетка ещё не сформирована. Добавьте комплексы и проверьте расчёт.</p>}
+      {data.grid ? <><p className="text-sm text-[var(--text-muted)]">Блоки без перераспределения сохраняют порядок регистрации. В отмеченных блоках после утверждения предыдущих результатов лидеры общего рейтинга выступают последними.</p><Grid grid={data.grid} /></> : <p className="border-y border-[var(--line-soft)] py-10 text-center text-sm text-[var(--text-muted)]">Сетка ещё не сформирована. Добавьте комплексы и проверьте расчёт.</p>}
     </>}
   </div>;
 }
@@ -230,7 +267,7 @@ function Grid({ grid, onEdit, onDelete, actionsDisabled, editingId, editorForm }
       <header className="flex flex-wrap items-start justify-between gap-3 p-4"><div className="min-w-0"><div className="flex flex-wrap items-center gap-3"><h3 className="break-words font-semibold">{block.name}</h3>{onEdit && editingId !== block.id && <button className={button} disabled={actionsDisabled} onClick={() => onEdit(block.id)} aria-label={`Редактировать: ${block.name}`}>Редактировать</button>}{onDelete && editingId !== block.id && <button className={`${button} text-[var(--danger)]`} disabled={actionsDisabled} onClick={() => onDelete(block.id)} aria-label={`Удалить: ${block.name}`}>Удалить</button>}</div><p className="mt-1 text-xs text-[var(--text-muted)]">{block.kind === "awards" ? "Общее награждение" : "Перерыв"} · {block.venue} · {block.duration_minutes} мин</p></div><strong className="text-sm">{block.start_time} — {block.end_time}</strong></header>
       {editingId === block.id && editorForm}
     </section> : <section key={block.id} className="overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)]">
-      <header className="flex flex-wrap items-start justify-between gap-3 p-4"><div className="min-w-0"><div className="flex flex-wrap items-center gap-3"><h3 className="break-words font-semibold">{block.category_name} · {block.name}</h3>{onEdit && editingId !== block.id && <button type="button" className={button} disabled={actionsDisabled} onClick={() => onEdit(block.id)} aria-label={`Редактировать: ${block.category_name} · ${block.name}`}>Редактировать</button>}{onDelete && editingId !== block.id && <button type="button" className={`${button} text-[var(--danger)]`} disabled={actionsDisabled} onClick={() => onDelete(block.id)} aria-label={`Удалить: ${block.category_name} · ${block.name}`}>Удалить</button>}</div><p className="mt-1 text-xs text-[var(--text-muted)]">{block.venue} · Дорожек: {block.lanes} · Мест: {block.planned_count} · Заходов: {block.heats.length}</p></div><strong className="text-sm">{block.start_time} — {block.end_time}</strong></header>
+      <header className="flex flex-wrap items-start justify-between gap-3 p-4"><div className="min-w-0"><div className="flex flex-wrap items-center gap-3"><h3 className="break-words font-semibold">{block.category_name} · {block.name}</h3>{onEdit && editingId !== block.id && <button type="button" className={button} disabled={actionsDisabled} onClick={() => onEdit(block.id)} aria-label={`Редактировать: ${block.category_name} · ${block.name}`}>Редактировать</button>}{onDelete && editingId !== block.id && <button type="button" className={`${button} text-[var(--danger)]`} disabled={actionsDisabled} onClick={() => onDelete(block.id)} aria-label={`Удалить: ${block.category_name} · ${block.name}`}>Удалить</button>}</div><p className="mt-1 text-xs text-[var(--text-muted)]">{block.venue} · Дорожек: {block.lanes} · Мест: {block.planned_count} · Заходов: {block.heats.length}</p>{block.depends_on_complex_id && <p className="mt-1 text-xs text-[var(--text-muted)]">Время связано с «{[grid.blocks.find(item => item.id === block.depends_on_complex_id)?.category_name,grid.blocks.find(item => item.id === block.depends_on_complex_id)?.name].filter(Boolean).join(" · ")}»{block.start_after_minutes ? ` + ${block.start_after_minutes} мин` : ""}</p>}<p className="mt-1 text-xs text-[var(--text-muted)]">{block.redistribute_by_overall ? `Перераспределение по общему рейтингу после блока ${block.complex_number - 1}` : "Распределение по регистрации"}</p></div><strong className="text-sm">{block.start_time} — {block.end_time}</strong></header>
       {editingId === block.id ? editorForm : <>
       {block.briefing_time && <p className="border-t border-[var(--line-soft)] px-4 py-3 text-sm">{block.briefing_time} — {block.start_time} · Брифинг</p>}
       <div className="border-t border-[var(--line-soft)]"><div className="divide-y divide-[var(--line-soft)]">{block.heats.map(heat => <div key={heat.number} className="grid sm:grid-cols-[180px_minmax(0,1fr)]"><div className="px-4 py-4 text-sm"><strong>{heat.start_time} — {heat.end_time}</strong><p className="mt-1 text-[var(--text-muted)]">Заход {heat.number}</p></div><ol className="grid min-w-0" style={{gridTemplateColumns:"repeat(auto-fit, minmax(min(100%, 180px), 1fr))"}}>{Array.from({length:block.lanes},(_,index) => {

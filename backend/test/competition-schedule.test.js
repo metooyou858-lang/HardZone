@@ -7,7 +7,7 @@ const { createCompetitionRegistration } = require('../src/services/competition-r
 const { normalizeSchedule, buildSchedule, readSchedule, saveSchedule, generateSchedule, planActivity, previewActivity } = require('../src/services/competition-schedule');
 
 const competition = { name:'Соревнование',date:'2026-10-10',categories:[{key:'amateur',name:'Любители'},{key:'advanced',name:'Продвинутые'}] };
-const complex = (patch={}) => ({id:randomUUID(),name:'Комплекс 1',start_time:'09:00',briefing_time:'08:45',venue:'Основной зал',lanes:4,duration_minutes:10,gap_minutes:3,break_after_minutes:15,...patch});
+const complex = (patch={}) => ({id:randomUUID(),name:'Комплекс 1',start_time:'09:00',briefing_time:'08:45',venue:'Основной зал',lanes:4,duration_minutes:10,gap_minutes:3,break_after_minutes:15,depends_on_complex_id:null,start_after_minutes:0,...patch});
 const plan = (complexes=[complex()],planned_count=null) => ({categories:[{category_key:'amateur',planned_count,complexes}]});
 const teams = Array.from({length:10},(_,i)=>({id:String(i+1),team_name:`Команда ${i+1}`,category:'amateur',created_at:new Date(2026,8,1,0,i),status:'registered',payment_status:'paid'}));
 const keys=[];
@@ -56,6 +56,59 @@ test('insertion refuses overflow and validates activities including duplicate id
   assert.throws(()=>normalizeSchedule({...plan(),activities:{}},competition),/100/);
 });
 
+test('redistribution is optional per block and blocks without it keep registration order',()=>{
+  const first=complex({start_time:'09:00',briefing_time:null,break_after_minutes:0});
+  const second=complex({start_time:'10:00',briefing_time:null,break_after_minutes:0,redistribute_by_overall:false});
+  const third=complex({start_time:'11:00',briefing_time:null,break_after_minutes:0,redistribute_by_overall:true});
+  const normalized=normalizeSchedule(plan([first,second,third],10),competition);
+  assert.deepEqual(normalized.categories[0].complexes.map(item=>item.redistribute_by_overall),[false,false,true]);
+  const grid=buildSchedule(normalized,competition,teams);
+  assert.deepEqual(grid.blocks.map(item=>item.assignment),['registration','registration','results']);
+  assert.deepEqual(grid.blocks[1].heats.flatMap(heat=>heat.slots).map(slot=>slot.registration_id),grid.blocks[0].heats.flatMap(heat=>heat.slots).map(slot=>slot.registration_id));
+  assert.ok(grid.blocks[2].heats.flatMap(heat=>heat.slots).every(slot=>slot.registration_id===null));
+});
+
+test('linked block times follow chains and branches while a child offset moves only its descendants',()=>{
+  const first=complex({name:'Блок 1',start_time:'09:00',briefing_time:null,break_after_minutes:5});
+  const second=complex({name:'Блок 2',start_time:'00:00',briefing_time:null,break_after_minutes:0,depends_on_complex_id:first.id,start_after_minutes:5});
+  const third=complex({name:'Блок 3',start_time:'00:00',briefing_time:null,break_after_minutes:0,depends_on_complex_id:second.id,start_after_minutes:7});
+  const fourth=complex({name:'Блок 4',start_time:'00:00',briefing_time:null,venue:'Улица',break_after_minutes:0,depends_on_complex_id:first.id,start_after_minutes:0});
+  const config={categories:[{category_key:'amateur',planned_count:4,complexes:[first,second,third]},{category_key:'advanced',planned_count:4,complexes:[fourth]}]};
+  let grid=buildSchedule(normalizeSchedule(config,competition),competition,[]);
+  assert.deepEqual(grid.blocks.map(block=>[block.name,block.start_time]),[['Блок 1','09:00'],['Блок 4','09:15'],['Блок 2','09:20'],['Блок 3','09:37']]);
+  first.start_time='10:00';
+  grid=buildSchedule(normalizeSchedule(config,competition),competition,[]);
+  assert.deepEqual(Object.fromEntries(grid.blocks.map(block=>[block.name,block.start_time])),{'Блок 1':'10:00','Блок 4':'10:15','Блок 2':'10:20','Блок 3':'10:37'});
+  second.start_after_minutes=20;
+  grid=buildSchedule(normalizeSchedule(config,competition),competition,[]);
+  assert.deepEqual(Object.fromEntries(grid.blocks.map(block=>[block.name,block.start_time])),{'Блок 1':'10:00','Блок 4':'10:15','Блок 2':'10:35','Блок 3':'10:52'});
+});
+
+test('linked block validation rejects missing parents, self-links and cycles',()=>{
+  const first=complex({briefing_time:null,depends_on_complex_id:'missing'});
+  assert.throws(()=>buildSchedule(normalizeSchedule(plan([first],4),competition),competition,[]),/опорный блок не найден/);
+  first.depends_on_complex_id=first.id;
+  assert.throws(()=>buildSchedule(normalizeSchedule(plan([first],4),competition),competition,[]),/сам от себя/);
+  const second=complex({briefing_time:null});
+  first.depends_on_complex_id=second.id;
+  second.depends_on_complex_id=first.id;
+  assert.throws(()=>buildSchedule(normalizeSchedule(plan([first,second],4),competition),competition,[]),/замкнутую цепочку/);
+});
+
+test('saving a moved parent persists recalculated descendants and protects referenced blocks',async()=>{
+  const event=await createCompetitionEvent({name:'Связанные блоки',date:'2026-10-10',location:'Зал',fee_rubles:3500,registration_enabled:false,categories:competition.categories,terms_text:'Тест'}); keys.push(event.event_key);
+  const first=complex({name:'Блок 1',start_time:'09:00',briefing_time:null,break_after_minutes:5});
+  const second=complex({name:'Блок 2',start_time:'',briefing_time:null,break_after_minutes:0,depends_on_complex_id:first.id,start_after_minutes:5});
+  const third=complex({name:'Блок 3',start_time:'',briefing_time:null,break_after_minutes:0,depends_on_complex_id:second.id,start_after_minutes:0});
+  let result=await saveSchedule(event.event_key,{revision:0,config:plan([first,second,third],4)});
+  assert.deepEqual(result.config.categories[0].complexes.map(item=>item.start_time),['09:00','09:20','09:30']);
+  result.config.categories[0].complexes[0].start_time='10:00';
+  result=await saveSchedule(event.event_key,{revision:result.revision,config:result.config});
+  assert.deepEqual(result.config.categories[0].complexes.map(item=>item.start_time),['10:00','10:20','10:30']);
+  const withoutParent={...result.config,categories:result.config.categories.map(category=>({...category,complexes:category.complexes.filter(item=>item.id!==first.id)}))};
+  await assert.rejects(saveSchedule(event.event_key,{revision:result.revision,config:withoutParent}),/опорный блок не найден/);
+});
+
 test('activity preview is read-only, shifted plan preserves snapshot and source hash guards stale acceptance',async()=>{
   const event=await createCompetitionEvent({name:'Пункты расписания',date:'2026-10-10',location:'Зал',fee_rubles:3500,registration_enabled:false,categories:competition.categories,terms_text:'Тест'}); keys.push(event.event_key);
   let saved=await saveSchedule(event.event_key,{revision:0,config:plan([complex({briefing_time:null,break_after_minutes:0})],4)});
@@ -79,7 +132,7 @@ test('moving a complex preserves its id and settings, uses target count and leav
   result=await generateSchedule(event.event_key,{revision:result.revision,source_hash:result.source_hash});
   const snapshot=result.grid;
   result=await saveSchedule(event.event_key,{revision:result.revision,config:{categories:[{category_key:'amateur',planned_count:8,complexes:[]},{category_key:'advanced',planned_count:12,complexes:[existing,moved]}]}});
-  assert.deepEqual(result.config.categories[1].complexes,[existing,moved].map(item=>({...item,scoring:{components:[{name:'Результат',kind:'time'}],is_final:false},scoring_locked:false})));
+  assert.deepEqual(result.config.categories[1].complexes,[existing,moved].map((item,index)=>({...item,redistribute_by_overall:index>0,scoring:{components:[{name:'Результат',kind:'time'}],is_final:false},scoring_locked:false})));
   assert.equal(result.preview.blocks.find(b=>b.id===moved.id).planned_count,12);
   assert.equal(result.preview.blocks.find(b=>b.id===moved.id).assignment,'results');
   assert.equal(result.preview.blocks.filter(b=>b.id===moved.id).length,1);
