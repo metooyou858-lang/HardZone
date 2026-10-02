@@ -5,7 +5,7 @@ import type { ResultComponent } from "./competition-results";
 export type CompetitionComplex = {
   id: string; name: string; start_time: string; briefing_time: string | null; venue: string;
   lanes: number; duration_minutes: number; gap_minutes: number; break_after_minutes: number;
-  depends_on_complex_id: string | null; start_after_minutes: number;
+  depends_on_complex_id: string | null; start_after_minutes: number; briefing_before_minutes: number | null;
   redistribute_by_overall: boolean;
   scoring?: {components:ResultComponent[];is_final:boolean}; scoring_locked?:boolean;
 };

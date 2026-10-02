@@ -7,7 +7,7 @@ const { createCompetitionRegistration } = require('../src/services/competition-r
 const { normalizeSchedule, buildSchedule, readSchedule, saveSchedule, generateSchedule, planActivity, previewActivity } = require('../src/services/competition-schedule');
 
 const competition = { name:'Соревнование',date:'2026-10-10',categories:[{key:'amateur',name:'Любители'},{key:'advanced',name:'Продвинутые'}] };
-const complex = (patch={}) => ({id:randomUUID(),name:'Комплекс 1',start_time:'09:00',briefing_time:'08:45',venue:'Основной зал',lanes:4,duration_minutes:10,gap_minutes:3,break_after_minutes:15,depends_on_complex_id:null,start_after_minutes:0,...patch});
+const complex = (patch={}) => ({id:randomUUID(),name:'Комплекс 1',start_time:'09:00',briefing_time:'08:45',venue:'Основной зал',lanes:4,duration_minutes:10,gap_minutes:3,break_after_minutes:15,depends_on_complex_id:null,start_after_minutes:0,briefing_before_minutes:null,...patch});
 const plan = (complexes=[complex()],planned_count=null) => ({categories:[{category_key:'amateur',planned_count,complexes}]});
 const teams = Array.from({length:10},(_,i)=>({id:String(i+1),team_name:`Команда ${i+1}`,category:'amateur',created_at:new Date(2026,8,1,0,i),status:'registered',payment_status:'paid'}));
 const keys=[];
@@ -93,6 +93,17 @@ test('linked block validation rejects missing parents, self-links and cycles',()
   first.depends_on_complex_id=second.id;
   second.depends_on_complex_id=first.id;
   assert.throws(()=>buildSchedule(normalizeSchedule(plan([first,second],4),competition),competition,[]),/замкнутую цепочку/);
+});
+
+test('linked block briefing stays a fixed number of minutes before its first heat',()=>{
+  const first=complex({name:'Блок 1',start_time:'09:00',briefing_time:null,break_after_minutes:5});
+  const second=complex({name:'Блок 2',start_time:'',briefing_time:null,break_after_minutes:0,depends_on_complex_id:first.id,start_after_minutes:10,briefing_before_minutes:5});
+  const config=plan([first,second],4);
+  let grid=buildSchedule(normalizeSchedule(config,competition),competition,[]);
+  assert.deepEqual([grid.blocks[1].briefing_time,grid.blocks[1].start_time],['09:20','09:25']);
+  first.start_time='10:00';
+  grid=buildSchedule(normalizeSchedule(config,competition),competition,[]);
+  assert.deepEqual([grid.blocks[1].briefing_time,grid.blocks[1].start_time],['10:20','10:25']);
 });
 
 test('saving a moved parent persists recalculated descendants and protects referenced blocks',async()=>{

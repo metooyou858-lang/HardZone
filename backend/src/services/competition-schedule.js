@@ -69,7 +69,11 @@ function resolveDependentTimes(config, registrations) {
       if (nextStart >= 1440) throw invalid(`«${item.complex.name}» после опорного блока выходит за пределы дня`);
       const delta = nextStart - minutes(item.complex.start_time);
       item.complex.start_time = clock(nextStart);
-      if (item.complex.briefing_time) {
+      if (item.complex.briefing_before_minutes != null) {
+        const briefing = nextStart - item.complex.briefing_before_minutes;
+        if (briefing < 0) throw invalid(`«${item.complex.name}»: брифинг выходит за пределы дня`);
+        item.complex.briefing_time = clock(briefing);
+      } else if (item.complex.briefing_time) {
         const briefing = minutes(item.complex.briefing_time) + delta;
         if (briefing < 0 || briefing >= 1440) throw invalid(`«${item.complex.name}»: время брифинга после смещения выходит за пределы дня`);
         item.complex.briefing_time = clock(briefing);
@@ -109,6 +113,9 @@ function normalizeSchedule(input, competition) {
           break_after_minutes: integer(complex.break_after_minutes, `${label}, перерыв после комплекса`, 0, 240),
           depends_on_complex_id: dependencyId(complex.depends_on_complex_id),
           start_after_minutes: complex.depends_on_complex_id ? integer(complex.start_after_minutes ?? 0, `${label}, интервал после опорного блока`, 0, 1440) : 0,
+          briefing_before_minutes: complex.depends_on_complex_id && complex.briefing_before_minutes !== null && complex.briefing_before_minutes !== undefined
+            ? integer(complex.briefing_before_minutes, `${label}, брифинг до первого захода`, 1, 1440)
+            : null,
           redistribute_by_overall: index > 0 && complex.redistribute_by_overall !== false,
         };
       }),
@@ -196,7 +203,8 @@ async function readSchedule(eventKey, executor = pool) {
   const results = (await executor.query('SELECT state,revision FROM competition_results WHERE event_key=$1', [competition.event_key])).rows[0];
   const editableConfig = {...config,categories:config.categories.map(category=>({...category,complexes:category.complexes.map((complex,index)=>{
     const workout=results?.state.workouts[complex.id];
-    return {...complex,depends_on_complex_id:complex.depends_on_complex_id || null,start_after_minutes:complex.depends_on_complex_id ? Number(complex.start_after_minutes || 0) : 0,redistribute_by_overall:index > 0 && complex.redistribute_by_overall !== false,scoring:{components:workout?.components || [{name:'Результат',kind:'time'}],is_final:Boolean(workout?.is_final)},scoring_locked:Object.values(workout?.entries || {}).some(values=>values.some(value=>value!==null)) || workout?.status==='confirmed'};
+    const savedBriefingLead = complex.depends_on_complex_id && complex.briefing_time ? minutes(complex.start_time) - minutes(complex.briefing_time) : null;
+    return {...complex,depends_on_complex_id:complex.depends_on_complex_id || null,start_after_minutes:complex.depends_on_complex_id ? Number(complex.start_after_minutes || 0) : 0,briefing_before_minutes:complex.depends_on_complex_id ? complex.briefing_before_minutes ?? (savedBriefingLead > 0 ? savedBriefingLead : null) : null,redistribute_by_overall:index > 0 && complex.redistribute_by_overall !== false,scoring:{components:workout?.components || [{name:'Результат',kind:'time'}],is_final:Boolean(workout?.is_final)},scoring_locked:Object.values(workout?.entries || {}).some(values=>values.some(value=>value!==null)) || workout?.status==='confirmed'};
   })}))};
   return { competition, config:editableConfig, results_revision:results?.revision || 0, revision:row?.revision || 0,
     confirmed_counts: Object.fromEntries(competition.categories.map(item => [item.key, registrations.filter(r => r.category === item.key).length])),
