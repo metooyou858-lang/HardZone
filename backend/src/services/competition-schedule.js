@@ -30,6 +30,40 @@ function dependencyId(value) {
   return value;
 }
 
+function upgradeBriefings(input) {
+  const upgraded = structuredClone(input || {});
+  if (upgraded.activities === undefined) upgraded.activities = [];
+  const activityIds = new Set(Array.isArray(upgraded.activities) ? upgraded.activities.map(item => item.id) : []);
+  for (const category of upgraded.categories || []) {
+    for (const complex of category.complexes || []) {
+      if (!complex.briefing_time) continue;
+      const id = `briefing-${createHash('sha256').update(complex.id).digest('hex').slice(0, 16)}`;
+      if (!activityIds.has(id)) {
+        const start = minutes(complex.briefing_time);
+        const finish = minutes(complex.start_time);
+        const duration = finish > start ? finish - start : 1;
+        const linkedOffset = complex.depends_on_complex_id
+          ? Math.max(0, Number(complex.start_after_minutes || 0) - duration)
+          : 0;
+        upgraded.activities.push({
+          id,
+          kind: 'briefing',
+          name: `Брифинг · ${complex.name}`,
+          venue: complex.venue,
+          start_time: complex.briefing_time,
+          duration_minutes: duration,
+          depends_on_complex_id: complex.depends_on_complex_id || null,
+          start_after_minutes: linkedOffset,
+        });
+        activityIds.add(id);
+      }
+      complex.briefing_time = null;
+      complex.briefing_before_minutes = null;
+    }
+  }
+  return upgraded;
+}
+
 function validateDependencies(config) {
   const complexes = config.categories.flatMap(category => category.complexes);
   const byId = new Map(complexes.map(complex => [complex.id, complex]));
@@ -82,14 +116,27 @@ function resolveDependentTimes(config, registrations) {
     resolvedIds.add(item.complex.id);
   }
   for (const item of complexes) resolve(item);
+  for (const activity of resolved.activities || []) {
+    if (!activity.depends_on_complex_id) continue;
+    const parent = byId.get(activity.depends_on_complex_id);
+    if (!parent) throw invalid(`«${activity.name}»: опорный комплекс не найден. Сначала снимите закрепление`);
+    resolve(parent);
+    const parentCount = parent.category.planned_count ?? registrations.filter(row => row.category === parent.category.category_key && row.status === 'registered' && row.payment_status === 'paid').length;
+    const parentHeats = Math.ceil(parentCount / parent.complex.lanes);
+    const parentEnd = minutes(parent.complex.start_time) + parentHeats * parent.complex.duration_minutes + Math.max(0, parentHeats - 1) * parent.complex.gap_minutes + parent.complex.break_after_minutes;
+    const nextStart = parentEnd + activity.start_after_minutes;
+    if (nextStart >= 1440) throw invalid(`«${activity.name}» после опорного комплекса выходит за пределы дня`);
+    activity.start_time = clock(nextStart);
+  }
   return resolved;
 }
 
 function normalizeSchedule(input, competition) {
+  if (input?.activities !== undefined && (!Array.isArray(input.activities) || input.activities.length > 100)) throw invalid('Допускается до 100 пунктов расписания');
+  input = upgradeBriefings(input);
   if (!Array.isArray(input?.categories) || input.categories.length > 30) throw invalid('Некорректный список категорий');
   const keys = new Set();
   const ids = new Set();
-  if (input.activities !== undefined && (!Array.isArray(input.activities) || input.activities.length > 100)) throw invalid('Допускается до 100 пунктов расписания');
   return { categories: input.categories.map(category => {
     if (!competition.categories.some(item => item.key === category?.category_key) || keys.has(category.category_key)) throw invalid('Категория отсутствует в мероприятии или повторяется');
     keys.add(category.category_key);
@@ -121,10 +168,11 @@ function normalizeSchedule(input, competition) {
       }),
     };
   }), activities: (input.activities || []).map(activity => {
-    if (!['break', 'awards'].includes(activity?.kind)) throw invalid('Некорректный тип пункта расписания');
+    if (!['briefing', 'break', 'awards'].includes(activity?.kind)) throw invalid('Некорректный тип пункта расписания');
     if (typeof activity.id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(activity.id) || ids.has(activity.id)) throw invalid('Некорректный или повторяющийся пункт расписания');
     ids.add(activity.id);
-    return { id:activity.id, kind:activity.kind, name:text(activity.name, 'Название', 120), venue:text(activity.venue, 'Место проведения', 120), start_time:time(activity.start_time, 'Начало'), duration_minutes:integer(activity.duration_minutes, 'Длительность', 1, 240) };
+    const dependsOn = dependencyId(activity.depends_on_complex_id);
+    return { id:activity.id, kind:activity.kind, name:text(activity.name, 'Название', 120), venue:text(activity.venue, 'Место проведения', 120), start_time:activity.start_time ? time(activity.start_time, 'Начало') : dependsOn ? '00:00' : time(activity.start_time, 'Начало'), duration_minutes:integer(activity.duration_minutes, 'Длительность', 1, activity.kind === 'briefing' ? 1440 : 240), depends_on_complex_id:dependsOn, start_after_minutes:dependsOn ? integer(activity.start_after_minutes ?? 0, 'Интервал после опорного комплекса', 0, 1440) : 0 };
   }) };
 }
 
@@ -198,7 +246,7 @@ async function readSchedule(eventKey, executor = pool) {
   const row = (await executor.query('SELECT * FROM competition_schedules WHERE event_key=$1', [competition.event_key])).rows[0];
   const registrations = (await executor.query(`SELECT id, team_name, category, created_at, status, payment_status
     FROM competition_registrations WHERE event_key=$1 AND status='registered' AND payment_status='paid' ORDER BY created_at DESC, id DESC`, [competition.event_key])).rows;
-  const config = row?.config || { categories: [] };
+  const config = normalizeSchedule(row?.config || { categories: [] }, competition);
   const sourceHash = createHash('sha256').update(JSON.stringify({ config, name:competition.name, date:competition.date, categories:competition.categories, registrations })).digest('hex');
   const results = (await executor.query('SELECT state,revision FROM competition_results WHERE event_key=$1', [competition.event_key])).rows[0];
   const editableConfig = {...config,categories:config.categories.map(category=>({...category,complexes:category.complexes.map((complex,index)=>{
@@ -248,7 +296,8 @@ async function generateSchedule(eventKey, input) {
 }
 
 function planActivity(current, activity) {
-  const config = normalizeSchedule({...current.config, activities:[...(current.config.activities || []).filter(item => item.id !== activity.id),activity]}, current.competition);
+  const registrations = Object.entries(current.confirmed_counts).flatMap(([category,count]) => Array.from({length:count},(_,i) => ({id:String(i+1),category,status:'registered',payment_status:'paid',created_at:'2000-01-01'})));
+  const config = resolveDependentTimes(normalizeSchedule({...current.config, activities:[...(current.config.activities || []).filter(item => item.id !== activity.id),activity]}, current.competition), registrations);
   for (const category of config.categories) for (const complex of category.complexes) {
     const original=current.config.categories.flatMap(item=>item.complexes).find(item=>item.id===complex.id);
     if (original?.scoring) complex.scoring=original.scoring;
@@ -276,7 +325,6 @@ function planActivity(current, activity) {
     shifts.push({id:block.id, name:[block.category_name,block.name].filter(Boolean).join(' · '), before:block.start_time, after:target.start_time, briefing_before:block.briefing_time, briefing_after:target.briefing_time || null, minutes:delta});
   }
   // Counts suffice for timing; participant assignments remain untouched until grid generation.
-  const registrations = Object.entries(current.confirmed_counts).flatMap(([category,count]) => Array.from({length:count},(_,i) => ({id:String(i+1),category,status:'registered',payment_status:'paid',created_at:'2000-01-01'})));
   const preview = buildSchedule(config,current.competition,registrations);
   return {config, shifts, errors:preview.errors, end_before:current.preview.end_time, end_after:preview.end_time, source_hash:current.source_hash};
 }

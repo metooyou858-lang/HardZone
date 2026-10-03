@@ -10,12 +10,12 @@ export type CompetitionComplex = {
   scoring?: {components:ResultComponent[];is_final:boolean}; scoring_locked?:boolean;
 };
 export type CategorySchedule = { category_key: string; planned_count: number | null; complexes: CompetitionComplex[] };
-export type ScheduleActivity = {id:string; kind:"break"|"awards"; name:string; venue:string; start_time:string; duration_minutes:number};
+export type ScheduleActivity = {id:string; kind:"briefing"|"break"|"awards"; name:string; venue:string; start_time:string; duration_minutes:number; depends_on_complex_id:string|null; start_after_minutes:number};
 export type ScheduleConfig = { categories: CategorySchedule[]; activities?:ScheduleActivity[] };
 export type ActivityPreview = {config:ScheduleConfig; shifts:{id:string;name:string;before:string;after:string;briefing_before:string|null;briefing_after:string|null;minutes:number}[]; errors:string[]; end_before:string|null;end_after:string|null;source_hash:string};
 export type Heat = { number: number; start_time: string; end_time: string; slots: { lane: number; registration_id: string | null; team_name: string | null }[] };
 export type ScheduleBlock = CompetitionComplex & {
-  kind?: "break"|"awards";
+  kind?: "briefing"|"break"|"awards";
   category_key: string; category_name: string; complex_number: number; planned_count: number; confirmed_count: number;
   assignment: "registration" | "results" | "rating"; end_time: string; available_after: string; heats: Heat[];
 };
