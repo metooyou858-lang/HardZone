@@ -65,69 +65,53 @@ function upgradeBriefings(input) {
 }
 
 function validateDependencies(config) {
-  const complexes = config.categories.flatMap(category => category.complexes);
-  const byId = new Map(complexes.map(complex => [complex.id, complex]));
-  for (const complex of complexes) {
-    if (!complex.depends_on_complex_id) continue;
-    if (!byId.has(complex.depends_on_complex_id)) throw invalid(`«${complex.name}»: опорный блок не найден. Сначала снимите зависимость`);
-    if (complex.depends_on_complex_id === complex.id) throw invalid(`«${complex.name}»: блок не может зависеть сам от себя`);
+  const blocks = [...config.categories.flatMap(category => category.complexes), ...(config.activities || [])];
+  const byId = new Map(blocks.map(block => [block.id, block]));
+  for (const block of blocks) {
+    if (!block.depends_on_complex_id) continue;
+    if (!byId.has(block.depends_on_complex_id)) throw invalid(`«${block.name}»: опорный блок не найден. Сначала снимите зависимость`);
+    if (block.depends_on_complex_id === block.id) throw invalid(`«${block.name}»: блок не может зависеть сам от себя`);
   }
   const visiting = new Set();
   const visited = new Set();
-  function visit(complex) {
-    if (visited.has(complex.id)) return;
-    if (visiting.has(complex.id)) throw invalid('Зависимости времени образуют замкнутую цепочку');
-    visiting.add(complex.id);
-    if (complex.depends_on_complex_id) visit(byId.get(complex.depends_on_complex_id));
-    visiting.delete(complex.id);
-    visited.add(complex.id);
+  function visit(block) {
+    if (visited.has(block.id)) return;
+    if (visiting.has(block.id)) throw invalid('Зависимости времени образуют замкнутую цепочку');
+    visiting.add(block.id);
+    if (block.depends_on_complex_id) visit(byId.get(block.depends_on_complex_id));
+    visiting.delete(block.id);
+    visited.add(block.id);
   }
-  for (const complex of complexes) visit(complex);
+  for (const block of blocks) visit(block);
 }
 
 function resolveDependentTimes(config, registrations) {
   const resolved = structuredClone(config);
-  const complexes = resolved.categories.flatMap(category => category.complexes.map(complex => ({ complex, category })));
-  const byId = new Map(complexes.map(item => [item.complex.id, item]));
+  const blocks = [
+    ...resolved.categories.flatMap(category => category.complexes.map(block => ({ block, category, kind:'complex' }))),
+    ...(resolved.activities || []).map(block => ({ block, category:null, kind:'activity' })),
+  ];
+  const byId = new Map(blocks.map(item => [item.block.id, item]));
   const resolvedIds = new Set();
+  function endOf(item) {
+    const start = minutes(item.block.start_time);
+    if (item.kind === 'activity') return start + item.block.duration_minutes;
+    const count = item.category.planned_count ?? registrations.filter(row => row.category === item.category.category_key && row.status === 'registered' && row.payment_status === 'paid').length;
+    const heats = Math.ceil(count / item.block.lanes);
+    return start + heats * item.block.duration_minutes + Math.max(0, heats - 1) * item.block.gap_minutes + item.block.break_after_minutes;
+  }
   function resolve(item) {
-    if (resolvedIds.has(item.complex.id)) return;
-    const parent = item.complex.depends_on_complex_id ? byId.get(item.complex.depends_on_complex_id) : null;
+    if (resolvedIds.has(item.block.id)) return;
+    const parent = item.block.depends_on_complex_id ? byId.get(item.block.depends_on_complex_id) : null;
     if (parent) {
       resolve(parent);
-      const parentCount = parent.category.planned_count ?? registrations.filter(row => row.category === parent.category.category_key && row.status === 'registered' && row.payment_status === 'paid').length;
-      const parentHeats = Math.ceil(parentCount / parent.complex.lanes);
-      const parentStart = minutes(parent.complex.start_time);
-      const parentEnd = parentStart + parentHeats * parent.complex.duration_minutes + Math.max(0, parentHeats - 1) * parent.complex.gap_minutes + parent.complex.break_after_minutes;
-      const nextStart = parentEnd + item.complex.start_after_minutes;
-      if (nextStart >= 1440) throw invalid(`«${item.complex.name}» после опорного блока выходит за пределы дня`);
-      const delta = nextStart - minutes(item.complex.start_time);
-      item.complex.start_time = clock(nextStart);
-      if (item.complex.briefing_before_minutes != null) {
-        const briefing = nextStart - item.complex.briefing_before_minutes;
-        if (briefing < 0) throw invalid(`«${item.complex.name}»: брифинг выходит за пределы дня`);
-        item.complex.briefing_time = clock(briefing);
-      } else if (item.complex.briefing_time) {
-        const briefing = minutes(item.complex.briefing_time) + delta;
-        if (briefing < 0 || briefing >= 1440) throw invalid(`«${item.complex.name}»: время брифинга после смещения выходит за пределы дня`);
-        item.complex.briefing_time = clock(briefing);
-      }
+      const nextStart = endOf(parent) + item.block.start_after_minutes;
+      if (nextStart >= 1440) throw invalid(`«${item.block.name}» после опорного блока выходит за пределы дня`);
+      item.block.start_time = clock(nextStart);
     }
-    resolvedIds.add(item.complex.id);
+    resolvedIds.add(item.block.id);
   }
-  for (const item of complexes) resolve(item);
-  for (const activity of resolved.activities || []) {
-    if (!activity.depends_on_complex_id) continue;
-    const parent = byId.get(activity.depends_on_complex_id);
-    if (!parent) throw invalid(`«${activity.name}»: опорный комплекс не найден. Сначала снимите закрепление`);
-    resolve(parent);
-    const parentCount = parent.category.planned_count ?? registrations.filter(row => row.category === parent.category.category_key && row.status === 'registered' && row.payment_status === 'paid').length;
-    const parentHeats = Math.ceil(parentCount / parent.complex.lanes);
-    const parentEnd = minutes(parent.complex.start_time) + parentHeats * parent.complex.duration_minutes + Math.max(0, parentHeats - 1) * parent.complex.gap_minutes + parent.complex.break_after_minutes;
-    const nextStart = parentEnd + activity.start_after_minutes;
-    if (nextStart >= 1440) throw invalid(`«${activity.name}» после опорного комплекса выходит за пределы дня`);
-    activity.start_time = clock(nextStart);
-  }
+  for (const item of blocks) resolve(item);
   return resolved;
 }
 
@@ -172,7 +156,7 @@ function normalizeSchedule(input, competition) {
     if (typeof activity.id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(activity.id) || ids.has(activity.id)) throw invalid('Некорректный или повторяющийся пункт расписания');
     ids.add(activity.id);
     const dependsOn = dependencyId(activity.depends_on_complex_id);
-    return { id:activity.id, kind:activity.kind, name:text(activity.name, 'Название', 120), venue:text(activity.venue, 'Место проведения', 120), start_time:activity.start_time ? time(activity.start_time, 'Начало') : dependsOn ? '00:00' : time(activity.start_time, 'Начало'), duration_minutes:integer(activity.duration_minutes, 'Длительность', 1, activity.kind === 'briefing' ? 1440 : 240), depends_on_complex_id:dependsOn, start_after_minutes:dependsOn ? integer(activity.start_after_minutes ?? 0, 'Интервал после опорного комплекса', 0, 1440) : 0 };
+    return { id:activity.id, kind:activity.kind, name:text(activity.name, 'Название', 120), venue:text(activity.venue, 'Место проведения', 120), start_time:activity.start_time ? time(activity.start_time, 'Начало') : dependsOn ? '00:00' : time(activity.start_time, 'Начало'), duration_minutes:integer(activity.duration_minutes, 'Длительность', 1, activity.kind === 'briefing' ? 1440 : 240), depends_on_complex_id:dependsOn, start_after_minutes:dependsOn ? integer(activity.start_after_minutes ?? 0, 'Интервал после опорного блока', 0, 1440) : 0 };
   }) };
 }
 

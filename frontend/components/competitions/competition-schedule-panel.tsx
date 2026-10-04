@@ -140,22 +140,30 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
   const editorExistingIndex = editor ? editorCategory?.complexes.findIndex(item => item.id === editor.complex.id) ?? -1 : -1;
   const editorComplexNumber = editor ? (editorExistingIndex >= 0 ? editorExistingIndex + 1 : (editorCategory?.complexes.length || 0) + 1) : 0;
   const canRedistribute = editorComplexNumber > 1;
-  const complexOptions = draft.categories.flatMap(category => category.complexes.map(complex => ({
+  const blockOptions = [...draft.categories.flatMap(category => category.complexes.map(complex => ({
     id:complex.id,
     name:`${data?.competition.categories.find(item => item.key === category.category_key)?.name || category.category_key} · ${complex.name}`,
     dependsOn:complex.depends_on_complex_id,
-  })));
-  const dependencyOptions = editor ? complexOptions.filter(option => {
-    if (option.id === editor.complex.id) return false;
+  }))), ...(draft.activities || []).map(activity => ({
+    id:activity.id,
+    name:`${{briefing:"Брифинг",break:"Перерыв",awards:"Награждение"}[activity.kind]} · ${activity.name}`,
+    dependsOn:activity.depends_on_complex_id,
+  }))];
+  function availableDependencies(currentId:string) {
+    return blockOptions.filter(option => {
+    if (option.id === currentId) return false;
     let current: typeof option | undefined = option;
     const visited = new Set<string>();
     while (current?.dependsOn && !visited.has(current.id)) {
-      if (current.dependsOn === editor.complex.id) return false;
+      if (current.dependsOn === currentId) return false;
       visited.add(current.id);
-      current = complexOptions.find(item => item.id === current?.dependsOn);
+      current = blockOptions.find(item => item.id === current?.dependsOn);
     }
     return true;
-  }) : [];
+  });
+  }
+  const dependencyOptions = editor ? availableDependencies(editor.complex.id) : [];
+  const activityDependencyOptions = activityEditor ? availableDependencies(activityEditor.item.id) : [];
   const dependencyBlock = editor?.complex.depends_on_complex_id ? data?.preview.blocks.find(block => block.id === editor.complex.depends_on_complex_id) : undefined;
   const calculatedStart = dependencyBlock ? addMinutes(dependencyBlock.available_after, editor?.complex.start_after_minutes || 0) : null;
   const activityDependencyBlock = activityEditor?.item.depends_on_complex_id ? data?.preview.blocks.find(block => block.id === activityEditor.item.depends_on_complex_id) : undefined;
@@ -210,11 +218,11 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <label className="min-w-0 text-xs">Название<input className={inputClass} required maxLength={120} value={activityEditor.item.name} onChange={e => updateActivity({name:e.target.value})} /></label>
         <label className="min-w-0 text-xs">Место / площадка<input className={inputClass} required maxLength={120} list="schedule-venues" value={activityEditor.item.venue} onChange={e => updateActivity({venue:e.target.value})} /><datalist id="schedule-venues">{Array.from(new Set(data?.preview.blocks.map(item => item.venue))).map(venue => <option key={venue} value={venue} />)}</datalist></label>
-        <label className="min-w-0 text-xs">Расчёт времени<select className={inputClass} value={activityEditor.item.depends_on_complex_id || ""} onChange={e => updateActivity({depends_on_complex_id:e.target.value || null,start_after_minutes:0})}><option className="bg-white text-black" value="">Указать время вручную</option>{complexOptions.map(option => <option className="bg-white text-black" key={option.id} value={option.id}>После: {option.name}</option>)}</select></label>
-        {activityEditor.item.depends_on_complex_id ? <label className="min-w-0 text-xs">Интервал после опорного комплекса, мин<input className={inputClass} type="number" min={0} max={1440} step={1} required value={Number.isNaN(activityEditor.item.start_after_minutes) ? "" : activityEditor.item.start_after_minutes} onChange={e => updateActivity({start_after_minutes:e.target.value === "" ? NaN : Number(e.target.value)})} /></label> : <label className="min-w-0 text-xs">Время начала<input className={inputClass} type="time" required value={activityEditor.item.start_time} onChange={e => updateActivity({start_time:e.target.value})} /></label>}
+        <label className="min-w-0 text-xs">Расчёт времени<select className={inputClass} value={activityEditor.item.depends_on_complex_id || ""} onChange={e => updateActivity({depends_on_complex_id:e.target.value || null,start_after_minutes:0})}><option className="bg-white text-black" value="">Указать время вручную</option>{activityDependencyOptions.map(option => <option className="bg-white text-black" key={option.id} value={option.id}>После: {option.name}</option>)}</select></label>
+        {activityEditor.item.depends_on_complex_id ? <label className="min-w-0 text-xs">Интервал после опорного блока, мин<input className={inputClass} type="number" min={0} max={1440} step={1} required value={Number.isNaN(activityEditor.item.start_after_minutes) ? "" : activityEditor.item.start_after_minutes} onChange={e => updateActivity({start_after_minutes:e.target.value === "" ? NaN : Number(e.target.value)})} /></label> : <label className="min-w-0 text-xs">Время начала<input className={inputClass} type="time" required value={activityEditor.item.start_time} onChange={e => updateActivity({start_time:e.target.value})} /></label>}
         <label className="min-w-0 text-xs">Длительность, мин<input className={inputClass} type="number" min={1} max={activityEditor.item.kind === "briefing" ? 1440 : 240} step={1} required value={Number.isNaN(activityEditor.item.duration_minutes) ? "" : activityEditor.item.duration_minutes} onChange={e => updateActivity({duration_minutes:e.target.value === "" ? NaN : Number(e.target.value)})} /></label>
       </div>
-      {activityEditor.item.depends_on_complex_id && <p className="text-xs text-[var(--text-muted)]">{activityDependencyBlock ? calculatedActivityStart ? `Блок начнётся в ${calculatedActivityStart}. При переносе опорного комплекса время изменится автоматически.` : "Рассчитанное время выходит за пределы дня. Уменьшите интервал." : "После сохранения время будет рассчитано от окончания выбранного комплекса."}</p>}
+      {activityEditor.item.depends_on_complex_id && <p className="text-xs text-[var(--text-muted)]">{activityDependencyBlock ? calculatedActivityStart ? `Блок начнётся в ${calculatedActivityStart}. При переносе опорного блока время изменится автоматически.` : "Рассчитанное время выходит за пределы дня. Уменьшите интервал." : "После сохранения время будет рассчитано от окончания выбранного блока."}</p>}
       {activityPreview && <div aria-live="polite" className="space-y-3 rounded-lg border border-[var(--line-soft)] p-4 text-sm">
         <p className="font-medium">{activityPreview.shifts.length ? "После сохранения изменится время:" : "Время других пунктов остаётся прежним."}</p>
         {activityPreview.shifts.map(shift => <div key={shift.id} className="flex flex-wrap justify-between gap-2 border-b border-[var(--line-soft)] pb-2"><span className="min-w-0 break-words">{shift.name}{shift.briefing_before && <span className="block text-xs text-[var(--text-muted)]">Брифинг: {shift.briefing_before} → {shift.briefing_after}</span>}</span><span>{shift.before} → <strong>{shift.after}</strong> (+{shift.minutes} мин)</span></div>)}

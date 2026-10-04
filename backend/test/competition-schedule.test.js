@@ -71,6 +71,25 @@ test('briefings, breaks and awards can stay pinned after an anchor complex',()=>
   assert.deepEqual(grid.blocks.filter(item=>item.kind).map(item=>[item.kind,item.start_time]),[['briefing','10:20'],['break','10:35'],['awards','10:55']]);
 });
 
+test('a complex can follow a briefing and the whole mixed chain moves together',()=>{
+  const anchor=complex({name:'Комплекс 1',start_time:'09:00',break_after_minutes:5});
+  const briefing=activity({kind:'briefing',name:'Брифинг второго комплекса',start_time:'',duration_minutes:10,depends_on_complex_id:anchor.id,start_after_minutes:5});
+  const next=complex({name:'Комплекс 2',start_time:'',break_after_minutes:0,depends_on_complex_id:briefing.id,start_after_minutes:0});
+  const config={...plan([anchor,next],4),activities:[briefing]};
+  let grid=buildSchedule(normalizeSchedule(config,competition),competition,[]);
+  assert.deepEqual(Object.fromEntries(grid.blocks.map(item=>[item.name,item.start_time])),{'Комплекс 1':'09:00','Брифинг второго комплекса':'09:20','Комплекс 2':'09:30'});
+  anchor.start_time='10:00';
+  grid=buildSchedule(normalizeSchedule(config,competition),competition,[]);
+  assert.deepEqual(Object.fromEntries(grid.blocks.map(item=>[item.name,item.start_time])),{'Комплекс 1':'10:00','Брифинг второго комплекса':'10:20','Комплекс 2':'10:30'});
+});
+
+test('mixed complex and activity dependencies reject cycles',()=>{
+  const first=complex({briefing_time:null});
+  const briefing=activity({kind:'briefing',depends_on_complex_id:first.id,start_time:''});
+  first.depends_on_complex_id=briefing.id;
+  assert.throws(()=>buildSchedule(normalizeSchedule({...plan([first],4),activities:[briefing]},competition),competition,[]),/замкнутую цепочку/);
+});
+
 test('redistribution is optional per block and blocks without it keep registration order',()=>{
   const first=complex({start_time:'09:00',briefing_time:null,break_after_minutes:0});
   const second=complex({start_time:'10:00',briefing_time:null,break_after_minutes:0,redistribute_by_overall:false});
@@ -108,17 +127,6 @@ test('linked block validation rejects missing parents, self-links and cycles',()
   first.depends_on_complex_id=second.id;
   second.depends_on_complex_id=first.id;
   assert.throws(()=>buildSchedule(normalizeSchedule(plan([first,second],4),competition),competition,[]),/замкнутую цепочку/);
-});
-
-test('linked block briefing stays a fixed number of minutes before its first heat',()=>{
-  const first=complex({name:'Блок 1',start_time:'09:00',briefing_time:null,break_after_minutes:5});
-  const second=complex({name:'Блок 2',start_time:'',briefing_time:null,break_after_minutes:0,depends_on_complex_id:first.id,start_after_minutes:10,briefing_before_minutes:5});
-  const config=plan([first,second],4);
-  let grid=buildSchedule(normalizeSchedule(config,competition),competition,[]);
-  assert.deepEqual([grid.blocks[1].briefing_time,grid.blocks[1].start_time],['09:20','09:25']);
-  first.start_time='10:00';
-  grid=buildSchedule(normalizeSchedule(config,competition),competition,[]);
-  assert.deepEqual([grid.blocks[1].briefing_time,grid.blocks[1].start_time],['10:20','10:25']);
 });
 
 test('saving a moved parent persists recalculated descendants and protects referenced blocks',async()=>{
