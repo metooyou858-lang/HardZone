@@ -43,6 +43,14 @@ function countBeforeComplex(category, complex, registrations) {
   return count;
 }
 
+function configForSourceHash(config) {
+  const result = structuredClone(config);
+  for (const category of result.categories) for (const complex of category.complexes) {
+    if (complex.qualification_limit === null) delete complex.qualification_limit;
+  }
+  return result;
+}
+
 function upgradeBriefings(input) {
   const upgraded = structuredClone(input || {});
   if (upgraded.activities === undefined) upgraded.activities = [];
@@ -256,7 +264,7 @@ async function readSchedule(eventKey, executor = pool) {
   const registrations = (await executor.query(`SELECT id, team_name, category, created_at, status, payment_status
     FROM competition_registrations WHERE event_key=$1 AND status='registered' AND payment_status='paid' ORDER BY created_at DESC, id DESC`, [competition.event_key])).rows;
   const config = normalizeSchedule(row?.config || { categories: [] }, competition);
-  const sourceHash = createHash('sha256').update(JSON.stringify({ config, name:competition.name, date:competition.date, categories:competition.categories, registrations })).digest('hex');
+  const sourceHash = createHash('sha256').update(JSON.stringify({ config:configForSourceHash(config), name:competition.name, date:competition.date, categories:competition.categories, registrations })).digest('hex');
   const results = (await executor.query('SELECT state,revision FROM competition_results WHERE event_key=$1', [competition.event_key])).rows[0];
   const editableConfig = {...config,categories:config.categories.map(category=>({...category,complexes:category.complexes.map((complex,index)=>{
     const workout=results?.state.workouts[complex.id];
