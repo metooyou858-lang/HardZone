@@ -91,13 +91,24 @@ function seedResults(grid,state) {
   const result = structuredClone(grid);
   const blocks = result.blocks.filter(block=>!block.kind);
   for (const block of blocks) {
-    const redistributes = block.complex_number > 1 && block.redistribute_by_overall !== false;
+    delete block.qualification_error;
+    const previous=blocks.filter(item=>item.category_key===block.category_key && item.complex_number<block.complex_number).sort((a,b)=>a.complex_number-b.complex_number);
+    const hasQualification=previous.some(item=>item.qualification_limit!==null && item.qualification_limit!==undefined);
+    const redistributes = block.complex_number > 1 && (hasQualification || block.redistribute_by_overall !== false);
     if (!redistributes) continue;
-    const previous=blocks.filter(item=>item.category_key===block.category_key && item.complex_number<block.complex_number);
     const ready=previous.length && previous.every(item=>state.workouts[item.id]?.status==='confirmed');
-    const ranked=ready ? standings(blocks,state,block.category_key,block.complex_number-1).slice().reverse() : [];
     const slots=block.heats.flatMap(heat=>heat.slots);
-    if (ranked.length>slots.length) throw invalid('В следующем комплексе не хватает мест для команд');
+    let ranked=ready ? standings(blocks,state,block.category_key,block.complex_number-1) : [];
+    if (ready && hasQualification) {
+      const eligibleIds=new Set(roster(previous[previous.length-1]).map(item=>item.id));
+      if (eligibleIds.size) ranked=ranked.filter(item=>eligibleIds.has(item.id));
+      if (ranked.length<slots.length) block.qualification_error=`Нельзя заполнить строго ${slots.length} мест: в рейтинге осталось ${ranked.length} участников.`;
+      if (ranked.length>slots.length && ranked[slots.length-1]?.place===ranked[slots.length]?.place) block.qualification_error=`На границе отсева участники делят ${ranked[slots.length-1].place}-е место. Нужен дополнительный результат, чтобы определить строго ${slots.length} участников.`;
+      if (block.qualification_error) ranked=[];
+      else ranked=ranked.slice(0,slots.length);
+    }
+    ranked=ranked.slice().reverse();
+    if (!hasQualification && ranked.length>slots.length) throw invalid('В следующем комплексе не хватает мест для участников');
     slots.forEach((slot,index) => {slot.registration_id=ranked[index]?.id || null;slot.team_name=ranked[index]?.name || null;});
     block.assignment=ready ? 'rating' : 'results';
   }
@@ -190,6 +201,7 @@ async function guardScheduleChanges(eventKey,current,next,executor) {
       const workout=row.state.workouts[complex.id];
       const previous=current.config.categories.find(item=>item.category_key===category.category_key)?.complexes[index];
       if (hasEntries(workout) && Boolean(previous?.redistribute_by_overall) !== Boolean(complex.redistribute_by_overall)) throw invalid('Нельзя менять перераспределение блока после ввода результатов');
+      if (workout?.status==='confirmed' && (previous?.qualification_limit ?? null)!==(complex.qualification_limit ?? null)) throw invalid('Нельзя менять отсев после подтверждения результатов комплекса');
       if (workout?.status !== 'confirmed') continue;
       const target=next.categories.find(item=>item.category_key===category.category_key);
       if (target?.complexes[index]?.id!==complex.id) throw invalid('Нельзя удалить, перенести или изменить порядок комплекса с результатами или отметкой финала');

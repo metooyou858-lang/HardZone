@@ -6,7 +6,7 @@ export type CompetitionComplex = {
   id: string; name: string; start_time: string; briefing_time: string | null; venue: string;
   lanes: number; duration_minutes: number; gap_minutes: number; break_after_minutes: number;
   depends_on_complex_id: string | null; start_after_minutes: number; briefing_before_minutes: number | null;
-  redistribute_by_overall: boolean;
+  redistribute_by_overall: boolean; qualification_limit: number | null;
   scoring?: {components:ResultComponent[];is_final:boolean}; scoring_locked?:boolean;
 };
 export type CategorySchedule = { category_key: string; planned_count: number | null; complexes: CompetitionComplex[] };
@@ -17,7 +17,7 @@ export type Heat = { number: number; start_time: string; end_time: string; slots
 export type ScheduleBlock = CompetitionComplex & {
   kind?: "briefing"|"break"|"awards";
   category_key: string; category_name: string; complex_number: number; planned_count: number; confirmed_count: number;
-  assignment: "registration" | "results" | "rating"; end_time: string; available_after: string; heats: Heat[];
+  assignment: "registration" | "results" | "rating"; qualification_error?:string; end_time: string; available_after: string; heats: Heat[];
 };
 export type ScheduleGrid = { event_name: string; event_date: string | null; blocks: ScheduleBlock[]; errors: string[]; start_time: string | null; end_time: string | null; generated_at?: string };
 export type CompetitionSchedule = {

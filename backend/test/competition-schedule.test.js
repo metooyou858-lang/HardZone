@@ -7,7 +7,7 @@ const { createCompetitionRegistration } = require('../src/services/competition-r
 const { normalizeSchedule, buildSchedule, readSchedule, saveSchedule, generateSchedule, planActivity, previewActivity } = require('../src/services/competition-schedule');
 
 const competition = { name:'Соревнование',date:'2026-10-10',categories:[{key:'amateur',name:'Любители'},{key:'advanced',name:'Продвинутые'}] };
-const complex = (patch={}) => ({id:randomUUID(),name:'Комплекс 1',start_time:'09:00',briefing_time:null,venue:'Основной зал',lanes:4,duration_minutes:10,gap_minutes:3,break_after_minutes:15,depends_on_complex_id:null,start_after_minutes:0,briefing_before_minutes:null,...patch});
+const complex = (patch={}) => ({id:randomUUID(),name:'Комплекс 1',start_time:'09:00',briefing_time:null,venue:'Основной зал',lanes:4,duration_minutes:10,gap_minutes:3,break_after_minutes:15,depends_on_complex_id:null,start_after_minutes:0,briefing_before_minutes:null,qualification_limit:null,...patch});
 const plan = (complexes=[complex()],planned_count=null) => ({categories:[{category_key:'amateur',planned_count,complexes}]});
 const teams = Array.from({length:10},(_,i)=>({id:String(i+1),team_name:`Команда ${i+1}`,category:'amateur',created_at:new Date(2026,8,1,0,i),status:'registered',payment_status:'paid'}));
 const keys=[];
@@ -100,6 +100,19 @@ test('redistribution is optional per block and blocks without it keep registrati
   assert.deepEqual(grid.blocks.map(item=>item.assignment),['registration','registration','results']);
   assert.deepEqual(grid.blocks[1].heats.flatMap(heat=>heat.slots).map(slot=>slot.registration_id),grid.blocks[0].heats.flatMap(heat=>heat.slots).map(slot=>slot.registration_id));
   assert.ok(grid.blocks[2].heats.flatMap(heat=>heat.slots).every(slot=>slot.registration_id===null));
+});
+
+test('qualification reduces every following block and forces rating assignment',()=>{
+  const first=complex({name:'Отборочный',start_time:'09:00',briefing_time:null,break_after_minutes:0,qualification_limit:6});
+  const second=complex({name:'Полуфинал',start_time:'10:00',briefing_time:null,break_after_minutes:0,redistribute_by_overall:false,qualification_limit:4});
+  const third=complex({name:'Финал',start_time:'11:00',briefing_time:null,break_after_minutes:0,redistribute_by_overall:false});
+  const normalized=normalizeSchedule(plan([first,second,third],10),competition);
+  const grid=buildSchedule(normalized,competition,teams);
+  assert.deepEqual(grid.errors,[]);
+  assert.deepEqual(grid.blocks.map(item=>item.planned_count),[10,6,4]);
+  assert.deepEqual(grid.blocks.map(item=>item.assignment),['registration','results','results']);
+  assert.deepEqual(grid.blocks.map(item=>item.heats.length),[3,2,1]);
+  assert.ok(grid.blocks.slice(1).every(block=>block.heats.flatMap(heat=>heat.slots).every(slot=>slot.registration_id===null)));
 });
 
 test('linked block times follow chains and branches while a child offset moves only its descendants',()=>{

@@ -30,6 +30,19 @@ function dependencyId(value) {
   return value;
 }
 
+function participantCount(category, registrations) {
+  return category.planned_count ?? registrations.filter(row => row.category === category.category_key && row.status === 'registered' && row.payment_status === 'paid').length;
+}
+
+function countBeforeComplex(category, complex, registrations) {
+  let count = participantCount(category, registrations);
+  for (const item of category.complexes) {
+    if (item.id === complex.id) break;
+    if (item.qualification_limit !== null && item.qualification_limit !== undefined) count = Math.min(count, item.qualification_limit);
+  }
+  return count;
+}
+
 function upgradeBriefings(input) {
   const upgraded = structuredClone(input || {});
   if (upgraded.activities === undefined) upgraded.activities = [];
@@ -96,7 +109,7 @@ function resolveDependentTimes(config, registrations) {
   function endOf(item) {
     const start = minutes(item.block.start_time);
     if (item.kind === 'activity') return start + item.block.duration_minutes;
-    const count = item.category.planned_count ?? registrations.filter(row => row.category === item.category.category_key && row.status === 'registered' && row.payment_status === 'paid').length;
+    const count = countBeforeComplex(item.category, item.block, registrations);
     const heats = Math.ceil(count / item.block.lanes);
     return start + heats * item.block.duration_minutes + Math.max(0, heats - 1) * item.block.gap_minutes + item.block.break_after_minutes;
   }
@@ -148,6 +161,9 @@ function normalizeSchedule(input, competition) {
             ? integer(complex.briefing_before_minutes, `${label}, брифинг до первого захода`, 1, 1440)
             : null,
           redistribute_by_overall: index > 0 && complex.redistribute_by_overall !== false,
+          qualification_limit: complex.qualification_limit === null || complex.qualification_limit === '' || complex.qualification_limit === undefined
+            ? null
+            : integer(complex.qualification_limit, `${label}, количество участников после отсева`, 1, 1000),
         };
       }),
     };
@@ -169,10 +185,12 @@ function buildSchedule(config, competition, registrations) {
     const categoryName = competition.categories.find(item => item.key === category.category_key)?.name || category.category_key;
     const teams = registrations.filter(row => row.category === category.category_key && row.status === 'registered' && row.payment_status === 'paid')
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at) || (BigInt(a.id) < BigInt(b.id) ? 1 : -1));
-    const count = category.planned_count ?? teams.length;
-    if (category.complexes.length && count < teams.length) errors.push(`${categoryName}: запланировано ${count} мест, но уже оплачено ${teams.length} команд`);
-    if (category.complexes.length && count === 0) errors.push(`${categoryName}: нет оплаченных команд. Укажите плановое количество для расчёта времени`);
+    const initialCount = participantCount(category, registrations);
+    if (category.complexes.length && initialCount < teams.length) errors.push(`${categoryName}: запланировано ${initialCount} мест, но уже оплачено ${teams.length} участников`);
+    if (category.complexes.length && initialCount === 0) errors.push(`${categoryName}: нет оплаченных участников. Укажите плановое количество для расчёта времени`);
     let previousEnd = null;
+    let count = initialCount;
+    let qualificationActive = false;
     for (const [index, complex] of category.complexes.entries()) {
       const start = minutes(complex.start_time);
       const occupiedFrom = complex.briefing_time ? minutes(complex.briefing_time) : start;
@@ -190,16 +208,23 @@ function buildSchedule(config, competition, registrations) {
         const places = heatIndex === 0 ? count % complex.lanes || complex.lanes : complex.lanes;
         const heatStart = start + heatIndex * (complex.duration_minutes + complex.gap_minutes);
         const slots = Array.from({ length: places }, (_, laneIndex) => {
-          const team = complex.redistribute_by_overall === false || index === 0 ? teams[offset + laneIndex] : null;
+          const redistribute = qualificationActive || (index > 0 && complex.redistribute_by_overall !== false);
+          const team = redistribute ? null : teams[offset + laneIndex];
           return { lane: laneIndex + 1, registration_id: team?.id || null, team_name: team?.team_name || null };
         });
         offset += places;
         return { number: heatIndex + 1, start_time: clock(heatStart), end_time: clock(heatStart + complex.duration_minutes), slots };
       });
       blocks.push({ ...complex, category_key: category.category_key, category_name: categoryName, complex_number: index + 1,
-        redistribute_by_overall: index > 0 && complex.redistribute_by_overall !== false,
-        planned_count: count, confirmed_count: teams.length, assignment: index > 0 && complex.redistribute_by_overall !== false ? 'results' : 'registration',
+        redistribute_by_overall: qualificationActive || (index > 0 && complex.redistribute_by_overall !== false),
+        planned_count: count, confirmed_count: teams.length, assignment: qualificationActive || (index > 0 && complex.redistribute_by_overall !== false) ? 'results' : 'registration',
         end_time: clock(end), available_after: clock(occupiedTo), heats, occupied_from: occupiedFrom, occupied_to: occupiedTo });
+      if (complex.qualification_limit !== null) {
+        if (complex.qualification_limit >= count) errors.push(`${label}: отсев должен уменьшать количество участников — сейчас в блоке ${count}`);
+        if (complex.qualification_limit > teams.length) errors.push(`${label}: нельзя оставить ${complex.qualification_limit} участников — оплачено только ${teams.length}`);
+        count = Math.min(count, complex.qualification_limit);
+        qualificationActive = true;
+      }
     }
   }
   for (const activity of config.activities || []) {

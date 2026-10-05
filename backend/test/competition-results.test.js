@@ -92,6 +92,39 @@ test('only marked block is redistributed by cumulative results of all previous b
   assert.equal(ready.blocks[2].assignment,'rating');
 });
 
+test('qualification keeps strictly N leaders by final standings rules and does not break an absolute boundary tie',()=>{
+  const entrants=teams.slice(0,4);
+  const firstSlots=entrants.map((team,index)=>({registration_id:team.id,team_name:team.name,lane:index+1}));
+  const nextSlots=firstSlots.slice(0,2).map(slot=>({...slot,registration_id:null,team_name:null}));
+  const blocks=[
+    {id:'qualifier',name:'Отборочный',category_key:'cat',complex_number:1,redistribute_by_overall:false,qualification_limit:2,heats:[{number:1,slots:firstSlots}]},
+    {id:'final',name:'Финал',category_key:'cat',complex_number:2,redistribute_by_overall:true,qualification_limit:null,heats:[{number:1,slots:nextSlots}]},
+  ];
+  const workout=values=>({status:'confirmed',components:[config],entries:Object.fromEntries(entrants.map((team,index)=>[team.id,[values[index]]]))});
+  const seeded=seedResults({blocks},{workouts:{qualifier:workout([40,30,20,10])}});
+  assert.deepEqual(seeded.blocks[1].heats[0].slots.map(slot=>slot.registration_id),['2','1']);
+  assert.equal(seeded.blocks[1].qualification_error,undefined);
+  const tied=seedResults({blocks},{workouts:{qualifier:workout([40,30,30,10])}});
+  assert.ok(tied.blocks[1].heats[0].slots.every(slot=>slot.registration_id===null));
+  assert.match(tied.blocks[1].qualification_error,/делят 2-е место/);
+});
+
+test('a later qualification ranks only participants who survived the previous cut',()=>{
+  const entrants=teams.slice(0,4);
+  const slots=(count,filled=true)=>entrants.slice(0,count).map((team,index)=>({registration_id:filled?team.id:null,team_name:filled?team.name:null,lane:index+1}));
+  const blocks=[
+    {id:'first-cut',name:'Первый отсев',category_key:'cat',complex_number:1,redistribute_by_overall:false,qualification_limit:3,heats:[{number:1,slots:slots(4)}]},
+    {id:'second-cut',name:'Второй отсев',category_key:'cat',complex_number:2,redistribute_by_overall:true,qualification_limit:2,heats:[{number:1,slots:slots(3,false)}]},
+    {id:'final-cut',name:'Финал',category_key:'cat',complex_number:3,redistribute_by_overall:true,qualification_limit:null,heats:[{number:1,slots:slots(2,false)}]},
+  ];
+  const first={status:'confirmed',components:[config],entries:{1:[40],2:[30],3:[20],4:[10]}};
+  const second={status:'confirmed',components:[config],entries:{1:[80],2:[90],3:[100]}};
+  const seeded=seedResults({blocks},{workouts:{'first-cut':first,'second-cut':second}});
+  assert.deepEqual(seeded.blocks[1].heats[0].slots.map(slot=>slot.registration_id),['3','2','1']);
+  assert.deepEqual(new Set(seeded.blocks[2].heats[0].slots.map(slot=>slot.registration_id)),new Set(['1','3']));
+  assert.ok(!seeded.blocks[2].heats[0].slots.some(slot=>slot.registration_id==='4'));
+});
+
 test('draft results and a final marker do not lock schedule editing, confirmed results do', async()=>{
   const first={id:'first'}, second={id:'second'};
   const current={config:{categories:[{category_key:'cat',complexes:[first,second]}]}};
