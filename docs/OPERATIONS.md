@@ -21,12 +21,26 @@ ssh -i "$HOME\.ssh\hardzone_deploy" -o ConnectTimeout=10 root@79.137.162.55 "ech
 
 ## Deploy
 
-Main production deploy from Windows:
+Frontend всегда собирается в отдельном release-каталоге. Рабочая `.next` переключается только после успешных `npm ci`, `next build` и проверки `prerender-manifest.json`. Предыдущие сборка и исходники сохраняются в `/srv/HardZone/.releases/` и автоматически возвращаются, если PM2 не запускается или локальный health-check не проходит.
+
+Точечная frontend-правка — основной режим для feature/worktree-веток. Перечисляются все изменённые frontend-файлы; release создаётся поверх текущих production-исходников, поэтому соседние модули не откатываются:
 
 ```powershell
-.\deploy.ps1 --build-frontend --restart-frontend
+.\deploy.ps1 frontend/app/competition/results/page.tsx --build-frontend --restart-frontend
+```
+
+Полная замена frontend разрешена только из проверенного канонического worktree, содержащего все production-модули. Она требует отдельного явного флага:
+
+```powershell
+.\deploy.ps1 --full-frontend --build-frontend --restart-frontend
+```
+
+Команда `--build-frontend --restart-frontend` без списка файлов и без `--full-frontend` намеренно заблокирована. Нельзя собирать Next.js непосредственно в `/srv/HardZone/frontend/.next`.
+
+Backend без frontend:
+
+```powershell
 .\deploy.ps1 --restart-backend
-.\deploy.ps1 --build-frontend --restart-frontend --restart-backend
 ```
 
 Migration + backend restart:
@@ -213,6 +227,8 @@ Staging:
 5. No new `ERROR` entries in recent backend/frontend logs.
 6. `.\scripts\smoke-production.ps1` passes.
 7. If payments changed, verify the CRM flow without creating manual receipts outside the existing AQSI flow.
+
+Для frontend дополнительно проверить, что использовался точечный режим либо осознанный `--full-frontend`, а путь сохранённой rollback-сборки напечатан скриптом.
 
 ## Staging
 

@@ -158,6 +158,14 @@ Record briefly:
 - what was not checked and why;
 - whether there is risk for AQSI, schedule, access rights, or database.
 
+## Frontend Deploy Choice
+
+- Feature/worktree меняет отдельные frontend-файлы: передавать их пути в `deploy.ps1`; скрипт строит изолированный patch-release поверх production.
+- Нужна полная синхронизация frontend: сначала убедиться, что выбран канонический worktree со всеми production-модулями, затем использовать явный `--full-frontend`.
+- Нужен только backend: не передавать frontend-флаги.
+- Нужен только перезапуск уже собранного frontend: использовать `--restart-frontend` без `--build-frontend`.
+- Никогда не запускать `next build` в рабочем `/srv/HardZone/frontend`: неудачная сборка частично перезаписывает `.next` и может уронить уже запущенный сайт.
+
 ## Product UI Rules
 
 - CRM - источник правды. Новые клиентские, тренерские, дневниковые и расписательные сценарии сначала появляются в CRM/backend-модели, затем отображаются в Telegram/MAX.

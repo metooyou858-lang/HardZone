@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# deploy.sh — деплой файлов HardZone на продовый сервер
+# deploy.sh — безопасный деплой файлов HardZone на production
 #
 # Использование:
-#   ./deploy.sh [--build-frontend] [--restart-frontend] [--restart-backend] [--migrate] [файл ...]
+#   ./deploy.sh [--build-frontend] [--full-frontend] [--restart-frontend]
+#               [--restart-backend] [--migrate] [файл ...]
 #
 # Примеры:
+#   ./deploy.sh frontend/app/competition/results/page.tsx --build-frontend --restart-frontend
+#   ./deploy.sh --full-frontend --build-frontend --restart-frontend
 #   ./deploy.sh --restart-backend
-#   ./deploy.sh --build-frontend --restart-frontend
-#   ./deploy.sh --build-frontend --restart-frontend --restart-backend
 #   ./deploy.sh backend/src/db/migrations/031_foo.sql --migrate --restart-backend
 
 set -euo pipefail
@@ -18,23 +19,75 @@ LOCAL_BASE="$(cd "$(dirname "$0")" && pwd)"
 SSH_OPTIONS=(-o ConnectTimeout=10)
 
 DO_BUILD_FRONTEND=false
+DO_FULL_FRONTEND=false
 DO_BUILD_BACKEND=false
 DO_RESTART_FRONTEND=false
 DO_RESTART_BACKEND=false
 DO_MIGRATE=false
 
 FILES=()
+FRONTEND_FILES=()
+OTHER_FILES=()
 
 for arg in "$@"; do
   case "$arg" in
     --build-frontend)   DO_BUILD_FRONTEND=true ;;
+    --full-frontend)    DO_FULL_FRONTEND=true ;;
     --build-backend)    DO_BUILD_BACKEND=true ;;
     --restart-frontend) DO_RESTART_FRONTEND=true ;;
     --restart-backend)  DO_RESTART_BACKEND=true ;;
     --migrate)          DO_MIGRATE=true ;;
-    --*)                echo "Неизвестный флаг: $arg" && exit 1 ;;
+    --*)                echo "Неизвестный флаг: $arg" >&2 && exit 1 ;;
     *)                  FILES+=("$arg") ;;
   esac
+done
+
+for file in "${FILES[@]}"; do
+  if [[ "$file" == frontend/* ]]; then
+    FRONTEND_FILES+=("$file")
+  else
+    OTHER_FILES+=("$file")
+  fi
+done
+
+if [ "$DO_FULL_FRONTEND" = true ] && [ "$DO_BUILD_FRONTEND" = false ]; then
+  echo "ERROR: --full-frontend используется только вместе с --build-frontend." >&2
+  exit 2
+fi
+
+if [ "$DO_BUILD_FRONTEND" = true ] && [ "$DO_RESTART_FRONTEND" = false ]; then
+  echo "ERROR: frontend-сборка должна завершаться атомарным переключением: добавьте --restart-frontend." >&2
+  exit 2
+fi
+
+if [ "$DO_FULL_FRONTEND" = true ] && [ ${#FRONTEND_FILES[@]} -gt 0 ]; then
+  echo "ERROR: не смешивайте --full-frontend с точечными frontend-файлами." >&2
+  exit 2
+fi
+
+if [ "$DO_BUILD_FRONTEND" = true ] && [ "$DO_FULL_FRONTEND" = false ] && [ ${#FRONTEND_FILES[@]} -eq 0 ]; then
+  cat >&2 <<'EOF'
+ERROR: полный frontend-деплой больше не запускается неявно.
+
+Для точечной правки перечислите frontend-файлы:
+  ./deploy.sh frontend/path/file.tsx --build-frontend --restart-frontend
+
+Для осознанной полной замены из канонического worktree добавьте --full-frontend:
+  ./deploy.sh --full-frontend --build-frontend --restart-frontend
+EOF
+  exit 2
+fi
+
+if [ ${#FRONTEND_FILES[@]} -gt 0 ] && [ "$DO_BUILD_FRONTEND" = false ]; then
+  echo "ERROR: frontend-файлы нельзя копировать без безопасной сборки; добавьте --build-frontend --restart-frontend." >&2
+  exit 2
+fi
+
+for file in "${FILES[@]}"; do
+  if [ ! -f "$LOCAL_BASE/$file" ]; then
+    echo "ERROR: файл не найден: $file" >&2
+    exit 2
+  fi
 done
 
 ssh_cmd() {
@@ -42,7 +95,7 @@ ssh_cmd() {
 }
 
 restart_frontend() {
-  ssh_cmd "su - app -c 'cd $REMOTE_BASE/frontend && pm2 delete hardzone-frontend >/dev/null 2>&1 || true; cd $REMOTE_BASE/frontend && pm2 start npm --name hardzone-frontend -- start -- -p 3001 -H 127.0.0.1; pm2 save'"
+  ssh_cmd "su - app -c 'cd $REMOTE_BASE/frontend && if pm2 describe hardzone-frontend >/dev/null 2>&1; then pm2 restart hardzone-frontend; else pm2 start npm --name hardzone-frontend -- start -- -p 3001 -H 127.0.0.1; fi'"
 }
 
 preflight_ssh() {
@@ -68,9 +121,7 @@ EOF
 
 sync_dir() {
   local local_dir="$1"
-  local remote_dir="$2"
-  shift 2
-  # tar excludes passed as remaining args, e.g. --exclude='frontend/.next'
+  shift
   echo "→ $local_dir/"
   tar -C "$LOCAL_BASE" "$@" -czf - "$local_dir" \
     | ssh "${SSH_OPTIONS[@]}" "$SSH_TARGET" \
@@ -82,17 +133,96 @@ scp_file() {
   local remote_path="$REMOTE_BASE/$local_path"
   echo "→ $local_path"
   ssh_cmd "mkdir -p '$(dirname "$remote_path")'"
-  scp "${SSH_OPTIONS[@]}" \
-    "$LOCAL_BASE/$local_path" \
-    "$SSH_TARGET:$remote_path"
+  scp "${SSH_OPTIONS[@]}" "$LOCAL_BASE/$local_path" "$SSH_TARGET:$remote_path"
 }
 
-# Отдельные файлы (для миграций и прочего)
-if [ ${#FILES[@]} -gt 0 ]; then
+prepare_frontend_release() {
+  local release_path="$1"
+
+  ssh_cmd "mkdir -p '$release_path'"
+  if [ "$DO_FULL_FRONTEND" = true ]; then
+    echo "=== Готовим полный frontend release ==="
+    tar -C "$LOCAL_BASE/frontend" \
+      --exclude="./.next*" \
+      --exclude="./node_modules" \
+      --exclude="./.env*" \
+      -czf - . \
+      | ssh "${SSH_OPTIONS[@]}" "$SSH_TARGET" "tar -C '$release_path' -xzf -"
+  else
+    echo "=== Готовим точечный frontend release поверх production ==="
+    ssh_cmd "rsync -a --exclude='.next*/' --exclude='node_modules/' --exclude='.env*' '$REMOTE_BASE/frontend/' '$release_path/'"
+    for file in "${FRONTEND_FILES[@]}"; do
+      local relative_path="${file#frontend/}"
+      local remote_path="$release_path/$relative_path"
+      echo "→ $file"
+      ssh_cmd "mkdir -p '$(dirname "$remote_path")'"
+      scp "${SSH_OPTIONS[@]}" "$LOCAL_BASE/$file" "$SSH_TARGET:$remote_path"
+    done
+  fi
+
+  ssh_cmd "if test -f '$REMOTE_BASE/frontend/.env.local'; then cp '$REMOTE_BASE/frontend/.env.local' '$release_path/.env.local'; fi; chown -R app:app '$release_path'"
+}
+
+build_frontend_release() {
+  local release_path="$1"
+  echo "=== Установка зависимостей frontend release ==="
+  ssh_cmd "su - app -c 'cd $release_path && npm ci'"
+  echo "=== Изолированная сборка frontend release ==="
+  ssh_cmd "su - app -c 'cd $release_path && npm run build'"
+  ssh_cmd "test -f '$release_path/.next/prerender-manifest.json'"
+}
+
+publish_frontend_release() {
+  local release_path="$1"
+  local release_id="$2"
+  local rollback_path="$REMOTE_BASE/.releases/frontend-rollback-$release_id"
+  local source_rollback_path="$REMOTE_BASE/.releases/frontend-source-rollback-$release_id"
+
+  echo "=== Резервная копия и синхронизация проверенных frontend-исходников ==="
+  ssh_cmd "mkdir -p '$source_rollback_path'; rsync -a --exclude='.next*/' --exclude='node_modules/' --exclude='.env*' '$REMOTE_BASE/frontend/' '$source_rollback_path/'; rsync -a --delete --exclude='.next*/' --exclude='node_modules/' --exclude='.env*' '$release_path/' '$REMOTE_BASE/frontend/'; chown -R app:app '$REMOTE_BASE/frontend'"
+
+  echo "=== Атомарное переключение frontend-сборки ==="
+  if ! ssh_cmd "set -e; test -f '$release_path/.next/prerender-manifest.json'; mv '$REMOTE_BASE/frontend/.next' '$rollback_path'; mv '$release_path/.next' '$REMOTE_BASE/frontend/.next'; chown -R app:app '$REMOTE_BASE/frontend/.next'"; then
+    echo "ERROR: не удалось переключить frontend-сборку; возвращаем предыдущие исходники." >&2
+    ssh_cmd "if test ! -d '$REMOTE_BASE/frontend/.next' && test -d '$rollback_path'; then mv '$rollback_path' '$REMOTE_BASE/frontend/.next'; chown -R app:app '$REMOTE_BASE/frontend/.next'; fi"
+    ssh_cmd "rsync -a --delete --exclude='.next*/' --exclude='node_modules/' --exclude='.env*' '$source_rollback_path/' '$REMOTE_BASE/frontend/'"
+    exit 30
+  fi
+
+  if ! restart_frontend; then
+    echo "ERROR: frontend не перезапустился, возвращаем предыдущую сборку." >&2
+    ssh_cmd "mv '$REMOTE_BASE/frontend/.next' '$release_path/.next.failed'; mv '$rollback_path' '$REMOTE_BASE/frontend/.next'; chown -R app:app '$REMOTE_BASE/frontend/.next'"
+    ssh_cmd "rsync -a --delete --exclude='.next*/' --exclude='node_modules/' --exclude='.env*' '$source_rollback_path/' '$REMOTE_BASE/frontend/'"
+    restart_frontend
+    exit 31
+  fi
+
+  if ! ssh_cmd "for attempt in 1 2 3 4 5 6 7 8 9 10; do if curl -fsS -o /dev/null 'http://127.0.0.1:3001/login'; then exit 0; fi; sleep 1; done; exit 1"; then
+    echo "ERROR: frontend не прошёл health-check, возвращаем предыдущую сборку." >&2
+    ssh_cmd "mv '$REMOTE_BASE/frontend/.next' '$release_path/.next.failed'; mv '$rollback_path' '$REMOTE_BASE/frontend/.next'; chown -R app:app '$REMOTE_BASE/frontend/.next'"
+    ssh_cmd "rsync -a --delete --exclude='.next*/' --exclude='node_modules/' --exclude='.env*' '$source_rollback_path/' '$REMOTE_BASE/frontend/'"
+    restart_frontend
+    exit 32
+  fi
+
+  ssh_cmd "su - app -c 'pm2 save'"
+  echo "Предыдущая frontend-сборка сохранена: $rollback_path"
+  echo "Предыдущие frontend-исходники сохранены: $source_rollback_path"
+
+  if [[ "$release_path" == "$REMOTE_BASE/.releases/frontend-"* ]]; then
+    ssh_cmd "rm -rf '$release_path'"
+  else
+    echo "ERROR: отказ от удаления неожиданного release-каталога: $release_path" >&2
+    exit 33
+  fi
+}
+
+# Отдельные не-frontend файлы (миграции, backend-конфигурация и прочее)
+if [ ${#OTHER_FILES[@]} -gt 0 ]; then
   preflight_ssh
   echo "=== Копируем файлы ==="
-  for f in "${FILES[@]}"; do
-    scp_file "$f"
+  for file in "${OTHER_FILES[@]}"; do
+    scp_file "$file"
   done
 fi
 
@@ -107,9 +237,9 @@ fi
 if [ "$DO_RESTART_BACKEND" = true ]; then
   preflight_ssh
   echo "=== Синхронизация бэкенда ==="
-  sync_dir "backend/src" "backend"
+  sync_dir "backend/src"
   if [ -d "$LOCAL_BASE/backend/certs" ]; then
-    sync_dir "backend/certs" "backend"
+    sync_dir "backend/certs"
   fi
   ssh_cmd "chown -R app:app '$REMOTE_BASE/backend/src'"
   ssh_cmd "chown -R root:app '$REMOTE_BASE/backend/certs' && chmod 755 '$REMOTE_BASE/backend/certs' && chmod 644 '$REMOTE_BASE/backend/certs/'*"
@@ -125,25 +255,18 @@ if [ "$DO_RESTART_BACKEND" = true ]; then
   fi
 fi
 
-# Фронтенд: sync исходников → сборка → рестарт
 if [ "$DO_BUILD_FRONTEND" = true ]; then
   preflight_ssh
-  echo "=== Синхронизация фронтенда ==="
-  sync_dir "frontend" "." \
-    --exclude="frontend/.next" \
-    --exclude="frontend/node_modules" \
-    --exclude="frontend/.env*"
-  ssh_cmd "chown -R app:app '$REMOTE_BASE/frontend'"
-  echo "=== Установка зависимостей фронтенда ==="
-  ssh_cmd "su - app -c 'cd $REMOTE_BASE/frontend && npm install'"
-  echo "=== Сборка фронтенда ==="
-  ssh_cmd "su - app -c 'cd $REMOTE_BASE/frontend && npm run build'"
-fi
-
-if [ "$DO_RESTART_FRONTEND" = true ]; then
+  FRONTEND_RELEASE_ID="$(date +%Y%m%d%H%M%S)-$$"
+  FRONTEND_RELEASE="$REMOTE_BASE/.releases/frontend-$FRONTEND_RELEASE_ID"
+  prepare_frontend_release "$FRONTEND_RELEASE"
+  build_frontend_release "$FRONTEND_RELEASE"
+  publish_frontend_release "$FRONTEND_RELEASE" "$FRONTEND_RELEASE_ID"
+elif [ "$DO_RESTART_FRONTEND" = true ]; then
   preflight_ssh
-  echo "=== Рестарт фронтенда ==="
+  echo "=== Рестарт текущего frontend ==="
   restart_frontend
+  ssh_cmd "su - app -c 'pm2 save'"
 fi
 
 echo "=== Готово ==="

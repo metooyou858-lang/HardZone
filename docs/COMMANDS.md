@@ -65,12 +65,28 @@ npm run build
 
 ## Deploy
 
-Основной production deploy с Windows:
+Точечная frontend-правка из feature/worktree-ветки — перечислить каждый изменённый frontend-файл. Скрипт соберёт release поверх текущего production и переключит `.next` только после успешной проверки:
+
+```powershell
+.\deploy.ps1 frontend/app/competition/results/page.tsx --build-frontend --restart-frontend
+```
+
+Полная замена frontend — только из проверенного канонического worktree, где присутствуют все production-модули:
+
+```powershell
+.\deploy.ps1 --full-frontend --build-frontend --restart-frontend
+```
+
+Старая команда без файлов и без `--full-frontend` заблокирована:
 
 ```powershell
 .\deploy.ps1 --build-frontend --restart-frontend
+```
+
+Backend без frontend:
+
+```powershell
 .\deploy.ps1 --restart-backend
-.\deploy.ps1 --build-frontend --restart-frontend --restart-backend
 ```
 
 Миграция + backend:
