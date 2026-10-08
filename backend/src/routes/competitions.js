@@ -6,6 +6,7 @@ const {
 } = require('../services/competition-registration');
 const { getCompetitionConfig, listCompetitionEvents, createCompetitionEvent, updateCompetitionEvent } = require('../services/competition-events');
 const { readSchedule, saveSchedule, generateSchedule, previewActivity } = require('../services/competition-schedule');
+const { previewShift, previewMerge, applyShift, applyMerge } = require('../services/competition-schedule-operations');
 const {
   closeOnlineRegistration,
   finishOnsiteRegistration,
@@ -50,6 +51,26 @@ router.post('/events/:eventKey/schedule/preview-activity', async (req, res, next
     if(error.statusCode) return res.status(error.statusCode).json({success:false,error:error.message});
     return next(error);
   }
+});
+
+router.post('/events/:eventKey/schedule/preview-shift', async (req, res, next) => {
+  try { return res.json({success:true, data:await previewShift(req.params.eventKey, req.body)}); }
+  catch(error) { if(error.statusCode) return res.status(error.statusCode).json({success:false,error:error.message}); return next(error); }
+});
+
+router.post('/events/:eventKey/schedule/shift', async (req, res, next) => {
+  try { return res.json({success:true, data:await applyShift(req.params.eventKey, req.body)}); }
+  catch(error) { if(error.statusCode) return res.status(error.statusCode).json({success:false,error:error.message}); return next(error); }
+});
+
+router.post('/events/:eventKey/schedule/preview-merge', async (req, res, next) => {
+  try { return res.json({success:true, data:await previewMerge(req.params.eventKey, req.body)}); }
+  catch(error) { if(error.statusCode) return res.status(error.statusCode).json({success:false,error:error.message}); return next(error); }
+});
+
+router.post('/events/:eventKey/schedule/merge', async (req, res, next) => {
+  try { return res.json({success:true, data:await applyMerge(req.params.eventKey, req.body)}); }
+  catch(error) { if(error.statusCode) return res.status(error.statusCode).json({success:false,error:error.message}); return next(error); }
 });
 
 router.get('/events/:eventKey/schedule', async (req, res, next) => {

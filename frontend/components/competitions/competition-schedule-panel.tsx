@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState, type ReactNode } f
 import { fetchCompetitionSchedule, generateCompetitionSchedule, saveCompetitionSchedule, type CompetitionSchedule, type ScheduleConfig, type CompetitionComplex, type ScheduleGrid } from "@/lib/api/competition-schedule";
 import { previewScheduleActivity, type ScheduleActivity, type ActivityPreview } from "@/lib/api/competition-schedule";
 import type { ResultKind } from "@/lib/api/competition-results";
+import CompetitionScheduleOperations from "./competition-schedule-operations";
 
 const resultKinds = {time:"Время, ММ:СС",reps:"Повторения",weight:"Вес, кг",time_or_reps:"Время или повторения"};
 
@@ -273,7 +274,7 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
     </>}
     {data && view === "grid" && <>
       {(data.grid_stale || dirty) && <p className="rounded-xl border border-[var(--line-soft)] p-4 text-sm text-[var(--warning)]">Состав команд или настройки изменились. Здесь остаётся прежняя сетка. Проверьте расчёт во вкладке настройки и пересформируйте её, если нужно.</p>}
-      {data.grid ? <><p className="text-sm text-[var(--text-muted)]">Блоки без перераспределения сохраняют порядок регистрации. В отмеченных блоках после утверждения предыдущих результатов лидеры общего рейтинга выступают последними.</p><Grid grid={data.grid} /></> : <p className="border-y border-[var(--line-soft)] py-10 text-center text-sm text-[var(--text-muted)]">Сетка ещё не сформирована. Добавьте комплексы и проверьте расчёт.</p>}
+      {data.grid ? <><p className="text-sm text-[var(--text-muted)]">Блоки без перераспределения сохраняют порядок регистрации. В отмеченных блоках после утверждения предыдущих результатов лидеры общего рейтинга выступают последними.</p>{!data.grid_stale&&<CompetitionScheduleOperations eventKey={eventKey} data={data} onApplied={(value,message)=>{accept(value);setNotice(message);}} />}<Grid grid={data.grid} /></> : <p className="border-y border-[var(--line-soft)] py-10 text-center text-sm text-[var(--text-muted)]">Сетка ещё не сформирована. Добавьте комплексы и проверьте расчёт.</p>}
     </>}
   </div>;
 }
@@ -288,11 +289,17 @@ function Grid({ grid, onEdit, onDelete, actionsDisabled, editingId, editorForm }
     </section> : <section key={block.id} className="overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)]">
       <header className="flex flex-wrap items-start justify-between gap-3 p-4"><div className="min-w-0"><div className="flex flex-wrap items-center gap-3"><h3 className="break-words font-semibold">{block.category_name} · {block.name}</h3>{onEdit && editingId !== block.id && <button type="button" className={button} disabled={actionsDisabled} onClick={() => onEdit(block.id)} aria-label={`Редактировать: ${block.category_name} · ${block.name}`}>Редактировать</button>}{onDelete && editingId !== block.id && <button type="button" className={`${button} text-[var(--danger)]`} disabled={actionsDisabled} onClick={() => onDelete(block.id)} aria-label={`Удалить: ${block.category_name} · ${block.name}`}>Удалить</button>}</div><p className="mt-1 text-xs text-[var(--text-muted)]">{block.venue} · Дорожек: {block.lanes} · Мест: {block.planned_count} · Заходов: {block.heats.length}</p>{block.depends_on_complex_id && <p className="mt-1 text-xs text-[var(--text-muted)]">Время связано с «{[grid.blocks.find(item => item.id === block.depends_on_complex_id)?.category_name,grid.blocks.find(item => item.id === block.depends_on_complex_id)?.name].filter(Boolean).join(" · ")}»{block.start_after_minutes ? ` + ${block.start_after_minutes} мин` : ""}</p>}<p className="mt-1 text-xs text-[var(--text-muted)]">{block.redistribute_by_overall ? `Перераспределение по общему рейтингу после блока ${block.complex_number - 1}` : "Распределение по регистрации"}</p>{block.qualification_limit!==null && <p className="mt-1 text-xs text-[var(--text-muted)]">После комплекса остаются: {block.qualification_limit} участников</p>}{block.qualification_error && <p role="alert" className="mt-2 text-sm text-[var(--danger)]">{block.qualification_error}</p>}</div><strong className="text-sm">{block.start_time} — {block.end_time}</strong></header>
       {editingId === block.id ? editorForm : <>
-      <div className="border-t border-[var(--line-soft)]"><div className="divide-y divide-[var(--line-soft)]">{block.heats.map(heat => <div key={heat.number} className="grid sm:grid-cols-[180px_minmax(0,1fr)]"><div className="px-4 py-4 text-sm"><strong>{heat.start_time} — {heat.end_time}</strong><p className="mt-1 text-[var(--text-muted)]">Заход {heat.number}</p></div><ol className="grid min-w-0" style={{gridTemplateColumns:"repeat(auto-fit, minmax(min(100%, 180px), 1fr))"}}>{Array.from({length:block.lanes},(_,index) => {
-        const lane = index + 1;
-        const slot = heat.slots.find(item => item.lane === lane);
-        return <li key={lane} className="relative flex min-h-16 min-w-0 items-center justify-center border-l border-b border-[var(--line-soft)] px-4 py-5 text-center text-sm"><span className="absolute left-2 top-1 text-xs text-[var(--text-muted)]">{lane}</span><span className="min-w-0 whitespace-normal [overflow-wrap:anywhere]">{slot ? slot.team_name || (block.qualification_error ? "Нужен доп. результат" : block.assignment === "results" ? "После результатов" : "Резерв") : "—"}</span></li>;
-      })}</ol></div>)}</div></div>
+      {block.heats.some(heat=>heat.combined_heat_id&&grid.combined_heats?.some(item=>item.id===heat.combined_heat_id&&item.block_ids[0]!==block.id))&&<p className="border-t border-[var(--line-soft)] px-4 py-3 text-xs text-[var(--text-muted)]">Неполный заход этой категории показан в общей карточке выше.</p>}
+      <div className="border-t border-[var(--line-soft)]"><div className="divide-y divide-[var(--line-soft)]">{block.heats.map(heat => {
+        const combined=heat.combined_heat_id ? grid.combined_heats?.find(item=>item.id===heat.combined_heat_id) : undefined;
+        if(combined&&combined.block_ids[0]!==block.id)return null;
+        const slots=combined?.slots || heat.slots;
+        return <div key={combined?.id || heat.number} className="grid sm:grid-cols-[180px_minmax(0,1fr)]"><div className="px-4 py-4 text-sm"><strong>{heat.start_time} — {heat.end_time}</strong><p className="mt-1 text-[var(--text-muted)]">{combined?`Общий заход ${combined.number}`:`Заход ${heat.number}`}</p>{combined&&<p className="mt-1 text-xs text-[var(--text-muted)]">{Array.from(new Set(combined.slots.map(slot=>slot.category_name))).join(" + ")}</p>}</div><ol className="grid min-w-0" style={{gridTemplateColumns:"repeat(auto-fit, minmax(min(100%, 180px), 1fr))"}}>{Array.from({length:block.lanes},(_,index) => {
+          const lane = index + 1;
+          const slot = slots.find(item => item.lane === lane);
+          return <li key={lane} className="relative flex min-h-16 min-w-0 items-center justify-center border-l border-b border-[var(--line-soft)] px-4 py-5 text-center text-sm"><span className="absolute left-2 top-1 text-xs text-[var(--text-muted)]">{lane}</span><span className="min-w-0 whitespace-normal [overflow-wrap:anywhere]">{slot ? <>{slot.team_name || (block.qualification_error ? "Нужен доп. результат" : block.assignment === "results" ? "После результатов" : "Резерв")}{combined&&<span className="mt-1 block text-xs text-[var(--text-muted)]">{combined.slots.find(item=>item.lane===lane)?.category_name}</span>}</> : "—"}</span></li>;
+        })}</ol></div>;
+      })}</div></div>
       {(block.gap_minutes > 0 || block.break_after_minutes > 0) && <p className="border-t border-[var(--line-soft)] px-4 py-3 text-xs text-[var(--text-muted)]">Между заходами: {block.gap_minutes} мин{block.break_after_minutes > 0 ? ` · Перерыв после комплекса: ${block.end_time} — ${block.available_after}` : ""}</p>}
       </>}
     </section>)}

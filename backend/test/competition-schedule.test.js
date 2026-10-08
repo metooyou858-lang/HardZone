@@ -5,6 +5,7 @@ const { pool } = require('../src/db');
 const { createCompetitionEvent, updateCompetitionEvent } = require('../src/services/competition-events');
 const { createCompetitionRegistration } = require('../src/services/competition-registration');
 const { normalizeSchedule, buildSchedule, readSchedule, saveSchedule, generateSchedule, planActivity, previewActivity } = require('../src/services/competition-schedule');
+const { planGridShift, planGridMerge, previewShift, previewMerge, applyShift, applyMerge } = require('../src/services/competition-schedule-operations');
 
 const competition = { name:'Соревнование',date:'2026-10-10',categories:[{key:'amateur',name:'Любители'},{key:'advanced',name:'Продвинутые'}] };
 const complex = (patch={}) => ({id:randomUUID(),name:'Комплекс 1',start_time:'09:00',briefing_time:null,venue:'Основной зал',lanes:4,duration_minutes:10,gap_minutes:3,break_after_minutes:15,depends_on_complex_id:null,start_after_minutes:0,briefing_before_minutes:null,qualification_limit:null,...patch});
@@ -54,6 +55,55 @@ test('insertion refuses overflow and validates activities including duplicate id
   assert.throws(()=>planActivity(currentPlan(plan([last],4)),activity({start_time:'23:40',duration_minutes:30})),/пределы дня/);
   assert.throws(()=>normalizeSchedule({...plan([last],4),activities:[activity({id:last.id})]},competition),/повторяющийся/);
   assert.throws(()=>normalizeSchedule({...plan(),activities:{}},competition),/100/);
+});
+
+test('operational move shifts the selected block and every later schedule item by the same delta',()=>{
+  const first=complex({name:'Первый',start_time:'09:00',briefing_time:null,break_after_minutes:0});
+  const second=complex({name:'Второй',start_time:'09:20',briefing_time:null,break_after_minutes:0});
+  const config={...plan([first,second],4),activities:[activity({name:'Награждение',kind:'awards',start_time:'09:40',venue:'Сцена',duration_minutes:10})]};
+  const grid=buildSchedule(normalizeSchedule(config,competition),competition,[]);
+  const result=planGridShift(grid,second.id,'09:35');
+  assert.deepEqual(result.shifts.map(item=>[item.name,item.before,item.after]),[['Любители · Второй','09:20','09:35'],['Награждение','09:40','09:55']]);
+  assert.equal(result.grid.blocks.find(item=>item.id===first.id).start_time,'09:00');
+  assert.deepEqual(result.errors,[]);
+});
+
+test('only incomplete heats are combined; full heats remain intact and categories stay attached to teams',()=>{
+  const amateur=complex({name:'Рывок',start_time:'09:00',briefing_time:null,break_after_minutes:0});
+  const advanced=complex({name:'Рывок',start_time:'09:13',briefing_time:null,break_after_minutes:0});
+  const config={categories:[{category_key:'amateur',planned_count:2,complexes:[amateur]},{category_key:'advanced',planned_count:1,complexes:[advanced]}]};
+  const registrations=[...teams.slice(0,2),{...teams[2],id:'20',team_name:'Продвинутые 1',category:'advanced'}];
+  const grid=buildSchedule(normalizeSchedule(config,competition),competition,registrations);
+  const result=planGridMerge(grid,[amateur.id,advanced.id]);
+  assert.equal(result.original_heat_count,2);
+  assert.equal(result.combined_heat_count,1);
+  assert.equal(result.saved_minutes,13);
+  assert.deepEqual(result.grid.combined_heats[0].slots.map(slot=>[slot.team_name,slot.category_key]),[['Команда 2','amateur'],['Команда 1','amateur'],['Продвинутые 1','advanced']]);
+  assert.equal(result.grid.blocks.flatMap(block=>block.heats).filter(heat=>heat.combined_heat_id).length,2);
+  assert.deepEqual(result.errors,[]);
+});
+
+test('operational previews are read-only and confirmed shift and merge update only the saved grid',async()=>{
+  const event=await createCompetitionEvent({name:'Оперативная сетка',date:'2026-10-10',location:'Зал',fee_rubles:3500,registration_enabled:false,categories:competition.categories,terms_text:'Тест'});keys.push(event.event_key);
+  const amateur=complex({name:'Рывок',start_time:'09:00',briefing_time:null,break_after_minutes:0});
+  const advanced=complex({name:'Рывок',start_time:'09:13',briefing_time:null,break_after_minutes:0});
+  let current=await saveSchedule(event.event_key,{revision:0,config:{categories:[{category_key:'amateur',planned_count:2,complexes:[amateur]},{category_key:'advanced',planned_count:1,complexes:[advanced]}]}});
+  current=await generateSchedule(event.event_key,{revision:current.revision,source_hash:current.source_hash});
+  const shiftInput={revision:current.revision,source_hash:current.source_hash,block_id:amateur.id,start_time:'09:10'};
+  const shiftedPreview=await previewShift(event.event_key,shiftInput);
+  assert.equal(shiftedPreview.grid.blocks[0].start_time,'09:10');
+  assert.equal((await readSchedule(event.event_key)).grid.blocks[0].start_time,'09:00');
+  current=await applyShift(event.event_key,shiftInput);
+  assert.deepEqual(current.config.categories.flatMap(category=>category.complexes).map(item=>item.start_time),['09:00','09:13']);
+  assert.deepEqual(current.grid.blocks.map(item=>item.start_time),['09:10','09:23']);
+  const mergeInput={revision:current.revision,source_hash:current.source_hash,block_ids:[amateur.id,advanced.id]};
+  const mergedPreview=await previewMerge(event.event_key,mergeInput);
+  assert.equal(mergedPreview.combined_heat_count,1);
+  assert.equal((await readSchedule(event.event_key)).grid.combined_heats,undefined);
+  current=await applyMerge(event.event_key,mergeInput);
+  assert.equal(current.grid.combined_heats.length,1);
+  assert.equal(current.grid.merge_summary.saved_minutes,13);
+  await assert.rejects(applyMerge(event.event_key,mergeInput),/Сетка изменилась/);
 });
 
 test('briefings, breaks and awards can stay pinned after an anchor complex',()=>{
