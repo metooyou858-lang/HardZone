@@ -90,6 +90,10 @@ test('only marked block is redistributed by cumulative results of all previous b
   const ready=seedResults({blocks},{workouts:{first:workout([30,20,10]),second:workout([10,30,20])}});
   assert.deepEqual(ready.blocks[2].heats[0].slots.map(slot=>slot.registration_id),['3','1','2']);
   assert.equal(ready.blocks[2].assignment,'rating');
+  const sharedBlocks=structuredClone(blocks);
+  sharedBlocks[2].heats[0].combined_heat_id='shared-1';
+  const shared=seedResults({blocks:sharedBlocks,combined_heats:[{id:'shared-1',slots:sharedBlocks[2].heats[0].slots.map(slot=>({...slot,complex_id:'third',category_key:'cat',category_name:'Категория'}))}]},{workouts:{first:workout([30,20,10]),second:workout([10,30,20])}});
+  assert.deepEqual(shared.combined_heats[0].slots.map(slot=>slot.registration_id),['3','1','2']);
 });
 
 test('qualification keeps strictly N leaders by final standings rules and does not break an absolute boundary tie',()=>{

@@ -112,6 +112,15 @@ function seedResults(grid,state) {
     slots.forEach((slot,index) => {slot.registration_id=ranked[index]?.id || null;slot.team_name=ranked[index]?.name || null;});
     block.assignment=ready ? 'rating' : 'results';
   }
+  for (const combined of result.combined_heats || []) {
+    for (const slot of combined.slots) {
+      const block=blocks.find(item=>item.id===slot.complex_id);
+      const logical=block?.heats.find(heat=>heat.combined_heat_id===combined.id)?.slots.find(item=>item.lane===slot.lane);
+      if (!logical) continue;
+      slot.registration_id=logical.registration_id;
+      slot.team_name=logical.team_name;
+    }
+  }
   return result;
 }
 
