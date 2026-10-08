@@ -274,9 +274,25 @@ export default function CompetitionSchedulePanel({ eventKey }: { eventKey: strin
     </>}
     {data && view === "grid" && <>
       {(data.grid_stale || dirty) && <p className="rounded-xl border border-[var(--line-soft)] p-4 text-sm text-[var(--warning)]">Состав команд или настройки изменились. Здесь остаётся прежняя сетка. Проверьте расчёт во вкладке настройки и пересформируйте её, если нужно.</p>}
-      {data.grid ? <><p className="text-sm text-[var(--text-muted)]">Блоки без перераспределения сохраняют порядок регистрации. В отмеченных блоках после утверждения предыдущих результатов лидеры общего рейтинга выступают последними.</p>{!data.grid_stale&&<CompetitionScheduleOperations eventKey={eventKey} data={data} onApplied={(value,message)=>{accept(value);setNotice(message);}} />}<Grid grid={data.grid} /></> : <p className="border-y border-[var(--line-soft)] py-10 text-center text-sm text-[var(--text-muted)]">Сетка ещё не сформирована. Добавьте комплексы и проверьте расчёт.</p>}
+      {data.grid ? <><p className="text-sm text-[var(--text-muted)]">Блоки без перераспределения сохраняют порядок регистрации. В отмеченных блоках после утверждения предыдущих результатов лидеры общего рейтинга выступают последними.</p><GridPrintActions eventKey={eventKey} grid={data.grid} disabled={data.grid_stale} />{!data.grid_stale&&<CompetitionScheduleOperations eventKey={eventKey} data={data} onApplied={(value,message)=>{accept(value);setNotice(message);}} />}<Grid grid={data.grid} /></> : <p className="border-y border-[var(--line-soft)] py-10 text-center text-sm text-[var(--text-muted)]">Сетка ещё не сформирована. Добавьте комплексы и проверьте расчёт.</p>}
     </>}
   </div>;
+}
+
+function GridPrintActions({eventKey,grid,disabled}:{eventKey:string;grid:ScheduleGrid;disabled:boolean}) {
+  const complexBlocks=grid.blocks.filter(block=>!block.kind);
+  const grouped=new Map<number,typeof complexBlocks>();
+  for(const block of complexBlocks)grouped.set(block.complex_number,[...(grouped.get(block.complex_number)||[]),block]);
+  const groups=Array.from(grouped.entries()).sort(([a],[b])=>a-b);
+  return <section className="flex flex-wrap items-center justify-between gap-3 border-y border-[var(--line-soft)] py-3">
+    <div><h2 className="text-sm font-semibold">Печать финальной сетки</h2><p className="mt-0.5 text-xs text-[var(--text-muted)]">Брифинг и обе категории печатаются на одном листе.</p></div>
+    <div className="flex flex-wrap gap-2">{groups.map(([number,blocks])=>{
+      const ready=!disabled&&blocks.length>0&&blocks.every(block=>block.heats.length>0&&block.heats.every(heat=>heat.slots.length>0&&heat.slots.every(slot=>slot.registration_id&&slot.team_name)));
+      const label=`Комплекс ${number}`;
+      const href=`/competitions/print?event=${encodeURIComponent(eventKey)}&complex=${encodeURIComponent(blocks[0].id)}`;
+      return ready?<a className={`${button} inline-flex items-center`} href={href} target="_blank" rel="noreferrer" key={number}>{label}</a>:<button className={button} type="button" disabled title={disabled?"Сначала пересформируйте сетку":"Состав заходов появится после результатов предыдущего комплекса"} key={number}>{label} · ожидается</button>;
+    })}</div>
+  </section>;
 }
 
 function Grid({ grid, onEdit, onDelete, actionsDisabled, editingId, editorForm }: { grid: ScheduleGrid; onEdit?: (id:string) => void; onDelete?: (id:string) => void; actionsDisabled?: boolean; editingId?: string; editorForm?: ReactNode }) {
