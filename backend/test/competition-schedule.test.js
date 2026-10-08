@@ -216,6 +216,15 @@ test('first complex uses reverse registration order with a partial first heat an
   assert.equal(grid.blocks[0].end_time,'09:36'); assert.equal(grid.end_time,'09:51'); assert.equal(grid.start_time,'09:00');
 });
 
+test('final onsite roster closes gaps in order and leaves only the last heat incomplete',()=>{
+  const arrived=teams.filter(team=>team.id!=='8');
+  const grid=buildSchedule(normalizeSchedule(plan([complex()],20),competition),competition,arrived,true);
+  assert.deepEqual(grid.errors,[]);
+  assert.deepEqual(grid.blocks[0].heats.map(heat=>heat.slots.length),[4,4,1]);
+  assert.deepEqual(grid.blocks[0].heats.flatMap(heat=>heat.slots.map(slot=>slot.registration_id)),['10','9','7','6','5','4','3','2','1']);
+  assert.equal(grid.blocks[0].planned_count,9);
+});
+
 test('later complexes reserve all places without assigning participants prematurely',()=>{
   const grid=buildSchedule(plan([complex(),complex({name:'Комплекс 2',start_time:'10:00',briefing_time:null,lanes:3})]),competition,teams);
   assert.deepEqual(grid.errors,[]);
@@ -285,6 +294,17 @@ test('saved grid is isolated, frozen across edits and new payments, with optimis
   const other=await createCompetitionEvent({name:'Другое',date:'2026-10-10',location:'Зал',fee_rubles:3500,registration_enabled:false,categories:competition.categories,terms_text:'Тест'}); keys.push(other.event_key);
   assert.equal((await readSchedule(other.event_key)).grid,null);
   await assert.rejects(readSchedule('missing-event'),/не найдено/);
+});
+
+test('changing a category registration limit does not stale a saved grid',async()=>{
+  const event=await createCompetitionEvent({name:'Лимит не меняет сетку',date:'2026-10-10',location:'Зал',fee_rubles:3500,registration_enabled:false,categories:[{key:'amateur',name:'Любители',registration_limit:10}],terms_text:'Тест'}); keys.push(event.event_key);
+  let schedule=await saveSchedule(event.event_key,{revision:0,config:plan([complex()],4)});
+  schedule=await generateSchedule(event.event_key,{revision:schedule.revision,source_hash:schedule.source_hash});
+  const hash=schedule.source_hash;
+  await updateCompetitionEvent(event.event_key,{...event,categories:[{key:'amateur',name:'Любители',registration_limit:20}]});
+  schedule=await readSchedule(event.event_key);
+  assert.equal(schedule.source_hash,hash);
+  assert.equal(schedule.grid_stale,false);
 });
 
 test('venue overlaps are rejected before saving; adjacent and independent venues remain valid',async()=>{

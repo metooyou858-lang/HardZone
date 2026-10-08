@@ -2,6 +2,7 @@ const express = require('express');
 
 const {
   createCompetitionRegistration,
+  getCompetitionRegistrationAvailability,
 } = require('../services/competition-registration');
 const { getCompetitionConfig } = require('../services/competition-events');
 const {
@@ -23,7 +24,12 @@ router.get('/results', async (req,res,next) => {
 
 router.get('/', async (req, res, next) => {
   try {
-    res.json({ success: true, data: await getCompetitionConfig(String(req.query.event || '') || undefined) });
+    const eventKey = String(req.query.event || '') || undefined;
+    const config = await getCompetitionConfig(eventKey);
+    res.json({ success: true, data: {
+      ...config,
+      registration_availability: await getCompetitionRegistrationAvailability(config.event_key),
+    } });
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ success: false, error: error.message });
     return next(error);

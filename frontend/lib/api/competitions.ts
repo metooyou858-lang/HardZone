@@ -7,7 +7,7 @@ export type CompetitionPaymentStatus = "pending" | "processing" | "paid" | "fail
 export type CompetitionPublicConfig = {
   legacy: boolean;
   public_path: string;
-  categories: { key: string; name: string }[];
+  categories: { key: string; name: string; registration_limit: number | null }[];
   terms_text: string;
   event_key: string;
   name: string;
@@ -17,7 +17,10 @@ export type CompetitionPublicConfig = {
   terms_version: string;
   privacy_version: string;
   registration_enabled: boolean;
+  online_registration_closed_at: string | null;
+  onsite_registration_closed_at: string | null;
   payment_enabled: boolean;
+  registration_availability?: Record<string, { occupied: number; limit: number | null; available: number | null; full: boolean }>;
   chat_urls: Record<CompetitionCategory, string | null>;
   messenger_urls: { whatsapp: string; telegram: string };
   organizer: {
@@ -49,6 +52,8 @@ export type CompetitionRegistration = {
   privacy_accepted_at: string | null;
   payment_status: CompetitionPaymentStatus;
   paid_at: string | null;
+  onsite_status: "pending" | "arrived" | "no_show";
+  onsite_updated_at: string | null;
   status: CompetitionRegistrationStatus;
   created_at: string;
   updated_at: string;
@@ -96,4 +101,24 @@ export async function saveCompetitionEvent(input: CompetitionEventInput, eventKe
   return (await apiFetch<ApiEnvelope<CompetitionPublicConfig>>(`/competitions/events${eventKey ? `/${encodeURIComponent(eventKey)}` : ""}`, {
     method: eventKey ? "PATCH" : "POST", body: JSON.stringify(input),
   })).data;
+}
+
+export async function closeCompetitionOnlineRegistration(eventKey: string): Promise<CompetitionPublicConfig> {
+  return (await apiFetch<ApiEnvelope<CompetitionPublicConfig>>(`/competitions/events/${encodeURIComponent(eventKey)}/online-registration/close`, { method: "POST" })).data;
+}
+
+type CompetitionOperationsPayload = { competition: CompetitionPublicConfig; registrations: CompetitionRegistration[] };
+
+export async function updateCompetitionOnsiteStatus(eventKey: string, registrationId: string, status: "pending" | "arrived"): Promise<CompetitionRegistration[]> {
+  return (await apiFetch<ApiEnvelope<CompetitionRegistration[]>>(`/competitions/events/${encodeURIComponent(eventKey)}/onsite-registration/${encodeURIComponent(registrationId)}`, {
+    method: "PATCH", body: JSON.stringify({ status }),
+  })).data;
+}
+
+export async function finishCompetitionOnsiteRegistration(eventKey: string): Promise<CompetitionOperationsPayload> {
+  return (await apiFetch<ApiEnvelope<CompetitionOperationsPayload>>(`/competitions/events/${encodeURIComponent(eventKey)}/onsite-registration/finish`, { method: "POST" })).data;
+}
+
+export async function reopenCompetitionOnsiteRegistration(eventKey: string): Promise<CompetitionOperationsPayload> {
+  return (await apiFetch<ApiEnvelope<CompetitionOperationsPayload>>(`/competitions/events/${encodeURIComponent(eventKey)}/onsite-registration/reopen`, { method: "POST" })).data;
 }

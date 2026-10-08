@@ -7,6 +7,7 @@ const { createCompetitionRegistration, getCompetitionRegistrationByPublicToken, 
 const { getCompetitionPaymentSummary, startCompetitionPayment } = require('../src/services/competition-payment');
 const { reconcileRegistration } = require('../src/services/competition-automation');
 const { buildCompetitionEmail } = require('../src/services/competition-email');
+const { closeOnlineRegistration, finishOnsiteRegistration, reopenOnsiteRegistration, updateOnsiteStatus } = require('../src/services/competition-registration-operations');
 
 const legacyKey = `legacy-${randomUUID()}`;
 Object.assign(process.env, { COMPETITION_EVENT_KEY: legacyKey, COMPETITION_PAYMENT_ENABLED: 'true', COMPETITION_REGISTRATION_ENABLED: 'true', TBANK_TERMINAL_KEY: 'test', TBANK_TERMINAL_PASSWORD: 'test', COMPETITION_PUBLIC_BASE_URL: 'https://hardzone.space' });
@@ -97,4 +98,41 @@ test('event list counts only active verified paid entries as confirmed', async (
   assert.equal((await counts()).confirmed_count,1);
   await updateCompetitionRegistrationStatus(r.id,'cancelled',a.event_key);
   assert.equal((await counts()).confirmed_count,0);
+});
+
+test('category registration limit blocks only a new team and can be increased safely', async () => {
+  const limited=await createCompetitionEvent({...settings('Лимит'),categories:[{key:'rookie',name:'Новички',registration_limit:1}]});
+  keys.push(limited.event_key);
+  const firstInput=input();
+  const first=await createCompetitionRegistration(firstInput,limited.event_key);
+  assert.equal((await createCompetitionRegistration(firstInput,limited.event_key)).id,first.id);
+  await assert.rejects(createCompetitionRegistration(input(),limited.event_key),/завершена/);
+  const updated=await updateCompetitionEvent(limited.event_key,{...limited,categories:[{key:'rookie',name:'Новички',registration_limit:2}]});
+  assert.equal(updated.categories[0].registration_limit,2);
+  await assert.doesNotReject(createCompetitionRegistration(input(),limited.event_key));
+});
+
+test('onsite finalization records no-shows and can be reopened before results', async () => {
+  const competition=await event('Офлайн-регистрация');
+  const registrations=[];
+  for(let index=0;index<3;index++) {
+    const registration=await createCompetitionRegistration(input(),competition.event_key);
+    registrations.push(registration);
+    await pool.query("UPDATE competition_registrations SET payment_status='paid' WHERE id=$1",[registration.id]);
+  }
+  const unpaid=await createCompetitionRegistration(input(),competition.event_key);
+  const closed=await closeOnlineRegistration(competition.event_key);
+  assert.equal(closed.registration_enabled,false);
+  assert.ok(closed.online_registration_closed_at);
+  await assert.rejects(finishOnsiteRegistration(competition.event_key),/1 активных заявок/);
+  await updateCompetitionRegistrationStatus(unpaid.id,'cancelled',competition.event_key);
+  await updateOnsiteStatus(competition.event_key,registrations[0].id,'arrived');
+  await updateOnsiteStatus(competition.event_key,registrations[2].id,'arrived');
+  const finished=await finishOnsiteRegistration(competition.event_key);
+  assert.ok(finished.competition.onsite_registration_closed_at);
+  assert.deepEqual(finished.registrations.filter(item=>item.payment_status==='paid').map(item=>item.onsite_status).sort(),['arrived','arrived','no_show']);
+  await assert.rejects(updateOnsiteStatus(competition.event_key,registrations[1].id,'arrived'),/уже завершена/);
+  const reopened=await reopenOnsiteRegistration(competition.event_key);
+  assert.equal(reopened.competition.onsite_registration_closed_at,null);
+  assert.equal(reopened.registrations.find(item=>item.id===registrations[1].id).onsite_status,'pending');
 });

@@ -150,6 +150,19 @@ async function createCompetitionRegistration(input, eventKey) {
       return rows[0];
     }
 
+    const category = config.categories.find(item => item.key === registration.category);
+    if (category?.registration_limit) {
+      const occupied = await client.query(
+        `SELECT COUNT(*)::INT AS count
+         FROM competition_registrations
+         WHERE event_key = $1 AND category = $2 AND status = 'registered'`,
+        [config.event_key, registration.category]
+      );
+      if (occupied.rows[0].count >= category.registration_limit) {
+        throw Object.assign(new Error('Регистрация в выбранную категорию завершена. Пожалуйста, обратитесь к организаторам для уточнения'), { statusCode: 409 });
+      }
+    }
+
     const { rows } = await client.query(
       `INSERT INTO competition_registrations (
          event_key, team_name, category,
@@ -200,6 +213,7 @@ async function listCompetitionRegistrations(executor = pool, eventKey) {
        terms_version, terms_accepted_at,
        privacy_version, privacy_accepted_at,
        payment_status, paid_at,
+       onsite_status, onsite_updated_at,
        status, created_at, updated_at,
        EXISTS (SELECT 1 FROM competition_email_jobs j WHERE j.registration_id=competition_registrations.id AND (j.state IN ('sending','uncertain') OR (j.state='pending' AND j.last_error IS NOT NULL))) AS email_delivery_issue
      FROM competition_registrations
@@ -208,6 +222,28 @@ async function listCompetitionRegistrations(executor = pool, eventKey) {
     [config.event_key]
   );
   return rows;
+}
+
+async function getCompetitionRegistrationAvailability(eventKey, executor = pool) {
+  const config = await getCompetitionConfig(eventKey, executor);
+  const { rows } = await executor.query(
+    `SELECT category, COUNT(*)::INT AS occupied
+     FROM competition_registrations
+     WHERE event_key = $1 AND status = 'registered'
+     GROUP BY category`,
+    [config.event_key]
+  );
+  const counts = Object.fromEntries(rows.map(row => [row.category, row.occupied]));
+  return Object.fromEntries(config.categories.map(category => {
+    const occupied = counts[category.key] || 0;
+    const limit = category.registration_limit ?? null;
+    return [category.key, {
+      occupied,
+      limit,
+      available: limit === null ? null : Math.max(0, limit - occupied),
+      full: limit !== null && occupied >= limit,
+    }];
+  }));
 }
 
 async function getCompetitionRegistrationByPublicToken(publicToken, executor = pool) {
@@ -274,6 +310,7 @@ async function updateCompetitionRegistrationStatus(id, status, eventKey) {
 module.exports = {
   createCompetitionRegistration,
   getCompetitionRegistrationByPublicToken,
+  getCompetitionRegistrationAvailability,
   getCompetitionPublicConfig,
   listCompetitionRegistrations,
   normalizeCompetitionRegistration,

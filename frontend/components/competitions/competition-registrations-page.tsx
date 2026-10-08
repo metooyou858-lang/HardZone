@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CompetitionSchedulePanel from "./competition-schedule-panel";
 import CompetitionResultsPanel from "./competition-results-panel";
+import CompetitionOnsiteRegistrationPanel from "./competition-onsite-registration-panel";
 
 import {
+  closeCompetitionOnlineRegistration,
   fetchCompetitionRegistrations,
   updateCompetitionRegistrationStatus,
   type CompetitionPublicConfig,
@@ -49,10 +51,11 @@ export default function CompetitionRegistrationsPage({ eventKey, onBack, onEdit 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [category, setCategory] = useState("");
-  const [section, setSectionState] = useState<"registrations" | "schedule" | "results">(() =>
-    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("section") === "results" ? "results" : typeof window !== "undefined" && new URLSearchParams(window.location.search).get("section") === "schedule" ? "schedule" : "registrations"
-  );
-  function setSection(next: "registrations" | "schedule" | "results") {
+  const [section, setSectionState] = useState<"registrations" | "onsite" | "schedule" | "results">(() => {
+    const requested = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("section") : null;
+    return requested === "results" || requested === "schedule" || requested === "onsite" ? requested : "registrations";
+  });
+  function setSection(next: "registrations" | "onsite" | "schedule" | "results") {
     setSectionState(next);
     const url = new URL(window.location.href);
     url.searchParams.set("section", next);
@@ -118,6 +121,21 @@ export default function CompetitionRegistrationsPage({ eventKey, onBack, onEdit 
     }
   }
 
+  async function closeOnlineRegistration() {
+    if (!competition || savingId) return;
+    setSavingId("online-registration");
+    setError("");
+    setNotice("");
+    try {
+      setCompetition(await closeCompetitionOnlineRegistration(eventKey));
+      setNotice("Онлайн-регистрация завершена. Публичная форма закрыта.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Не удалось завершить онлайн-регистрацию");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <button type="button" onClick={onBack} className="min-h-11 text-sm text-[var(--text-muted)]">← Все мероприятия</button>
@@ -126,10 +144,11 @@ export default function CompetitionRegistrationsPage({ eventKey, onBack, onEdit 
           <h1 className="break-words text-2xl font-semibold text-[var(--text-main)]">{competition?.name || "Мероприятие"}</h1>
           <p className="mt-2 text-sm text-[var(--text-muted)]">Активных заявок: {totals.active} · Подтверждено оплатой: {totals.paid}</p>
         </div>
-        <div className="flex flex-wrap gap-2"><button type="button" disabled={!competition} onClick={() => competition && onEdit(competition)} className="min-h-11 rounded-xl border border-[var(--line-soft)] px-4 text-sm">Настройки</button><button type="button" disabled={!competition} onClick={() => void copyRegistrationLink()} className="min-h-11 rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#062b26]">Ссылка регистрации</button></div>
+        <div className="flex flex-wrap gap-2"><button type="button" disabled={!competition} onClick={() => competition && onEdit(competition)} className="min-h-11 rounded-xl border border-[var(--line-soft)] px-4 text-sm">Настройки</button>{competition && !competition.online_registration_closed_at && <button type="button" disabled={savingId === "online-registration"} onClick={() => void closeOnlineRegistration()} className="min-h-11 rounded-xl border border-[var(--line-soft)] px-4 text-sm font-medium text-[var(--warning)]">Завершить онлайн-регистрацию</button>}<button type="button" disabled={!competition} onClick={() => void copyRegistrationLink()} className="min-h-11 rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#062b26]">Ссылка регистрации</button></div>
       </div>
 
-      {!loading && competition && !competition.registration_enabled && (
+      {!loading && competition?.online_registration_closed_at && <div className="rounded-[14px] border border-[rgba(245,197,66,.24)] bg-[rgba(245,197,66,.08)] px-4 py-3 text-sm text-[var(--warning)]">Онлайн-регистрация завершена.</div>}
+      {!loading && competition && !competition.registration_enabled && !competition.online_registration_closed_at && (
         <div className="rounded-[14px] border border-[rgba(245,197,66,.24)] bg-[rgba(245,197,66,.08)] px-4 py-3 text-sm text-[var(--warning)]">
           Публичная регистрация временно закрыта настройкой мероприятия.
         </div>
@@ -141,10 +160,11 @@ export default function CompetitionRegistrationsPage({ eventKey, onBack, onEdit 
       )}
 
       <nav aria-label="Разделы мероприятия" className="flex flex-wrap gap-x-6 border-b border-[var(--line-soft)]">
-        {[{key:"registrations" as const,name:"Регистрация"},{key:"schedule" as const,name:"Комплексы и заходы"},{key:"results" as const,name:"Результаты"}].map(item => <button key={item.key} type="button" onClick={() => setSection(item.key)} aria-pressed={section === item.key} className={`min-h-11 border-b-2 px-1 text-sm ${section === item.key ? "border-[var(--accent)] text-[var(--text-main)]" : "border-transparent text-[var(--text-muted)]"}`}>{item.name}</button>)}
+        {[{key:"registrations" as const,name:"Онлайн-регистрация"},{key:"onsite" as const,name:"Офлайн-регистрация"},{key:"schedule" as const,name:"Комплексы и заходы"},{key:"results" as const,name:"Результаты"}].map(item => <button key={item.key} type="button" onClick={() => setSection(item.key)} aria-pressed={section === item.key} className={`min-h-11 border-b-2 px-1 text-sm ${section === item.key ? "border-[var(--accent)] text-[var(--text-main)]" : "border-transparent text-[var(--text-muted)]"}`}>{item.name}</button>)}
       </nav>
-      <div hidden={section !== "schedule"}><CompetitionSchedulePanel eventKey={eventKey} /></div>
-      <div hidden={section !== "results"}><CompetitionResultsPanel eventKey={eventKey} /></div>
+      {section === "schedule" && <CompetitionSchedulePanel eventKey={eventKey} />}
+      {section === "results" && <CompetitionResultsPanel eventKey={eventKey} />}
+      {section === "onsite" && competition && <CompetitionOnsiteRegistrationPanel eventKey={eventKey} competition={competition} registrations={registrations} onChanged={(nextCompetition,nextRegistrations) => { setCompetition(nextCompetition); setRegistrations(nextRegistrations); }} />}
       {section === "registrations" && <>
       <nav aria-label="Заявки и категории" className="flex flex-wrap gap-x-5 border-b border-[var(--line-soft)]">
         {[{key:"",name:"Все заявки"}, ...(competition?.categories || [])].map(item => <button key={item.key} type="button" aria-pressed={category === item.key} onClick={() => setCategory(item.key)} className={`min-h-11 border-b-2 px-1 text-sm ${category === item.key ? "border-[var(--accent)] text-[var(--text-main)]" : "border-transparent text-[var(--text-muted)]"}`}>{item.name}{item.key && ` · ${registrations.filter(r => r.category === item.key && r.status === "registered" && r.payment_status === "paid").length}`}</button>)}

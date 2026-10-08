@@ -30,12 +30,13 @@ function dependencyId(value) {
   return value;
 }
 
-function participantCount(category, registrations) {
-  return category.planned_count ?? registrations.filter(row => row.category === category.category_key && row.status === 'registered' && row.payment_status === 'paid').length;
+function participantCount(category, registrations, actualOnly = false) {
+  const actual = registrations.filter(row => row.category === category.category_key && row.status === 'registered' && row.payment_status === 'paid').length;
+  return actualOnly ? actual : category.planned_count ?? actual;
 }
 
-function countBeforeComplex(category, complex, registrations) {
-  let count = participantCount(category, registrations);
+function countBeforeComplex(category, complex, registrations, actualOnly = false) {
+  let count = participantCount(category, registrations, actualOnly);
   for (const item of category.complexes) {
     if (item.id === complex.id) break;
     if (item.qualification_limit !== null && item.qualification_limit !== undefined) count = Math.min(count, item.qualification_limit);
@@ -106,7 +107,7 @@ function validateDependencies(config) {
   for (const block of blocks) visit(block);
 }
 
-function resolveDependentTimes(config, registrations) {
+function resolveDependentTimes(config, registrations, actualOnly = false) {
   const resolved = structuredClone(config);
   const blocks = [
     ...resolved.categories.flatMap(category => category.complexes.map(block => ({ block, category, kind:'complex' }))),
@@ -117,7 +118,7 @@ function resolveDependentTimes(config, registrations) {
   function endOf(item) {
     const start = minutes(item.block.start_time);
     if (item.kind === 'activity') return start + item.block.duration_minutes;
-    const count = countBeforeComplex(item.category, item.block, registrations);
+    const count = countBeforeComplex(item.category, item.block, registrations, actualOnly);
     const heats = Math.ceil(count / item.block.lanes);
     return start + heats * item.block.duration_minutes + Math.max(0, heats - 1) * item.block.gap_minutes + item.block.break_after_minutes;
   }
@@ -184,18 +185,18 @@ function normalizeSchedule(input, competition) {
   }) };
 }
 
-function buildSchedule(config, competition, registrations) {
+function buildSchedule(config, competition, registrations, actualOnly = false) {
   validateDependencies(config);
-  config = resolveDependentTimes(config, registrations);
+  config = resolveDependentTimes(config, registrations, actualOnly);
   const errors = [];
   const blocks = [];
   for (const category of config.categories) {
     const categoryName = competition.categories.find(item => item.key === category.category_key)?.name || category.category_key;
     const teams = registrations.filter(row => row.category === category.category_key && row.status === 'registered' && row.payment_status === 'paid')
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at) || (BigInt(a.id) < BigInt(b.id) ? 1 : -1));
-    const initialCount = participantCount(category, registrations);
+    const initialCount = participantCount(category, registrations, actualOnly);
     if (category.complexes.length && initialCount < teams.length) errors.push(`${categoryName}: запланировано ${initialCount} мест, но уже оплачено ${teams.length} участников`);
-    if (category.complexes.length && initialCount === 0) errors.push(`${categoryName}: нет оплаченных участников. Укажите плановое количество для расчёта времени`);
+    if (category.complexes.length && initialCount === 0 && !actualOnly) errors.push(`${categoryName}: нет оплаченных участников. Укажите плановое количество для расчёта времени`);
     let previousEnd = null;
     let count = initialCount;
     let qualificationActive = false;
@@ -212,8 +213,10 @@ function buildSchedule(config, competition, registrations) {
       previousEnd = occupiedTo;
       let offset = 0;
       const heats = Array.from({ length: heatCount }, (_, heatIndex) => {
-        // The incomplete heat goes first so the final heat has all lanes occupied.
-        const places = heatIndex === 0 ? count % complex.lanes || complex.lanes : complex.lanes;
+        // After check-in, gaps are closed in order and only the final heat may be incomplete.
+        const places = actualOnly
+          ? heatIndex === heatCount - 1 ? count % complex.lanes || complex.lanes : complex.lanes
+          : heatIndex === 0 ? count % complex.lanes || complex.lanes : complex.lanes;
         const heatStart = start + heatIndex * (complex.duration_minutes + complex.gap_minutes);
         const slots = Array.from({ length: places }, (_, laneIndex) => {
           const redistribute = qualificationActive || (index > 0 && complex.redistribute_by_overall !== false);
@@ -228,8 +231,8 @@ function buildSchedule(config, competition, registrations) {
         planned_count: count, confirmed_count: teams.length, assignment: qualificationActive || (index > 0 && complex.redistribute_by_overall !== false) ? 'results' : 'registration',
         end_time: clock(end), available_after: clock(occupiedTo), heats, occupied_from: occupiedFrom, occupied_to: occupiedTo });
       if (complex.qualification_limit !== null) {
-        if (complex.qualification_limit >= count) errors.push(`${label}: отсев должен уменьшать количество участников — сейчас в блоке ${count}`);
-        if (complex.qualification_limit > teams.length) errors.push(`${label}: нельзя оставить ${complex.qualification_limit} участников — оплачено только ${teams.length}`);
+        if (count > 0 && complex.qualification_limit >= count) errors.push(`${label}: отсев должен уменьшать количество участников — сейчас в блоке ${count}`);
+        if (count > 0 && complex.qualification_limit > teams.length) errors.push(`${label}: нельзя оставить ${complex.qualification_limit} участников — оплачено только ${teams.length}`);
         count = Math.min(count, complex.qualification_limit);
         qualificationActive = true;
       }
@@ -261,10 +264,15 @@ function buildSchedule(config, competition, registrations) {
 async function readSchedule(eventKey, executor = pool) {
   const competition = await getCompetitionConfig(eventKey, executor);
   const row = (await executor.query('SELECT * FROM competition_schedules WHERE event_key=$1', [competition.event_key])).rows[0];
-  const registrations = (await executor.query(`SELECT id, team_name, category, created_at, status, payment_status
+  const paidRegistrations = (await executor.query(`SELECT id, team_name, category, created_at, status, payment_status, onsite_status
     FROM competition_registrations WHERE event_key=$1 AND status='registered' AND payment_status='paid' ORDER BY created_at DESC, id DESC`, [competition.event_key])).rows;
+  const onsiteFinalized = Boolean(competition.onsite_registration_closed_at);
+  const registrations = paidRegistrations
+    .filter(row => !onsiteFinalized || row.onsite_status === 'arrived')
+    .map(({onsite_status, ...row}) => row);
   const config = normalizeSchedule(row?.config || { categories: [] }, competition);
-  const sourceHash = createHash('sha256').update(JSON.stringify({ config:configForSourceHash(config), name:competition.name, date:competition.date, categories:competition.categories, registrations })).digest('hex');
+  const scheduleCategories = competition.categories.map(({key,name}) => ({key,name}));
+  const sourceHash = createHash('sha256').update(JSON.stringify({ config:configForSourceHash(config), name:competition.name, date:competition.date, categories:scheduleCategories, onsite_finalized:onsiteFinalized, registrations })).digest('hex');
   const results = (await executor.query('SELECT state,revision FROM competition_results WHERE event_key=$1', [competition.event_key])).rows[0];
   const editableConfig = {...config,categories:config.categories.map(category=>({...category,complexes:category.complexes.map((complex,index)=>{
     const workout=results?.state.workouts[complex.id];
@@ -273,7 +281,7 @@ async function readSchedule(eventKey, executor = pool) {
   })}))};
   return { competition, config:editableConfig, results_revision:results?.revision || 0, revision:row?.revision || 0,
     confirmed_counts: Object.fromEntries(competition.categories.map(item => [item.key, registrations.filter(r => r.category === item.key).length])),
-    preview:buildSchedule(config, competition, registrations), source_hash:sourceHash,
+    preview:buildSchedule(config, competition, registrations, onsiteFinalized), source_hash:sourceHash,
     grid:row?.generated_grid || null, grid_stale:Boolean(row?.generated_grid && row.generated_grid.source_hash !== sourceHash) };
 }
 
@@ -284,10 +292,10 @@ async function saveSchedule(eventKey, input) {
     if (input.revision !== current.revision) throw conflict('Настройки изменились в другой вкладке. Обновите расписание перед сохранением');
     if (input.source_hash && input.source_hash !== current.source_hash) throw conflict('Состав команд изменился. Обновите данные и проверьте смещения заново');
     let config = normalizeSchedule(input.config, current.competition);
-    const registrations = (await client.query("SELECT id,team_name,category,created_at,status,payment_status FROM competition_registrations WHERE event_key=$1 AND status='registered' AND payment_status='paid'", [eventKey])).rows;
+    const registrations = (await client.query("SELECT id,team_name,category,created_at,status,payment_status FROM competition_registrations WHERE event_key=$1 AND status='registered' AND payment_status='paid' AND ($2::BOOLEAN = FALSE OR onsite_status='arrived')", [eventKey, Boolean(current.competition.onsite_registration_closed_at)])).rows;
     validateDependencies(config);
-    config = resolveDependentTimes(config, registrations);
-    const preview = buildSchedule(config,current.competition,registrations);
+    config = resolveDependentTimes(config, registrations, Boolean(current.competition.onsite_registration_closed_at));
+    const preview = buildSchedule(config,current.competition,registrations,Boolean(current.competition.onsite_registration_closed_at));
     if (preview.venue_conflicts.length) throw invalid(preview.venue_conflicts.join('\n'));
     if (input.results_revision !== undefined && input.results_revision !== current.results_revision) throw conflict('Настройки результатов изменились. Обновите расписание');
     await require('./competition-results').saveScheduleScoring(eventKey,current,input.config,client);
@@ -314,7 +322,8 @@ async function generateSchedule(eventKey, input) {
 
 function planActivity(current, activity) {
   const registrations = Object.entries(current.confirmed_counts).flatMap(([category,count]) => Array.from({length:count},(_,i) => ({id:String(i+1),category,status:'registered',payment_status:'paid',created_at:'2000-01-01'})));
-  const config = resolveDependentTimes(normalizeSchedule({...current.config, activities:[...(current.config.activities || []).filter(item => item.id !== activity.id),activity]}, current.competition), registrations);
+  const actualOnly = Boolean(current.competition.onsite_registration_closed_at);
+  const config = resolveDependentTimes(normalizeSchedule({...current.config, activities:[...(current.config.activities || []).filter(item => item.id !== activity.id),activity]}, current.competition), registrations, actualOnly);
   for (const category of config.categories) for (const complex of category.complexes) {
     const original=current.config.categories.flatMap(item=>item.complexes).find(item=>item.id===complex.id);
     if (original?.scoring) complex.scoring=original.scoring;
@@ -342,7 +351,7 @@ function planActivity(current, activity) {
     shifts.push({id:block.id, name:[block.category_name,block.name].filter(Boolean).join(' · '), before:block.start_time, after:target.start_time, briefing_before:block.briefing_time, briefing_after:target.briefing_time || null, minutes:delta});
   }
   // Counts suffice for timing; participant assignments remain untouched until grid generation.
-  const preview = buildSchedule(config,current.competition,registrations);
+  const preview = buildSchedule(config,current.competition,registrations,actualOnly);
   return {config, shifts, errors:preview.errors, end_before:current.preview.end_time, end_after:preview.end_time, source_hash:current.source_hash};
 }
 

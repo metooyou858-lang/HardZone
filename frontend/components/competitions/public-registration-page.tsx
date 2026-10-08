@@ -69,7 +69,8 @@ export default function CompetitionRegistrationPage() {
         if (!response.ok || !data.data) throw new Error(data.error || "Не удалось загрузить регистрацию");
         if (!cancelled) {
           setConfig(data.data);
-          setForm(current => ({ ...current, category: data.data!.categories[0]?.key || "" }));
+          const available = data.data.categories.find(category => !data.data?.registration_availability?.[category.key]?.full);
+          setForm(current => ({ ...current, category: available?.key || data.data!.categories[0]?.key || "" }));
         }
       } catch (loadError) {
         if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить регистрацию");
@@ -176,7 +177,8 @@ export default function CompetitionRegistrationPage() {
 
   const date = formatCompetitionDate(config?.date ?? "2026-10-10");
   const fee = new Intl.NumberFormat("ru-RU").format(config?.fee_rubles ?? 3500);
-  const formDisabled = loading || !config?.registration_enabled;
+  const selectedCategoryFull = Boolean(config?.registration_availability?.[form.category]?.full);
+  const formDisabled = loading || !config?.registration_enabled || Boolean(config?.online_registration_closed_at) || selectedCategoryFull;
   const chatUrl = submittedTeam ? config?.chat_urls[submittedTeam.category] : null;
   const organizer = config?.organizer;
   const categoryLabels = Object.fromEntries((config?.categories || []).map(item => [item.key, item.name]));
@@ -208,17 +210,23 @@ export default function CompetitionRegistrationPage() {
 
           <div className={styles.posterFooter}>
             <address>{config?.location || "Клуб HardZone, г. Хабаровск, ул. Тихоокеанская, 47Г"}</address>
-            <a href="#competition-terms">Условия участия ↓</a>
+            {config.online_registration_closed_at ? <span>Онлайн-регистрация завершена</span> : <a href="#competition-terms">Условия участия ↓</a>}
           </div>
         </div>
       </section> : <header className={styles.eventHeader}>
         <span className={styles.date}>HARDZONE · {date}</span><h1 id="competition-title">{config.name}</h1>
         <p>{config.location}</p><p>Команды М + Ж · {fee} ₽ с команды</p>
-        <a href="#registration-title">Перейти к регистрации ↓</a>
+        {!config.online_registration_closed_at && <a href="#registration-title">Перейти к регистрации ↓</a>}
       </header>}
 
       <section className={styles.registration} aria-labelledby="registration-title">
-        {submittedTeam ? (
+        {config.online_registration_closed_at ? (
+          <div className={styles.success} role="status">
+            <span className={styles.successMark} aria-hidden="true">✓</span>
+            <h2>Регистрация завершена</h2>
+            <p>Ждём вас {date ? `${date} ` : ""}по адресу: {config.location}. Приходите поддержать команды!</p>
+          </div>
+        ) : submittedTeam ? (
           <div className={styles.success} role="status">
             <span className={styles.successMark} aria-hidden="true">{submittedTeam.paymentRequired ? "→" : "✓"}</span>
             <h2>{submittedTeam.paymentRequired ? "Заявка сохранена" : "Команда зарегистрирована"}</h2>
@@ -334,10 +342,11 @@ export default function CompetitionRegistrationPage() {
                   <label className={styles.field}>
                     <span>Категория</span>
                     <select className={styles.select} disabled={formDisabled} value={form.category} onChange={(event) => update("category", event.target.value as CompetitionCategory)}>
-                      {config.categories.map(category => <option key={category.key} value={category.key}>{category.name}</option>)}
+                      {config.categories.map(category => <option key={category.key} value={category.key} disabled={config.registration_availability?.[category.key]?.full}>{category.name}{config.registration_availability?.[category.key]?.full ? " — мест нет" : ""}</option>)}
                     </select>
                   </label>
                 </div>
+                {selectedCategoryFull && <div className={styles.closedNotice}><strong>Регистрация в выбранную категорию завершена</strong><span>Пожалуйста, обратитесь к организаторам для уточнения.</span></div>}
               </div>
 
               <div className={styles.formGroup}>

@@ -25,6 +25,8 @@ function publicConfig(row) {
     ...row.settings,
     event_key: row.event_key,
     legacy: row.legacy,
+    online_registration_closed_at: row.online_registration_closed_at || null,
+    onsite_registration_closed_at: row.onsite_registration_closed_at || null,
     public_path: row.event_key === base.event_key ? '/competition' : `/competition?event=${encodeURIComponent(row.event_key)}`,
   };
 }
@@ -58,7 +60,15 @@ function normalizeEvent(input, existing = null) {
   const fee = Number(input.fee_rubles);
   if (!Number.isInteger(fee) || fee < 1 || fee > 1000000) throw invalid('Укажите взнос в рублях от 1 до 1 000 000');
   if (!Array.isArray(input.categories) || input.categories.length < 1 || input.categories.length > 30) throw invalid('Добавьте от 1 до 30 категорий');
-  const categories = input.categories.map(item => ({ key: item.key || randomUUID(), name: text(item.name, 'название категории', 80) }));
+  const categories = input.categories.map(item => {
+    const registrationLimit = item.registration_limit === null || item.registration_limit === '' || item.registration_limit === undefined
+      ? null
+      : Number(item.registration_limit);
+    if (registrationLimit !== null && (!Number.isInteger(registrationLimit) || registrationLimit < 1 || registrationLimit > 1000)) {
+      throw invalid('Лимит категории: укажите целое число от 1 до 1000');
+    }
+    return { key: item.key || randomUUID(), name: text(item.name, 'название категории', 80), registration_limit: registrationLimit };
+  });
   if (categories.some(item => typeof item.key !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(item.key))) throw invalid('Некорректная категория');
   if (new Set(categories.map(item => item.key)).size !== categories.length || new Set(categories.map(item => item.name.toLowerCase())).size !== categories.length) throw invalid('Категории не должны повторяться');
   if (typeof input.registration_enabled !== 'boolean') throw invalid('Укажите состояние регистрации');

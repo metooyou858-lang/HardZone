@@ -6,8 +6,34 @@ const {
 } = require('../services/competition-registration');
 const { getCompetitionConfig, listCompetitionEvents, createCompetitionEvent, updateCompetitionEvent } = require('../services/competition-events');
 const { readSchedule, saveSchedule, generateSchedule, previewActivity } = require('../services/competition-schedule');
+const {
+  closeOnlineRegistration,
+  finishOnsiteRegistration,
+  reopenOnsiteRegistration,
+  updateOnsiteStatus,
+} = require('../services/competition-registration-operations');
 
 const router = express.Router();
+
+router.post('/events/:eventKey/online-registration/close', async (req,res,next) => {
+  try { return res.json({success:true,data:await closeOnlineRegistration(req.params.eventKey)}); }
+  catch(error) { if(error.statusCode) return res.status(error.statusCode).json({success:false,error:error.message}); return next(error); }
+});
+
+router.patch('/events/:eventKey/onsite-registration/:registrationId', async (req,res,next) => {
+  try { return res.json({success:true,data:await updateOnsiteStatus(req.params.eventKey,req.params.registrationId,String(req.body?.status || ''))}); }
+  catch(error) { if(error.statusCode) return res.status(error.statusCode).json({success:false,error:error.message}); return next(error); }
+});
+
+router.post('/events/:eventKey/onsite-registration/finish', async (req,res,next) => {
+  try { return res.json({success:true,data:await finishOnsiteRegistration(req.params.eventKey)}); }
+  catch(error) { if(error.statusCode) return res.status(error.statusCode).json({success:false,error:error.message}); return next(error); }
+});
+
+router.post('/events/:eventKey/onsite-registration/reopen', async (req,res,next) => {
+  try { return res.json({success:true,data:await reopenOnsiteRegistration(req.params.eventKey)}); }
+  catch(error) { if(error.statusCode) return res.status(error.statusCode).json({success:false,error:error.message}); return next(error); }
+});
 
 router.get('/events/:eventKey/results', async (req,res,next) => {
   try { res.set('Cache-Control','no-store'); return res.json({success:true,data:await require('../services/competition-results').readResults(req.params.eventKey)}); }
