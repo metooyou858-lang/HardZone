@@ -55,9 +55,14 @@ export default function CompetitionScheduleOperations({eventKey,data,onApplied}:
     finally{setBusy(false);}
   }
 
-  return <section className="space-y-5 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-4 sm:p-5">
-    <div><h2 className="font-semibold">Корректировка опубликованной сетки</h2><p className="mt-1 text-xs text-[var(--text-muted)]">Сначала проверьте предварительный вариант. Результаты команд и исходные настройки комплексов не меняются.</p></div>
-    <form onSubmit={previewShift} className="space-y-3 border-t border-[var(--line-soft)] pt-4">
+  return <details className="group rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)]">
+    <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 sm:px-5 [&::-webkit-details-marker]:hidden">
+      <span><span className="block font-semibold">Корректировка опубликованной сетки</span><span className="mt-0.5 block text-xs text-[var(--text-muted)]">Перенос времени и объединение неполных заходов</span></span>
+      <span aria-hidden="true" className="text-lg text-[var(--text-muted)] transition-transform group-open:rotate-180">⌄</span>
+    </summary>
+    <div className="space-y-5 border-t border-[var(--line-soft)] p-4 sm:p-5">
+      <p className="text-xs text-[var(--text-muted)]">Сначала проверьте предварительный вариант. Результаты команд и исходные настройки комплексов не меняются.</p>
+    <form onSubmit={previewShift} className="space-y-3">
       <h3 className="text-sm font-medium">Перенести комплекс и всё расписание после него</h3>
       <div className="grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_160px_auto]">
         <label className="text-xs">Пункт расписания<select className={input} value={selectedShiftBlock?.id || ""} onChange={event=>{const block=blocks.find(item=>item.id===event.target.value);setShiftBlockId(event.target.value);setShiftTime(block?.start_time||"");setShiftPreview(null);}}>{blocks.map(block=><option className="bg-white text-black" key={block.id} value={block.id}>{block.category_name} · {block.name} · {block.start_time}</option>)}</select></label>
@@ -75,5 +80,6 @@ export default function CompetitionScheduleOperations({eventKey,data,onApplied}:
       {mergePreview&&<div className="space-y-2 rounded-lg border border-[var(--line-soft)] p-3 text-sm"><p>Неполных заходов: {mergePreview.original_heat_count} → <strong>{mergePreview.combined_heat_count}</strong>.</p><p>{mergePreview.saved_minutes?`Расписание станет короче на ${mergePreview.saved_minutes} мин.`:"Продолжительность расписания не изменится, но свободные дорожки будут заполнены."}</p>{!!mergePreview.errors.length&&<ul className="text-[var(--danger)]">{mergePreview.errors.map(message=><li key={message}>{message}</li>)}</ul>}<button type="button" className={primary} disabled={busy||!!mergePreview.errors.length} onClick={()=>void applyMerge()}>Применить объединение</button></div>}
     </form>
     {error&&<p role="alert" className="whitespace-pre-line text-sm text-[var(--danger)]">{error}</p>}
-  </section>;
+    </div>
+  </details>;
 }

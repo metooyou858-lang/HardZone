@@ -82,7 +82,8 @@ export default function CompetitionResultsPanel({eventKey}:{eventKey:string}) {
   }
   const blocked=!data?.has_grid || data.grid_stale || !workout;
   const complete=!!block?.teams.length && !!workout && block.teams.every(team=>workout.components.every((_,index)=>entries[team.id]?.[index]?.trim()));
-  const printReady=!!block&&!blocked&&block.heats.length>0&&block.heats.every(heat=>heat.slots.length>0&&heat.slots.every(slot=>slot.registration_id&&slot.team_name));
+  const printBlocks=block?data?.blocks.filter(item=>item.complex_number===block.complex_number)||[]:[];
+  const printReady=!!block&&!blocked&&printBlocks.length>0&&printBlocks.every(item=>item.heats.length>0&&item.heats.every(heat=>heat.slots.length>0&&heat.slots.every(slot=>slot.registration_id&&slot.team_name)));
   const printUrl=`/competitions/print?event=${encodeURIComponent(eventKey)}&complex=${encodeURIComponent(complexId)}`;
 
   return <section className="space-y-4 text-[var(--text-main)]">

@@ -8,7 +8,7 @@ export type ResultComponent={name:string;kind:ResultKind};
 export type WorkoutResults={components:ResultComponent[];is_final:boolean;entries:Record<string,(ResultValue|null)[]>;status:'draft'|'confirmed'};
 export type ResultScore={complex_id:string;complex_name:string;component:string;kind:ResultKind;value:ResultValue;place:number;points:number};
 export type LeaderRow={id:string;name:string;total:number;place:number|null;scores:ResultScore[]};
-export type ResultsData={competition:CompetitionPublicConfig;revision:number;schedule_revision:number;source_hash:string;has_grid:boolean;grid_stale:boolean;hidden:boolean;closes_at:string|null;combined_heats:CombinedHeat[];state:{workouts:Record<string,WorkoutResults>};blocks:(ScheduleBlock & {teams:{id:string;name:string;heat:number;lane:number}[];rankings:{id:string;place:number;points:number}[][]})[];standings:Record<string,LeaderRow[]>};
+export type ResultsData={competition:CompetitionPublicConfig;revision:number;schedule_revision:number;source_hash:string;has_grid:boolean;grid_stale:boolean;hidden:boolean;closes_at:string|null;combined_heats:CombinedHeat[];briefings:{id:string;name:string;start_time:string;end_time:string}[];state:{workouts:Record<string,WorkoutResults>};blocks:(ScheduleBlock & {teams:{id:string;name:string;heat:number;lane:number}[];rankings:{id:string;place:number;points:number}[][]})[];standings:Record<string,LeaderRow[]>};
 export function resultText(value:ResultValue|null|undefined,kind:ResultKind):string {
   if (value===null || value===undefined) return '';
   if (typeof value==='object') return `${resultText(value.value,value.kind)}${value.kind==='reps'?' повт.':''}`;
