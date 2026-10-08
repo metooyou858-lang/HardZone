@@ -5,7 +5,7 @@ const {pool}=require('../src/db');
 const {createCompetitionEvent}=require('../src/services/competition-events');
 const {createCompetitionRegistration}=require('../src/services/competition-registration');
 const {saveSchedule,readSchedule,generateSchedule}=require('../src/services/competition-schedule');
-const {points,parseResult,rankWorkout,standings,seedResults,readResults,saveResults,publicResults,latchFinal,finalStartsAt,guardScheduleChanges}=require('../src/services/competition-results');
+const {points,parseResult,rankWorkout,standings,seedResults,readResults,saveResults,publishFinalResults,publicResults,latchFinal,finalStartsAt,guardScheduleChanges}=require('../src/services/competition-results');
 const keys=[];
 const teams=Array.from({length:8},(_,i)=>({id:String(i+1),name:`Команда ${i+1}`}));
 const config={name:'Результат',kind:'reps'};
@@ -158,7 +158,7 @@ test('mixed time and reps ranks all finishers first, shares ties, preserves zero
   assert.throws(()=>parseResult({kind:'reps',value:'12.5'},'time_or_reps'));
 });
 
-test('results lifecycle, next heat seeding, privacy latch and event isolation',async()=>{
+test('results lifecycle, next heat seeding, final publication and event isolation',async()=>{
   const event=await createCompetitionEvent({name:'Проверка результатов',date:'2026-10-10',location:'Зал',fee_rubles:3500,registration_enabled:true,categories:[{key:'cat',name:'Категория'}],terms_text:'Тест'});keys.push(event.event_key);
   const ids=[];
   for(let i=0;i<3;i++) {
@@ -180,7 +180,9 @@ test('results lifecycle, next heat seeding, privacy latch and event isolation',a
   const entries=Object.fromEntries(ids.map((id,i)=>[id,[String((i+1)*10)]]));
   const incomplete={...entries,[ids[0]]:['']};
   await apply({action:'save',complex_id:first.id,entries:incomplete});
-  assert.equal((await publicResults(event.event_key)).categories[0].rows.length,0);
+  const draftPublic=await publicResults(event.event_key);
+  assert.equal(draftPublic.categories[0].rows.length,3);
+  assert.ok(draftPublic.categories[0].rows.every(row=>row.total===null && row.place===null));
   await assert.rejects(apply({action:'confirm',complex_id:first.id,entries:incomplete}),/все результаты/);
   await assert.rejects(apply({action:'save',complex_id:first.id,entries:{...entries,999:['1']}}),/отсутствует/);
   await apply({action:'confirm',complex_id:first.id,entries});
@@ -189,6 +191,8 @@ test('results lifecycle, next heat seeding, privacy latch and event isolation',a
   assert.deepEqual(schedule.grid.blocks[1].heats.flatMap(h=>h.slots).map(s=>s.registration_id),[ids[0],ids[1],ids[2],null]);
   const publicly=await publicResults(event.event_key);
   assert.equal(publicly.categories[0].rows[0].total,100);
+  assert.equal(publicly.categories[0].columns.length,1);
+  assert.ok(publicly.schedule.blocks.length>=2);
   assert.ok(!JSON.stringify(publicly).includes('test@example'));
   assert.ok(!JSON.stringify(publicly).includes('registration_id'));
   const finalEntries=Object.fromEntries(ids.map((id,i)=>[id,[{kind:i===2?'reps':'time',value:i===2?'120':`0${i+1}:00`},String(100+i)]]));
@@ -197,12 +201,22 @@ test('results lifecycle, next heat seeding, privacy latch and event isolation',a
   await assert.rejects(apply({action:'reopen',complex_id:first.id}),/уже есть результаты/);
   await assert.rejects(saveSchedule(event.event_key,{revision:schedule.revision,config:{categories:[{category_key:'cat',planned_count:4,complexes:[second]}]}}),/Нельзя удалить/);
   await latchFinal(event.event_key,schedule,pool,Date.parse('2026-10-10T00:00:00Z'));
-  const hidden=await publicResults(event.event_key);
-  assert.equal(hidden.hidden,true);assert.equal(hidden.categories,undefined);
+  assert.equal((await publicResults(event.event_key)).categories[0].columns.length,1);
+  await assert.rejects(publishFinalResults(event.event_key,{revision:data.revision,schedule_revision:data.schedule_revision,source_hash:data.source_hash}),/Сначала подтвердите/);
+  await apply({action:'confirm',complex_id:second.id,entries:finalEntries});
+  const concealed=await publicResults(event.event_key);
+  assert.equal(concealed.final_hidden,true);assert.equal(concealed.categories[0].columns.length,1);
+  assert.ok(concealed.schedule.blocks.some(block=>block.name==='Финал'));
+  assert.ok(!JSON.stringify(concealed.categories).includes('Время или повторения'));
+  data=await publishFinalResults(event.event_key,{revision:data.revision,schedule_revision:data.schedule_revision,source_hash:data.source_hash});
+  const published=await publicResults(event.event_key);
+  assert.equal(published.final_hidden,false);assert.equal(published.categories[0].columns.length,3);
+  await assert.rejects(apply({action:'reopen',complex_id:second.id}),/уже опубликованы/);
   assert.equal((await readResults(event.event_key)).blocks[0].rankings[0].length,3);
+  schedule=await readSchedule(event.event_key);
   schedule=await saveSchedule(event.event_key,{revision:schedule.revision,config:{categories:[{category_key:'cat',planned_count:4,complexes:[first,{...second,start_time:'11:00'}]}]}});
   schedule=await generateSchedule(event.event_key,{revision:schedule.revision,source_hash:schedule.source_hash});
-  assert.equal((await publicResults(event.event_key)).hidden,true);
+  assert.equal((await publicResults(event.event_key)).final_published,true);
   const other=await createCompetitionEvent({name:'Другое',date:'2026-10-10',location:'Зал',fee_rubles:3500,registration_enabled:false,categories:[{key:'cat',name:'Категория'}],terms_text:'Тест'});keys.push(other.event_key);
   assert.deepEqual((await readResults(other.event_key)).state,{workouts:{}});
   await assert.rejects(saveResults(event.event_key,{revision:0,schedule_revision:0,source_hash:'old',complex_id:first.id,action:'reopen'}),/изменились/);

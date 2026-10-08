@@ -134,10 +134,6 @@ function finalStartsAt(schedule,state) {
 async function latchFinal(eventKey,schedule,executor=pool,now=Date.now()) {
   const row=(await executor.query('SELECT * FROM competition_results WHERE event_key=$1',[eventKey])).rows[0];
   const closesAt=finalStartsAt(schedule,row?.state || {workouts:{}});
-  if (row && !row.hidden_at && closesAt && now>=new Date(closesAt).getTime()) {
-    await executor.query('UPDATE competition_results SET hidden_at=NOW() WHERE event_key=$1 AND hidden_at IS NULL',[eventKey]);
-    row.hidden_at=new Date(now).toISOString();
-  }
   return {row,closesAt};
 }
 
@@ -146,8 +142,11 @@ async function readResults(eventKey,executor=pool) {
   const {row,closesAt}=await latchFinal(schedule.competition.event_key,schedule,executor);
   const state=row?.state || {workouts:{}};
   const blocks=blocksOf(schedule);
+  const finals=blocks.filter(block=>state.workouts[block.id]?.is_final);
+  const finalCategories=new Set(finals.map(block=>block.category_key));
+  const finalReady=finals.length>0&&schedule.competition.categories.every(category=>finalCategories.has(category.key))&&finals.every(block=>state.workouts[block.id]?.status==='confirmed');
   return {competition:schedule.competition,revision:row?.revision || 0,schedule_revision:schedule.revision,source_hash:schedule.source_hash,
-    has_grid:Boolean(schedule.grid),grid_stale:schedule.grid_stale,hidden:Boolean(row?.hidden_at),closes_at:closesAt,state,
+    has_grid:Boolean(schedule.grid),grid_stale:schedule.grid_stale,hidden:false,closes_at:closesAt,final_ready:finalReady,final_published:Boolean(row?.final_published_at),state,
     combined_heats:schedule.grid?.combined_heats || [],
     briefings:(schedule.grid?.blocks || []).filter(block=>block.kind==='briefing').map(({id,name,start_time,end_time})=>({id,name,start_time,end_time})),
     blocks:blocks.map(block=>({...block,teams:roster(block),rankings:rankWorkout(state.workouts[block.id],roster(block))})),
@@ -168,6 +167,7 @@ async function saveResults(eventKey,input) {
     if (existing?.status==='confirmed' && input.action!=='reopen') throw invalid('Сначала откройте результаты для редактирования');
     if (input.action==='reopen') {
       if (existing?.status!=='confirmed') throw invalid('Комплекс ещё не подтверждён');
+      if (existing.is_final && current.final_published) throw invalid('Финальные результаты уже опубликованы');
       if (later.some(item=>item.redistribute_by_overall !== false && hasEntries(state.workouts[item.id]))) throw invalid('У следующего блока с перераспределением уже есть результаты. Исправление изменит его состав');
       existing.status='draft';
     } else if (input.action==='settings') {
@@ -200,6 +200,18 @@ async function saveResults(eventKey,input) {
       const schedule=await readSchedule(eventKey,client);
       if (schedule.grid) await client.query('UPDATE competition_schedules SET generated_grid=$2,revision=revision+1 WHERE event_key=$1',[eventKey,seedResults(schedule.grid,state)]);
     }
+    return readResults(eventKey,client);
+  });
+}
+
+async function publishFinalResults(eventKey,input) {
+  return withTransaction(async client=>{
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[eventKey]);
+    const current=await readResults(eventKey,client);
+    if (input.revision!==current.revision || input.schedule_revision!==current.schedule_revision || input.source_hash!==current.source_hash) throw conflict('Данные изменились. Обновите раздел перед публикацией');
+    if (current.final_published) return current;
+    if (!current.final_ready) throw invalid('Сначала подтвердите результаты финального комплекса во всех категориях');
+    await client.query('UPDATE competition_results SET final_published_at=NOW(),revision=revision+1,updated_at=NOW() WHERE event_key=$1',[eventKey]);
     return readResults(eventKey,client);
   });
 }
@@ -260,10 +272,32 @@ async function publicResults(eventKey) {
   return withTransaction(async client=>{
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[eventKey]);
     const result=await readResults(eventKey,client);
-    const base={name:result.competition.name,hidden:result.hidden,closes_at:result.closes_at};
-    if (result.hidden) return base;
-    return {...base,categories:result.competition.categories.map(category=>({...category,rows:result.standings[category.key].filter(row=>row.scores.length).map(({name,total,place,scores})=>({name,total,place,scores}))}))};
+    const schedule=await readSchedule(eventKey,client);
+    const publicState=structuredClone(result.state);
+    if (!result.final_published) for (const workout of Object.values(publicState.workouts)) if (workout.is_final) workout.status='draft';
+    const visibleColumns=categoryKey=>result.blocks.filter(block=>block.category_key===categoryKey).flatMap(block=>{
+      const workout=publicState.workouts[block.id];
+      if (!workout?.components?.length || workout.is_final && !result.final_published) return [];
+      return workout.components.map((component,index)=>({key:`${block.id}:${index}`,complex_id:block.id,complex_name:block.name,component_index:index,component:component.name,kind:component.kind}));
+    });
+    const grid=schedule.grid;
+    const combined=new Map((grid?.combined_heats || []).map(heat=>[heat.id,heat]));
+    const publicSchedule=grid?{event_date:grid.event_date,start_time:grid.start_time,end_time:grid.end_time,blocks:grid.blocks.map(block=>{
+      if(block.kind)return {id:block.id,kind:block.kind,name:block.name,venue:block.venue,start_time:block.start_time,end_time:block.end_time};
+      const heats=block.heats.flatMap(heat=>{
+        const shared=heat.combined_heat_id?combined.get(heat.combined_heat_id):null;
+        if(shared&&shared.block_ids[0]!==block.id)return [];
+        const slots=(shared?.slots || heat.slots).map(slot=>({lane:slot.lane,team_name:slot.team_name,category_name:slot.category_name || block.category_name}));
+        return [{number:shared?.number || heat.number,start_time:shared?.start_time || heat.start_time,end_time:shared?.end_time || heat.end_time,combined:Boolean(shared),slots}];
+      });
+      if(!heats.length)return null;
+      return {id:block.id,kind:null,name:block.name,category_name:block.category_name,complex_number:block.complex_number,venue:block.venue,start_time:block.start_time,end_time:block.end_time,heats};
+    }).filter(Boolean)}:null;
+    return {name:result.competition.name,date:result.competition.date,location:result.competition.location,final_published:result.final_published,final_hidden:!result.final_published&&result.blocks.some(block=>result.state.workouts[block.id]?.is_final),schedule:publicSchedule,categories:result.competition.categories.map(category=>{
+      const rows=standings(result.blocks,publicState,category.key).map(({name,total,place,scores})=>({name,total:scores.length?total:null,place:scores.length?place:null,scores}));
+      return {key:category.key,name:category.name,columns:visibleColumns(category.key),rows};
+    })};
   });
 }
 
-module.exports={points,parseResult,rankWorkout,standings,seedResults,finalStartsAt,latchFinal,readResults,saveResults,saveScheduleScoring,guardScheduleChanges,gridWithResults,publicResults};
+module.exports={points,parseResult,rankWorkout,standings,seedResults,finalStartsAt,latchFinal,readResults,saveResults,publishFinalResults,saveScheduleScoring,guardScheduleChanges,gridWithResults,publicResults};

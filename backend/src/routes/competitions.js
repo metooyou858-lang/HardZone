@@ -44,6 +44,10 @@ router.put('/events/:eventKey/results', async (req,res,next) => {
   try { return res.json({success:true,data:await require('../services/competition-results').saveResults(req.params.eventKey,req.body)}); }
   catch(error) { if(error.statusCode) return res.status(error.statusCode).json({success:false,error:error.message}); return next(error); }
 });
+router.post('/events/:eventKey/results/publish-final', async (req,res,next) => {
+  try { return res.json({success:true,data:await require('../services/competition-results').publishFinalResults(req.params.eventKey,req.body)}); }
+  catch(error) { if(error.statusCode) return res.status(error.statusCode).json({success:false,error:error.message}); return next(error); }
+});
 
 router.post('/events/:eventKey/schedule/preview-activity', async (req, res, next) => {
   try { return res.json({success:true, data:await previewActivity(req.params.eventKey, req.body)}); }

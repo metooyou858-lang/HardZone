@@ -47,9 +47,9 @@ test('invalid scoring and a nonlast final are rejected',async()=>{
   await assert.rejects(f.service.saveScheduleScoring('event',schedule,config,f.executor),/последний/);
 });
 
-test('removing a started final marker keeps public results hidden',async()=>{
+test('removing a started final marker does not publish or hide results',async()=>{
   const f=fixture({first:{...scoring,is_final:true,entries:{},status:'draft'}});
   await f.service.saveScheduleScoring('event',{...schedule,grid:{event_date:'2020-01-01',blocks:[{id:'first',start_time:'09:00'}]}},input(scoring),f.executor);
-  assert.ok(f.row().hidden_at);
+  assert.equal(f.row().hidden_at,null);
   assert.equal(f.row().state.workouts.first.is_final,false);
 });

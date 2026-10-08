@@ -2,7 +2,7 @@
 
 import {Fragment,useEffect,useState} from 'react';
 import {maskResultInput,validResultTime} from '@/lib/competition-result-input';
-import {fetchCompetitionResults,saveCompetitionResults,resultText,type ResultsData,type ResultKind} from '@/lib/api/competition-results';
+import {fetchCompetitionResults,publishCompetitionFinalResults,saveCompetitionResults,resultText,type ResultsData,type ResultKind} from '@/lib/api/competition-results';
 
 const button='min-h-11 rounded-lg border border-[var(--line-soft)] px-4 py-2 text-sm disabled:opacity-40';
 const input='min-h-11 w-full min-w-0 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-main)] px-3 py-2 text-sm';
@@ -80,6 +80,13 @@ export default function CompetitionResultsPanel({eventKey}:{eventKey:string}) {
       setNotice(action==='confirm'?'Комплекс завершён. Итоги и следующие заходы обновлены.':action==='reopen'?'Можно исправить результаты.':'Результаты сохранены.');
     } catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить результаты');}finally{setBusy(false);}
   }
+  async function publishFinal() {
+    if(!data||!window.confirm('Опубликовать финальный комплекс и итоговые места для всех участников? Отменить публикацию после этого нельзя.'))return;
+    setBusy(true);setError('');setNotice('');
+    try{const value=await publishCompetitionFinalResults(eventKey,data);setData(value);setNotice('Финальный комплекс и итоговый рейтинг опубликованы.');}
+    catch(e){setError(e instanceof Error?e.message:'Не удалось опубликовать финальные результаты');}
+    finally{setBusy(false);}
+  }
   const blocked=!data?.has_grid || data.grid_stale || !workout;
   const complete=!!block?.teams.length && !!workout && block.teams.every(team=>workout.components.every((_,index)=>entries[team.id]?.[index]?.trim()));
 
@@ -125,6 +132,6 @@ export default function CompetitionResultsPanel({eventKey}:{eventKey:string}) {
       }))}<td className={`${cell} text-right font-semibold tabular-nums`}>{row.scores.length?row.total:'—'}</td></tr>)}</tbody></table>{!data.standings[category]?.length && <p className="p-4 text-sm text-[var(--text-muted)]">Пока нет участников в сетке.</p>}</div>
       <p className="text-xs text-[var(--text-muted)]">Учитываются завершённые комплексы. При равной сумме выше участник с большим числом первых мест, затем вторых и далее.</p>
     </>}
-    {data && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line-soft)] pt-3 text-xs text-[var(--text-muted)]"><span>{data.hidden?'Публичные результаты скрыты с начала финала.':data.closes_at?'Публичные результаты скроются с началом финала.':'Публикуются только завершённые комплексы.'}</span><a className="inline-flex min-h-11 items-center underline" target="_blank" rel="noreferrer" href={`/competition/results?event=${encodeURIComponent(eventKey)}`}>Таблица для участников</a></div>}
+    {data && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line-soft)] pt-3 text-xs text-[var(--text-muted)]"><span>{data.final_published?'Финальный комплекс и итоговый рейтинг опубликованы.':data.final_ready?'Финал подтверждён, но скрыт до отдельной публикации.':'Публично видны расписание и подтверждённые результаты до финала.'}</span><div className="flex flex-wrap items-center gap-2">{data.final_ready&&!data.final_published&&<button className={button} disabled={busy} onClick={()=>void publishFinal()}>Опубликовать финал</button>}<a className="inline-flex min-h-11 items-center underline" target="_blank" rel="noreferrer" href={`/competition/results?event=${encodeURIComponent(eventKey)}`}>Страница участников</a></div></div>}
   </section>;
 }
