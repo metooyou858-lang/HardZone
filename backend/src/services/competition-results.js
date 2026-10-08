@@ -148,6 +148,7 @@ async function readResults(eventKey,executor=pool) {
   const blocks=blocksOf(schedule);
   return {competition:schedule.competition,revision:row?.revision || 0,schedule_revision:schedule.revision,source_hash:schedule.source_hash,
     has_grid:Boolean(schedule.grid),grid_stale:schedule.grid_stale,hidden:Boolean(row?.hidden_at),closes_at:closesAt,state,
+    combined_heats:schedule.grid?.combined_heats || [],
     blocks:blocks.map(block=>({...block,teams:roster(block),rankings:rankWorkout(state.workouts[block.id],roster(block))})),
     standings:Object.fromEntries(schedule.competition.categories.map(category=>[category.key,standings(blocks,state,category.key)]))};
 }

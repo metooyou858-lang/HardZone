@@ -103,6 +103,7 @@ test('operational previews are read-only and confirmed shift and merge update on
   current=await applyMerge(event.event_key,mergeInput);
   assert.equal(current.grid.combined_heats.length,1);
   assert.equal(current.grid.merge_summary.saved_minutes,13);
+  assert.equal((await require('../src/services/competition-results').readResults(event.event_key)).combined_heats.length,1);
   await assert.rejects(applyMerge(event.event_key,mergeInput),/Сетка изменилась/);
 });
 

@@ -82,6 +82,8 @@ export default function CompetitionResultsPanel({eventKey}:{eventKey:string}) {
   }
   const blocked=!data?.has_grid || data.grid_stale || !workout;
   const complete=!!block?.teams.length && !!workout && block.teams.every(team=>workout.components.every((_,index)=>entries[team.id]?.[index]?.trim()));
+  const printReady=!!block&&!blocked&&block.heats.length>0&&block.heats.every(heat=>heat.slots.length>0&&heat.slots.every(slot=>slot.registration_id&&slot.team_name));
+  const printUrl=`/competitions/print?event=${encodeURIComponent(eventKey)}&complex=${encodeURIComponent(complexId)}`;
 
   return <section className="space-y-4 text-[var(--text-main)]">
     <div className="flex flex-wrap items-end justify-between gap-3">
@@ -97,7 +99,7 @@ export default function CompetitionResultsPanel({eventKey}:{eventKey:string}) {
     {data && view==='entry' && <>
       {!block && <p className="py-6 text-sm text-[var(--text-muted)]">В этой категории ещё нет комплексов. <a className="underline" href={timingUrl}>Открыть тайминг</a></p>}
       {block && <>
-        <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-base font-semibold">{block.name}{workout?.is_final?' · Финал':''}</h3><span className="text-xs text-[var(--text-muted)]">{confirmed?'Комплекс завершён':dirty?'Есть несохранённые результаты':'Ввод результатов'}</span></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap items-center gap-3"><h3 className="text-base font-semibold">{block.name}{workout?.is_final?' · Финал':''}</h3>{printReady?<a className={button} href={printUrl} target="_blank" rel="noreferrer">Печать сетки</a>:<button className={button} type="button" disabled title="Состав заходов ещё не определён">Ожидаются результаты</button>}</div><span className="text-xs text-[var(--text-muted)]">{confirmed?'Комплекс завершён':dirty?'Есть несохранённые результаты':'Ввод результатов'}</span></div>
         {blocked && <p className="text-sm text-[var(--warning)]">{!data.has_grid?'Сначала сформируйте сетку заходов в тайминге.':data.grid_stale?'Обновите сохранённую сетку заходов в тайминге.':'Укажите зачёты в настройках этого комплекса.'} <a className="underline" href={timingUrl}>Открыть тайминг</a></p>}
         {workout && <div className="overflow-x-auto rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)]">
           <table className="w-full border-collapse text-sm"><thead className="text-xs text-[var(--text-muted)]"><tr><th className={`${cell} min-w-40`}>Участник</th>{workout.components.map((part,index)=><Fragment key={index}><th className={`${cell} min-w-48`}><span className="block text-[var(--text-main)]">{part.name}</span><span className="font-normal">{kindNames[part.kind]}</span></th><th className={`${cell} w-20 text-right`}>Место</th><th className={`${cell} w-20 text-right`}>Баллы</th></Fragment>)}</tr></thead>
