@@ -269,11 +269,11 @@ test('first complex uses reverse registration order with a partial first heat an
   assert.equal(grid.blocks[0].end_time,'09:36'); assert.equal(grid.end_time,'09:51'); assert.equal(grid.start_time,'09:00');
 });
 
-test('final onsite roster closes gaps in order and leaves only the last heat incomplete',()=>{
+test('final onsite roster closes gaps in order and keeps the first heat incomplete',()=>{
   const arrived=teams.filter(team=>team.id!=='8');
   const grid=buildSchedule(normalizeSchedule(plan([complex()],20),competition),competition,arrived,true);
   assert.deepEqual(grid.errors,[]);
-  assert.deepEqual(grid.blocks[0].heats.map(heat=>heat.slots.length),[4,4,1]);
+  assert.deepEqual(grid.blocks[0].heats.map(heat=>heat.slots.length),[1,4,4]);
   assert.deepEqual(grid.blocks[0].heats.flatMap(heat=>heat.slots.map(slot=>slot.registration_id)),['10','9','7','6','5','4','3','2','1']);
   assert.equal(grid.blocks[0].planned_count,9);
 });

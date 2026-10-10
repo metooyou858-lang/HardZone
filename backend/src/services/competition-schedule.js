@@ -213,10 +213,7 @@ function buildSchedule(config, competition, registrations, actualOnly = false) {
       previousEnd = occupiedTo;
       let offset = 0;
       const heats = Array.from({ length: heatCount }, (_, heatIndex) => {
-        // After check-in, gaps are closed in order and only the final heat may be incomplete.
-        const places = actualOnly
-          ? heatIndex === heatCount - 1 ? count % complex.lanes || complex.lanes : complex.lanes
-          : heatIndex === 0 ? count % complex.lanes || complex.lanes : complex.lanes;
+        const places = heatIndex === 0 ? count % complex.lanes || complex.lanes : complex.lanes;
         const heatStart = start + heatIndex * (complex.duration_minutes + complex.gap_minutes);
         const slots = Array.from({ length: places }, (_, laneIndex) => {
           const redistribute = qualificationActive || (index > 0 && complex.redistribute_by_overall !== false);
