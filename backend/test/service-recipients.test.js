@@ -16,7 +16,7 @@ after(async () => {
 });
 
 test('service recipients: defaults, independent grants, repeat confirmation, refunds, edit locks and validation', async () => {
-  assert.ok(process.env.DATABASE_URL?.includes('recipient'), 'Run only against an isolated recipient test database');
+  assert.match(process.env.DATABASE_URL || '', /(?:recipient|hardzone_test_)/, 'Run only against an isolated test database');
   const { rows: [admin] } = await pool.query("SELECT id, name, username, role FROM users WHERE role = 'admin' AND is_active LIMIT 1");
   const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 600000, user: { ...admin, id: Number(admin.id) } })).toString('base64url');
   const token = payload + '.' + createHmac('sha256', process.env.HARDZONE_SESSION_SECRET).update(payload).digest('base64url');

@@ -62,7 +62,13 @@ By default, frontend expects backend at `http://127.0.0.1:3000/api`.
 Fast local smoke:
 
 ```powershell
-.\scripts\smoke-local.ps1 -SkipBackendMigrate
+.\scripts\verify.ps1 -Profile Quick
+```
+
+Full pre-release verification (the branch must already be pushed for isolated remote backend tests):
+
+```powershell
+.\scripts\verify.ps1 -Profile Full
 ```
 
 Only mojibake scan:

@@ -50,6 +50,34 @@ function hasUsableReceiptResult(operation) {
   return Boolean(fiscalData?.fiscal_fd && fiscalData?.fiscal_fn && fiscalData?.fiscal_fp);
 }
 
+function assertPaidSlipMatchesOrder(order, slipData) {
+  if (!slipData?.content || !isSlipPaid(slipData)) {
+    throw httpError(409, 'AQSI не подтвердил оплату заказа');
+  }
+  if (slipData.content.type !== 'purchase') {
+    throw httpError(409, 'AQSI вернул неподходящий тип платёжной операции');
+  }
+
+  const expectedAmount = Math.round(Number(order.total_amount || 0) * 100);
+  const actualAmount = Number(slipData.content.amount);
+  if (!Number.isFinite(actualAmount) || Math.abs(actualAmount - expectedAmount) > 1) {
+    throw httpError(409, 'Сумма подтверждённой оплаты AQSI не совпадает с суммой заказа');
+  }
+}
+
+async function confirmSavedPaidSlip(order, action) {
+  if (order.status !== 'open' || !order.aqsi_slip_id) return order;
+
+  const content = await recoverSlipContentForReceipt(order, order.aqsi_slip_id, action);
+  if (!content) {
+    throw httpError(409, 'Не удалось независимо подтвердить сохранённую оплату AQSI');
+  }
+  assertPaidSlipMatchesOrder(order, { id: order.aqsi_slip_id, content });
+  await confirmOpenOrderPayment(order.id, 'card');
+  const { rows: [confirmed] } = await pool.query('SELECT * FROM orders WHERE id = $1', [order.id]);
+  return confirmed;
+}
+
 // Сбрасывает все поля платёжного состояния. Единая точка очистки — не забыть ни одно поле.
 // Бросает если БД недоступна — не глотает ошибку молча.
 async function clearPaymentState(orderId, { status = null, error = null } = {}) {
@@ -166,13 +194,6 @@ async function checkReceiptOp(orderId, receiptOperationId) {
     throw httpError(500, `Чек фискализирован, но реквизиты не сохранились в CRM: ${dbErr.message}`);
   }
 
-  try {
-    await confirmOpenOrderPayment(orderId, 'card');
-  } catch (err) {
-    logger.error('orders', { action: 'confirm_after_slip_failed', order_id: orderId, message: err.message });
-    throw httpError(500, `Фискализация прошла, но ошибка закрытия заказа: ${err.message}`);
-  }
-
   await pool.query(
     `UPDATE orders SET
        aqsi_payment_operation_id = NULL,
@@ -203,7 +224,7 @@ async function startReceiptOp(orderId, slipId, slipContent) {
   const fresh = freshRows[0];
 
   if (!fresh) throw httpError(404, 'Заказ не найден');
-  if (fresh.status !== 'open' || hasSavedReceiptResult(fresh)) {
+  if (!['open', 'confirmed'].includes(fresh.status) || hasSavedReceiptResult(fresh)) {
     logger.info('orders', {
       action: 'receipt_fiscalize_skip_already_done',
       order_id: orderId,
@@ -211,7 +232,7 @@ async function startReceiptOp(orderId, slipId, slipContent) {
       receipt_status: fresh.aqsi_receipt_status,
     });
     return {
-      status: fresh.status === 'open' ? 'confirmed' : 'already_closed',
+      status: hasSavedReceiptResult(fresh) ? 'confirmed' : 'already_closed',
       has_marking_errors: fresh.aqsi_receipt_status === 'marking_error',
     };
   }
@@ -227,7 +248,7 @@ async function startReceiptOp(orderId, slipId, slipContent) {
 
   const { rowCount: claimed } = await pool.query(
     `UPDATE orders SET aqsi_receipt_status = 'pending', aqsi_error = NULL
-     WHERE id = $1 AND status = 'open' AND aqsi_receipt_operation_id IS NULL
+     WHERE id = $1 AND status IN ('open', 'confirmed') AND aqsi_receipt_operation_id IS NULL
        AND aqsi_slip_id IS NOT NULL
        AND (aqsi_receipt_status IS NULL OR aqsi_receipt_status = 'error')`,
     [orderId]
@@ -236,9 +257,9 @@ async function startReceiptOp(orderId, slipId, slipContent) {
   if (claimed === 0) {
     const { rows: latestRows } = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
     const latest = latestRows[0];
-    if (latest && (latest.status !== 'open' || hasSavedReceiptResult(latest))) {
+    if (latest && (!['open', 'confirmed'].includes(latest.status) || hasSavedReceiptResult(latest))) {
       return {
-        status: latest.status === 'open' ? 'confirmed' : 'already_closed',
+        status: hasSavedReceiptResult(latest) ? 'confirmed' : 'already_closed',
         has_marking_errors: latest.aqsi_receipt_status === 'marking_error',
       };
     }
@@ -274,7 +295,7 @@ async function startReceiptOp(orderId, slipId, slipContent) {
     await pool.query(
       'UPDATE orders SET aqsi_receipt_operation_id = $1, aqsi_receipt_status = $2 WHERE id = $3',
       [receiptOpId, 'pending', orderId]
-    ).catch(() => {});
+    );
 
     return { status: 'pending' };
   } catch (err) {
@@ -582,11 +603,19 @@ async function initiatePayment(orderId) {
 
 async function syncSlip(orderId) {
   const { rows: orderRows } = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
-  const order = orderRows[0];
+  let order = orderRows[0];
 
   if (!order) throw httpError(404, 'Заказ не найден');
-  if (order.status !== 'open') {
+  if (!['open', 'confirmed'].includes(order.status)) {
     return { status: 'already_closed' };
+  }
+
+  if (order.status === 'confirmed' && !order.aqsi_slip_id) {
+    return { status: 'already_closed' };
+  }
+
+  if (order.aqsi_slip_id && order.status === 'open') {
+    order = await confirmSavedPaidSlip(order, 'sync_slip_confirm_saved');
   }
 
   // Slip paid and receipt operation already created → check receipt status (single GET, no polling)
@@ -657,14 +686,24 @@ async function syncSlip(orderId) {
     return { status: 'declined', message: msg };
   }
 
+  assertPaidSlipMatchesOrder(order, slipData);
+
   // Payment confirmed — save slip ID, then create receipt operation
   const realSlipId = slipData.id ?? null;
+  if (!realSlipId) throw httpError(409, 'AQSI подтвердил оплату без идентификатора слипа');
   logger.info('orders', { action: 'slip_paid', order_id: orderId, slip_id: realSlipId });
 
   await pool.query(
     'UPDATE orders SET aqsi_slip_id = $1, aqsi_payment_status = $2 WHERE id = $3',
     [realSlipId, 'completed', orderId]
-  ).catch(() => {});
+  );
+
+  try {
+    await confirmOpenOrderPayment(orderId, 'card');
+  } catch (err) {
+    logger.error('orders', { action: 'confirm_after_paid_slip_failed', order_id: orderId, slip_id: realSlipId, message: err.message });
+    throw httpError(500, `Оплата подтверждена, но продажа не проведена: ${err.message}`);
+  }
 
   // Create receipt operation and return pending — receipt status checked on next poll
   return startReceiptOp(orderId, realSlipId, slipData.content ?? null);
@@ -675,12 +714,15 @@ async function syncSlip(orderId) {
 // Returns: { status, ... }
 // Throws: httpError(404), plain Error for 500
 
-async function syncAqsiV4(orderId) {
+async function syncAqsiV4(orderId, { allowReceiptRetry = true } = {}) {
   const { rows: orderRows } = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
   let currentOrder = orderRows[0];
 
   if (!currentOrder) throw httpError(404, 'Заказ не найден');
-  if (currentOrder.status !== 'open') return { status: 'already_closed' };
+  if (!['open', 'confirmed'].includes(currentOrder.status)) return { status: 'already_closed' };
+  if (currentOrder.status === 'confirmed' && !currentOrder.aqsi_slip_id && !currentOrder.aqsi_receipt_operation_id) {
+    return { status: 'already_closed' };
+  }
 
   if (!currentOrder.aqsi_payment_operation_id && !currentOrder.aqsi_slip_id && !currentOrder.aqsi_receipt_operation_id) {
     return { status: 'no_active_flow' };
@@ -715,13 +757,33 @@ async function syncAqsiV4(orderId) {
     }
 
     const realSlipId = slipData.id ?? null;
+    if (!realSlipId) throw httpError(409, 'AQSI подтвердил оплату без идентификатора слипа');
+    assertPaidSlipMatchesOrder(currentOrder, slipData);
     await pool.query(
       'UPDATE orders SET aqsi_slip_id = $1, aqsi_payment_status = $2 WHERE id = $3',
       [realSlipId, 'completed', orderId]
-    ).catch(() => {});
+    );
+
+    try {
+      await confirmOpenOrderPayment(orderId, 'card');
+    } catch (err) {
+      logger.error('orders', { action: 'confirm_recovered_paid_slip_failed', order_id: orderId, slip_id: realSlipId, message: err.message });
+      throw httpError(500, `Оплата подтверждена, но продажа не проведена: ${err.message}`);
+    }
 
     const { rows: refreshed } = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
     currentOrder = refreshed[0];
+  }
+
+  if (currentOrder.aqsi_slip_id && currentOrder.status === 'open') {
+    currentOrder = await confirmSavedPaidSlip(currentOrder, 'sync_v4_confirm_saved');
+  }
+
+  if (!allowReceiptRetry && currentOrder.aqsi_receipt_status === 'error') {
+    return {
+      status: 'receipt_error',
+      message: currentOrder.aqsi_error || 'Оплата учтена, чек требует ручного восстановления',
+    };
   }
 
   // Step 2: slip saved but no receipt operation — create one
@@ -790,7 +852,7 @@ async function syncAqsiV4(orderId) {
     await pool.query(
       'UPDATE orders SET aqsi_receipt_operation_id = $1, aqsi_receipt_status = $2, aqsi_error = NULL WHERE id = $3',
       [receiptOpId, 'pending', orderId]
-    ).catch(() => {});
+    );
 
     const { rows: refreshed } = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
     currentOrder = refreshed[0];
@@ -813,7 +875,7 @@ async function syncAqsiV4(orderId) {
   const hasFiscalResult = Boolean(initialFiscal?.fiscal_fd && initialFiscal?.fiscal_fn && initialFiscal?.fiscal_fp);
   if (hasFiscalResult) {
     receiptOp = { ...receiptOp, status: 'Completed' };
-  } else if (TERMINAL_CANCELLED_STATUSES.has(receiptOp.status)) {
+  } else if (TERMINAL_CANCELLED_STATUSES.has(receiptOp.status) && allowReceiptRetry) {
     const recovered = await retryFailedReceipt(currentOrder, receiptOp);
     if (!recovered.operation) return recovered;
     receiptOp = recovered.operation;
@@ -873,13 +935,6 @@ async function syncAqsiV4(orderId) {
   } catch (dbErr) {
     logger.error('orders', { action: 'sync_v4_save_fiscal_failed', order_id: orderId, message: dbErr.message });
     throw httpError(500, `Чек фискализирован, но реквизиты не сохранились в CRM: ${dbErr.message}`);
-  }
-
-  try {
-    await confirmOpenOrderPayment(orderId, 'card');
-  } catch (err) {
-    logger.error('orders', { action: 'confirm_sync_v4_failed', order_id: orderId, message: err.message });
-    throw httpError(500, `Фискализация прошла, но ошибка закрытия заказа: ${err.message}`);
   }
 
   await pool.query(

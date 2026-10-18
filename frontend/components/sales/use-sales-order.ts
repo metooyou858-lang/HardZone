@@ -298,11 +298,14 @@ export function useSalesOrder({
       }
 
       await basketApi.refreshOrder(order.id);
-      await sendOrderToAqsi(order.id, clientApi.selectedClient?.id ?? order.client_id ?? null);
+      const result = await sendOrderToAqsi(order.id, clientApi.selectedClient?.id ?? order.client_id ?? null);
 
       onHistoryChanged?.();
       handleStartNewOrder();
-      setBanner({ tone: "success", text: "Чек отправлен на кассу ✓" });
+      setBanner({
+        tone: result.warning ? "error" : "success",
+        text: result.warning ?? "Оплата учтена, чек фискализирован ✓",
+      });
     } catch (error) {
       // Reload order so UI immediately reflects aqsi_sent_at if backend set it during a network failure
       if (order) {
@@ -364,9 +367,13 @@ export function useSalesOrder({
           : "Оплачено и фискализировано ✓";
         setBanner({ tone: result.has_marking_errors ? "error" : "success", text: msg });
       } else if (result.status === "receipt_error") {
-        // Деньги списаны, чек не напечатан — оставляем заказ открытым, показываем кнопку восстановления
-        setBanner({ tone: "error", text: result.message ?? "Ошибка фискализации чека" });
-        if (order) await basketApi.refreshOrder(order.id).catch(() => {});
+        // Продажа уже проведена по подтверждённому слипу; отдельно сигнализируем о чеке.
+        onHistoryChanged?.();
+        handleStartNewOrder();
+        setBanner({
+          tone: "error",
+          text: result.message ?? "Оплачено, но чек требует восстановления",
+        });
       } else if (result.status === "cancelled") {
         setBanner({ tone: "info", text: "Оплата отменена" });
         if (order) await basketApi.refreshOrder(order.id).catch(() => {});

@@ -61,7 +61,7 @@ async function retryFailedReceipt(order, failedOperation) {
 
   const attempt = await withTransaction(async (client) => {
     const { rows: [current] } = await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [order.id]);
-    if (current.status !== 'open' || current.fiscal_fd || current.aqsi_receipt_operation_id !== order.aqsi_receipt_operation_id) return null;
+    if (!['open', 'confirmed'].includes(current.status) || current.fiscal_fd || current.aqsi_receipt_operation_id !== order.aqsi_receipt_operation_id) return null;
     if (current.aqsi_slip_id !== order.aqsi_slip_id || Number(current.total_amount) !== Number(order.total_amount)) {
       throw recoveryError('Заказ изменился во время проверки. Повторите восстановление.');
     }
@@ -111,7 +111,7 @@ async function retryFailedReceipt(order, failedOperation) {
     const updated = await client.query(
       `UPDATE orders SET aqsi_receipt_operation_id = $2, aqsi_receipt_status = 'pending',
        aqsi_payment_status = 'completed', aqsi_error = NULL
-       WHERE id = $1 AND status = 'open' AND aqsi_receipt_operation_id = $3`,
+       WHERE id = $1 AND status IN ('open', 'confirmed') AND aqsi_receipt_operation_id = $3`,
       [order.id, response.operationId, order.aqsi_receipt_operation_id]
     );
     if (updated.rowCount !== 1) {

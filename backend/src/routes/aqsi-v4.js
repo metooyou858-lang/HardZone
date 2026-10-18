@@ -54,7 +54,12 @@ router.post('/:id/sync-aqsi-v4', requireSalesAqsiRecovery, async (req, res) => {
 router.post('/:id/sync-aqsi', requireSalesAqsiRecovery, async (req, res, next) => {
   try {
     const { rows: [order] } = await pool.query('SELECT * FROM orders WHERE id = $1', [req.params.id]);
-    if (!order || !(order.aqsi_slip_id || order.aqsi_payment_operation_id)) {
+    if (!order || !(
+      order.aqsi_slip_id ||
+      order.aqsi_payment_operation_id ||
+      order.aqsi_receipt_operation_id ||
+      order.aqsi_receipt_status
+    )) {
       return next();
     }
     const result = await flow.syncAqsiV4(order.id);

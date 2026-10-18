@@ -258,6 +258,7 @@ test('card sync-slip sends receipt when AQSI payment is Finishing with approved 
       result: JSON.stringify({
         id: 'ci-finishing-slip',
         content: {
+          type: 'purchase',
           responseCode: '000',
           amount: 7000,
         },
@@ -284,15 +285,18 @@ test('card sync-slip sends receipt when AQSI payment is Finishing with approved 
 
   assert.equal(receiptPayload.payments[0].slip.id, 'ci-finishing-slip');
   assert.deepEqual(receiptPayload.payments[0].slip.content, {
+    type: 'purchase',
     responseCode: '000',
     amount: 7000,
   });
 
   const { rows } = await query(
-    'SELECT aqsi_payment_status, aqsi_slip_id, aqsi_receipt_operation_id, aqsi_receipt_status FROM orders WHERE id = $1',
+    'SELECT status, payment_type, aqsi_payment_status, aqsi_slip_id, aqsi_receipt_operation_id, aqsi_receipt_status FROM orders WHERE id = $1',
     [order.id]
   );
 
+  assert.equal(rows[0].status, 'confirmed');
+  assert.equal(rows[0].payment_type, 'card');
   assert.equal(rows[0].aqsi_payment_status, 'completed');
   assert.equal(rows[0].aqsi_slip_id, 'ci-finishing-slip');
   assert.equal(rows[0].aqsi_receipt_operation_id, 'ci-finishing-receipt-op');
@@ -361,6 +365,38 @@ test('cash send-to-aqsi stores AQSI receipt id from completed v4 receipt operati
   assert.equal(rows[0].fiscal_fd, '12345');
   assert.equal(rows[0].fiscal_fn, 'fn-ci');
   assert.equal(rows[0].fiscal_fp, '67890');
+});
+
+test('cash sale stays confirmed when fiscalization fails after AQSI accepted the command', async () => {
+  const user = await createUser();
+  const sessionUser = { id: Number(user.id), name: user.name, username: user.username, role: user.role };
+  const order = await createOpenOrder({ total_amount: 150, items_count: 1 });
+  await query(
+    `INSERT INTO order_items (order_id, kind, name, sale_price, quantity)
+     VALUES ($1, 'product', 'CI Cash Fiscal Failure', 150, 1)`,
+    [order.id]
+  );
+
+  mockSendOrderToAqsiV4 = async () => ({ operationId: 'ci-cash-fiscal-error-op' });
+  mockPollOperation = async () => ({ status: 'Error', message: 'Fiscal storage unavailable' });
+
+  const result = await request(`/api/orders/${order.id}/send-to-aqsi`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-hardzone-session': createSessionToken(sessionUser) },
+    body: JSON.stringify({ payment_type: 'cash' }),
+  });
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.order.status, 'confirmed');
+  assert.match(result.body.data.warning, /чек требует восстановления/);
+  const { rows: [saved] } = await query(
+    'SELECT status, payment_type, aqsi_receipt_status, aqsi_error FROM orders WHERE id = $1',
+    [order.id]
+  );
+  assert.equal(saved.status, 'confirmed');
+  assert.equal(saved.payment_type, 'cash');
+  assert.equal(saved.aqsi_receipt_status, 'error');
+  assert.match(saved.aqsi_error, /Error/);
 });
 
 test('cash AQSI rejection stays visible in paid history and can be retried', async () => {
@@ -475,8 +511,9 @@ test('history recovery URL retries V4 Error and confirms the resulting receipt',
   let sends = 0;
   mockSendV4ReceiptRequest = async () => { sends += 1; return { operationId: 'history-new' }; };
   const started = await request(`/api/orders/${order.id}/sync-aqsi`, { method: 'POST', headers });
-  assert.equal(started.response.status, 409);
-  assert.match(started.body.error, /Фискализация ещё выполняется/);
+  assert.equal(started.response.status, 200);
+  assert.equal(started.body.data.paid, true);
+  assert.equal(started.body.data.aqsi_status, 'pending');
   assert.equal(sends, 1);
   mockGetOperation = async () => ({ status: 'Completed', result: {
     id: 'history-receipt', info: { docInfo: { docNumber: 6501, fiscalStorageNumber: 'fn', docFiscalAttributeInt: 456 } },

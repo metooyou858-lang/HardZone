@@ -37,8 +37,10 @@ If UI/payment behavior is changed, treat the V4 flow as the primary path unless 
 1. Before changing AQSI endpoint or payload code, compare it with `swagger (3).json`.
 2. For re-fiscalizing an already paid but not closed order, use the existing server flow `syncAqsiV4(orderId)`.
 3. Do not manually create a fresh receipt if an order already has AQSI payment/receipt operation traces.
-4. Do not close an order until the receipt operation is `Completed`.
-5. During network uncertainty, preserve operation IDs and AQSI traces instead of clearing fields.
+4. Payment and fiscalization are separate states. Confirm the sale as soon as there is provider proof of payment; do not wait for the fiscal receipt.
+5. Card proof is an approved AQSI purchase slip with the exact order amount. Cash proof is an explicit cashier action accepted by AQSI with a persisted receipt `operationId`.
+6. A fiscal error never reopens a paid order. Keep `aqsi_receipt_status = 'error'` and expose recovery separately.
+7. During network uncertainty, preserve operation IDs and AQSI traces instead of clearing fields.
 
 ## Receipt Recovery Rules
 
@@ -51,7 +53,7 @@ If UI/payment behavior is changed, treat the V4 flow as the primary path unless 
 - До повтора проверяется весь журнал AQSI за период оплаты: ответ `{rows,pages,count}`, совпадение по `payments[].slip.id`. Чужой первый чек никогда не подставляется. Уже найденный чек сохраняется без нового запроса на фискализацию.
 - Таблица `aqsi_receipt_recovery_attempts` сохраняет прежний и новый operation ID. Запись `sending` фиксируется до обращения к AQSI и защищает от двойного нажатия, параллельных процессов и рестарта.
 - При сетевой неопределённости запись остаётся `uncertain`/`sending`: повторная отправка запрещена до сверки. Явный `OperationInProgress` сохраняется как `rejected` и допускает новое ручное нажатие после освобождения кассы.
-- Background sync не повторяет отменённые чеки автоматически. Эквайринг повторно не вызывается. Наличные без слипа требуют отдельной сверки.
+- Background sync повторно не вызывает эквайринг. Автоматический V4-проход проводит подтверждённый слип и продолжает только ожидающую фискализацию; ошибочный чек восстанавливается отдельным защищённым процессом. Наличные без сохранённого `operationId` требуют отдельной сверки.
 - Это исправляет восстановление после отмены, но не устанавливает причину первоначального зависания кассы.
 
 AQSI receipt recovery must treat card terminal payments and cash receipt processing as one shared fiscalization surface, even though they start from different endpoints.
@@ -59,19 +61,20 @@ AQSI receipt recovery must treat card terminal payments and cash receipt process
 - Card terminal flow uses `aqsi_payment_operation_id`, `aqsi_slip_id`, and `aqsi_receipt_operation_id`.
 - Cash flow uses `aqsi_sent_at` and `aqsi_receipt_operation_id`; it does not have a slip.
 - If `aqsi_receipt_operation_id` exists, recovery must check `/v4/Operations/{id}` before creating any new receipt.
-- `marking_error` with fiscal data is terminal for payment/order closing: save fiscal data, confirm the order, preserve `aqsi_error`, and keep the receipt operation id for diagnostics.
-- `completed` with fiscal data is terminal: save fiscal data, confirm the order, clear transient operation locks.
+- `marking_error` with fiscal data is terminal for fiscalization: save fiscal data, preserve `aqsi_error`, and keep the receipt operation id for diagnostics. The sale may already be confirmed.
+- `completed` with fiscal data is terminal for fiscalization: save fiscal data and clear transient operation locks. The sale may already be confirmed.
 - Do not retry a receipt endlessly when slip content cannot be recovered. Mark it as `stuck`/manual reconciliation instead.
 - A bare `aqsi_receipt_status = 'pending'` without payment/slip/receipt operation traces is not enough for V4 background recovery.
 - If a cash send failed with network uncertainty and AQSI later says the order is not found, clear `aqsi_sent_at` only when there is no `aqsi_receipt_operation_id` and no `aqsi_receipt_id`; this unlocks a safe cashier retry.
-- Cash V4 receipts must save `aqsi_receipt_id`, fiscal FD/FN/FP, `aqsi_receipt_status`, and `aqsi_receipt_operation_id` before confirming the order.
+- Cash V4 must persist `aqsi_receipt_operation_id` before confirming the sale. `aqsi_receipt_id`, fiscal FD/FN/FP and the receipt status are saved independently when the operation finishes.
 
 ## V4 Acquiring Flow
 
 UI flow:
 
 ```text
-card payment -> initiate-payment -> polling sync-slip -> receipt operation -> close order
+card payment -> initiate-payment -> verified paid slip -> confirm sale
+                                                -> receipt operation -> fiscal status
 ```
 
 Backend AQSI endpoints:

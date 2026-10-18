@@ -1386,7 +1386,11 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
   await pool.query(
     'UPDATE orders SET aqsi_receipt_operation_id = $2, aqsi_receipt_status = $3, aqsi_error = NULL WHERE id = $1',
     [orderId, receiptOpId, 'pending']
-  ).catch((dbErr) => logger.error('orders', { action: 'save_cash_receipt_op_failed', order_id: orderId, message: dbErr.message }));
+  );
+
+  // Наличные приняты кассиром, а AQSI приняла команду и вернула operationId.
+  // Факт продажи больше не зависит от того, успеет ли ФН сформировать чек.
+  const confirmed = await confirmOpenOrderPayment(orderId, 'cash');
 
   // Poll until terminal completes receipt (usually 2-5 seconds for cash)
   let finalOp;
@@ -1397,7 +1401,10 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
       'UPDATE orders SET aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
       [orderId, 'pending', `Не удалось дождаться результата фискализации: ${err.message}`]
     ).catch(() => {});
-    return sendInternalError(res, err, { route: 'orders.sync' });
+    return res.json({ success: true, data: {
+      order: confirmed.order,
+      warning: 'Оплата учтена, фискализация ещё выполняется',
+    } });
   }
 
   if (finalOp.status !== 'Completed') {
@@ -1405,7 +1412,10 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
       'UPDATE orders SET aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
       [orderId, 'error', `Касса не подтвердила чек: ${finalOp.status}`]
     ).catch(() => {});
-    return res.status(500).json({ success: false, error: `Касса не подтвердила чек: ${finalOp.status}` });
+    return res.json({ success: true, data: {
+      order: confirmed.order,
+      warning: `Оплата учтена, но чек требует восстановления: ${finalOp.status}`,
+    } });
   }
 
   // Save receipt + fiscal data
@@ -1415,7 +1425,10 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
       'UPDATE orders SET aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
       [orderId, 'error', 'Чек завершён, но реквизиты ФД/ФН/ФП не получены — требуется ручная проверка']
     ).catch(() => {});
-    return res.status(500).json({ success: false, error: 'Чек завершён, но реквизиты ФД/ФН/ФП не получены' });
+    return res.json({ success: true, data: {
+      order: confirmed.order,
+      warning: 'Оплата учтена, но реквизиты чека требуют восстановления',
+    } });
   }
 
   const hasMarkingErrors = Boolean(fiscal.has_marking_errors);
@@ -1450,9 +1463,7 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
     ]
   ).catch((dbErr) => logger.error('orders', { action: 'save_cash_receipt_failed', order_id: orderId, message: dbErr.message }));
 
-  // Confirm order and deduct stock
-  const confirmed = await confirmOpenOrderPayment(orderId, 'cash');
-  return res.json({ success: true, data: confirmed.order });
+  return res.json({ success: true, data: { order: confirmed.order, warning: null } });
 });
 
 

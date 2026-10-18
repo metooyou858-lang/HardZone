@@ -1,6 +1,6 @@
 process.env.NODE_ENV = 'test';
 const assert = require('node:assert/strict');
-const { test, beforeEach, after } = require('node:test');
+const { test, beforeEach, afterEach, after } = require('node:test');
 const aqsi = require('../src/services/aqsi');
 let operation;
 let list;
@@ -14,6 +14,7 @@ aqsi.sendV4ReceiptRequest = (...args) => send(...args);
 const { pool } = require('../src/db');
 const { syncAqsiV4 } = require('../src/services/aqsi-v4-flow');
 const { findReceiptForOrder } = require('../src/services/aqsi-receipt-recovery');
+const { runV4SlipSyncPass } = require('../src/services/order-sync');
 
 beforeEach(() => {
   sends = 0;
@@ -22,8 +23,10 @@ beforeEach(() => {
   slip = async () => ({ id: 'recovery-slip', content: { type: 'purchase', responseCode: '000', amount: 557000 } });
   send = async () => { sends += 1; return { operationId: 'recovery-new' }; };
 });
-after(async () => {
+afterEach(async () => {
   await pool.query("DELETE FROM orders WHERE comment = 'ci-receipt-recovery'");
+});
+after(async () => {
   await pool.end();
 });
 async function createOrder() {
@@ -112,6 +115,30 @@ test('active operations and unknown statuses do not create duplicate receipts', 
     assert.equal((await syncAqsiV4(o.id)).status, status === 'Unknown' ? 'receipt_error' : 'receipt_pending');
   }
   assert.equal(sends, 0);
+});
+
+test('paid slip confirms the sale even when fiscalization remains in error', async () => {
+  const o = await createOrder();
+  operation = async () => ({ status: 'Unknown', message: 'Fiscal storage unavailable' });
+  const result = await syncAqsiV4(o.id);
+  assert.equal(result.status, 'receipt_error');
+  const { rows: [saved] } = await pool.query(
+    'SELECT status, payment_type, aqsi_receipt_status FROM orders WHERE id=$1',
+    [o.id]
+  );
+  assert.equal(saved.status, 'confirmed');
+  assert.equal(saved.payment_type, 'card');
+  assert.equal(saved.aqsi_receipt_status, 'error');
+});
+
+test('background V4 pass confirms paid money without retrying an errored receipt', async () => {
+  const o = await createOrder();
+  const processed = await runV4SlipSyncPass(10);
+  assert.equal(processed, 1);
+  assert.equal(sends, 0);
+  const { rows: [saved] } = await pool.query('SELECT status, aqsi_receipt_status FROM orders WHERE id=$1', [o.id]);
+  assert.equal(saved.status, 'confirmed');
+  assert.equal(saved.aqsi_receipt_status, 'error');
 });
 
 test('incomplete fiscal data in a failed operation prevents duplicate issuance', async () => {

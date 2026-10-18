@@ -157,8 +157,8 @@ export async function removeOrderItem(orderId: string, itemId: string): Promise<
 export async function sendOrderToAqsi(
   orderId: string,
   client_id?: string | number | null
-): Promise<unknown> {
-  const response = await apiFetch<ApiEnvelope<unknown>>(`/orders/${orderId}/send-to-aqsi`, {
+): Promise<{ order: Order; warning: string | null }> {
+  const response = await apiFetch<ApiEnvelope<{ order: Order; warning: string | null }>>(`/orders/${orderId}/send-to-aqsi`, {
     method: "POST",
     body: JSON.stringify({ client_id: client_id ?? null }),
   });
