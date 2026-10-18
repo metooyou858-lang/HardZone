@@ -38,8 +38,23 @@ test('service recipients: defaults, independent grants, repeat confirmation, ref
     return { status: response.status, body: await response.json() };
   }
   const { rows: people } = await pool.query("INSERT INTO clients(first_name,last_name) VALUES ('Получатель А','Тест'),('Получатель Б','Тест') RETURNING id");
-  const { rows: [product] } = await pool.query("SELECT p.id, p.name, sp.visits_total FROM products p JOIN product_subscription_params sp ON sp.product_id=p.id WHERE sp.subscription_type='visits' AND sp.visits_total > 0 LIMIT 1");
-  assert.ok(product);
+  let { rows: [product] } = await pool.query("SELECT p.id, p.name, sp.visits_total FROM products p JOIN product_subscription_params sp ON sp.product_id=p.id WHERE sp.subscription_type='visits' AND sp.visits_total > 0 LIMIT 1");
+  if (!product) {
+    const { rows: [serviceType] } = await pool.query("SELECT id FROM product_types WHERE name = 'Услуга'");
+    const { rows: [createdProduct] } = await pool.query(
+      `INSERT INTO products (name, sku, stock, sale_price, type, product_type_id)
+       VALUES ('Recipient Test Subscription', 'recipient-test-subscription', 0, 100, 'service', $1)
+       RETURNING id, name`,
+      [serviceType.id]
+    );
+    const { rows: [params] } = await pool.query(
+      `INSERT INTO product_subscription_params (product_id, subscription_type, visits_total, validity_days, activation_type)
+       VALUES ($1, 'visits', 8, 30, 'purchase')
+       RETURNING visits_total`,
+      [createdProduct.id]
+    );
+    product = { ...createdProduct, visits_total: params.visits_total };
+  }
   const { rows: [order] } = await pool.query("INSERT INTO orders(client_id,items_count,total_amount,comment) VALUES ($1,2,200,'recipient-isolated-test') RETURNING *", [people[0].id]);
   const { rows: items } = await pool.query("INSERT INTO order_items(order_id,kind,product_id,name,sale_price,quantity) VALUES ($1,'subscription',$2,$3,100,1),($1,'subscription',$2,$3,100,1) RETURNING *", [order.id,product.id,product.name]);
   const patch = (id, recipient) => request(`/${order.id}/items/${id}`, 'PATCH', { recipient_client_id: recipient });

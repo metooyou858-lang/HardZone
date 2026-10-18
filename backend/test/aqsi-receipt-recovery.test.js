@@ -48,7 +48,7 @@ async function createOrder() {
   return o;
 }
 function receipt(slipId = activeSlipId, amount = 557000) {
-  return { id: 'receipt-found', isNonFiscal: false, info: { sum: amount, docInfo: {
+  return { id: `receipt-found-${fixtureSequence}`, isNonFiscal: false, info: { sum: amount, docInfo: {
     docNumber: 12345, fiscalStorageNumber: 'fn', docFiscalAttributeInt: 123,
   } }, payments: [{ slip: { id: slipId } }] };
 }
