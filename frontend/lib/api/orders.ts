@@ -21,6 +21,9 @@ export type Order = {
   aqsi_receipt_operation_id?: string | null;
   aqsi_receipt_status?: string | null;
   aqsi_error?: string | null;
+  fulfillment_status?: "pending" | "completed" | "error";
+  fulfillment_error?: string | null;
+  fulfilled_at?: string | null;
   discount_percent: string | null;
   discount_money: string | null;
   comment: string | null;
@@ -197,12 +200,14 @@ export async function syncSlip(orderId: string): Promise<{
   operation_status?: string;
   message?: string;
   has_marking_errors?: boolean | null;
+  fulfillment_error?: string | null;
 }> {
   const response = await apiFetch<ApiEnvelope<{
     status: SlipSyncStatus;
     operation_status?: string;
     message?: string;
     has_marking_errors?: boolean | null;
+    fulfillment_error?: string | null;
   }>>(`/orders/${orderId}/sync-slip`, { method: "POST" });
   return response.data;
 }

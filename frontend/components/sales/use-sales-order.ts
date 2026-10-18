@@ -362,10 +362,12 @@ export function useSalesOrder({
       if (result.status === "confirmed" || result.status === "already_closed") {
         onHistoryChanged?.();
         handleStartNewOrder();
-        const msg = result.has_marking_errors
-          ? "Оплачено ✓ (предупреждение: ошибка маркировки в ГИС МТ)"
-          : "Оплачено и фискализировано ✓";
-        setBanner({ tone: result.has_marking_errors ? "error" : "success", text: msg });
+        const msg = result.fulfillment_error
+          ? `Оплачено и фискализировано, но выдача не завершена: ${result.fulfillment_error}`
+          : result.has_marking_errors
+            ? "Оплачено ✓ (предупреждение: ошибка маркировки в ГИС МТ)"
+            : "Оплачено и фискализировано ✓";
+        setBanner({ tone: result.has_marking_errors || result.fulfillment_error ? "error" : "success", text: msg });
       } else if (result.status === "receipt_error") {
         // Продажа уже проведена по подтверждённому слипу; отдельно сигнализируем о чеке.
         onHistoryChanged?.();

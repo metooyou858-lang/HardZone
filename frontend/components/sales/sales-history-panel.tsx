@@ -134,9 +134,10 @@ export function SalesHistoryPanel({
                   historyOrder.aqsi_receipt_operation_id
               );
               const hasReceiptError = isOrderWithReceiptError(historyOrder);
+              const hasFulfillmentError = historyOrder.fulfillment_status === "error";
               const canCheckPayment =
                 canRecoverSalesAqsi &&
-                hasReceiptError &&
+                (hasReceiptError || hasFulfillmentError) &&
                 historyOrder.items_count > 0 &&
                 receiptHasTrace;
               const canRefund =
@@ -191,7 +192,11 @@ export function SalesHistoryPanel({
                             disabled={syncingHistoryOrder}
                             className={getHistoryActionButtonClass("accent")}
                           >
-                            {syncingHistoryOrder ? "Проверяем..." : "Восстановить чек"}
+                            {syncingHistoryOrder
+                              ? "Проверяем..."
+                              : hasFulfillmentError && !hasReceiptError
+                                ? "Повторить выдачу"
+                                : "Восстановить чек"}
                           </button>
                         ) : (
                           <div className="flex flex-wrap items-center gap-1.5">
@@ -202,6 +207,11 @@ export function SalesHistoryPanel({
                             ) : (
                               <span className={`inline-flex rounded-full border px-3 py-1 text-xs ${getStatusBadgeClass(historyOrder.status)}`}>
                                 {getStatusLabel(historyOrder.status)}
+                              </span>
+                            )}
+                            {hasFulfillmentError && (
+                              <span className="inline-flex rounded-full border border-[rgba(210,153,34,0.4)] bg-[rgba(210,153,34,0.1)] px-2 py-1 text-[10px] text-[var(--warning)]">
+                                Ошибка выдачи
                               </span>
                             )}
                             {historyOrder.aqsi_receipt_status === "marking_error" && (
@@ -248,6 +258,14 @@ export function SalesHistoryPanel({
                               Операция AQSI: {historyOrder.aqsi_receipt_operation_id}
                             </p>
                           )}
+                        </div>
+                      )}
+                      {hasFulfillmentError && (
+                        <div className="mb-3 rounded-2xl border border-[rgba(210,153,34,0.28)] bg-[rgba(210,153,34,0.08)] px-4 py-3 text-sm text-[var(--warning)]">
+                          <p className="font-medium">Оплата учтена, но выдача не завершена</p>
+                          <p className="mt-1 break-words text-xs">
+                            {historyOrder.fulfillment_error || "Требуется проверить остатки и повторить выдачу"}
+                          </p>
                         </div>
                       )}
                       {detailLoading ? (

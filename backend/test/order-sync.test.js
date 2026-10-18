@@ -26,7 +26,7 @@ aqsi.getAqsiSlip = (...args) => mockGetAqsiSlip(...args);
 
 const app = require('../src/app');
 const { pool, query } = require('../src/db');
-const { syncOrderWithAqsi, runV4SlipSyncPass } = require('../src/services/order-sync');
+const { confirmOpenOrderPayment, syncOrderWithAqsi, runV4SlipSyncPass } = require('../src/services/order-sync');
 const { hashPassword } = require('../src/utils/passwords');
 
 let server;
@@ -365,6 +365,28 @@ test('cash send-to-aqsi stores AQSI receipt id from completed v4 receipt operati
   assert.equal(rows[0].fiscal_fd, '12345');
   assert.equal(rows[0].fiscal_fn, 'fn-ci');
   assert.equal(rows[0].fiscal_fp, '67890');
+});
+
+test('confirmed payment remains in finance when product fulfillment fails', async () => {
+  const order = await createOpenOrder({ total_amount: 99, items_count: 1 });
+  const { rows: [productType] } = await query("SELECT id FROM product_types WHERE name = 'Товар'");
+  const { rows: [product] } = await query(
+    `INSERT INTO products (name, sku, stock, sale_price, type, product_type_id)
+     VALUES ('CI Out Of Stock', $1, 0, 99, 'product', $2)
+     RETURNING id`,
+    [`ci-out-of-stock-${order.id}`, productType.id]
+  );
+  await query(
+    `INSERT INTO order_items (order_id, kind, product_id, name, sale_price, quantity)
+     VALUES ($1, 'product', $2, 'CI Out Of Stock', 99, 1)`,
+    [order.id, product.id]
+  );
+
+  const result = await confirmOpenOrderPayment(order.id, 'card');
+  assert.equal(result.order.status, 'confirmed');
+  assert.equal(result.order.payment_type, 'card');
+  assert.equal(result.order.fulfillment_status, 'error');
+  assert.match(result.order.fulfillment_error, /Недостаточно товара/);
 });
 
 test('cash sale stays confirmed when fiscalization fails after AQSI accepted the command', async () => {

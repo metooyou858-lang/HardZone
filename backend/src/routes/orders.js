@@ -1403,7 +1403,9 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
     ).catch(() => {});
     return res.json({ success: true, data: {
       order: confirmed.order,
-      warning: 'Оплата учтена, фискализация ещё выполняется',
+      warning: confirmed.fulfillment?.error
+        ? `Оплата учтена, но выдача не завершена: ${confirmed.fulfillment.error}`
+        : 'Оплата учтена, фискализация ещё выполняется',
     } });
   }
 
@@ -1414,7 +1416,9 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
     ).catch(() => {});
     return res.json({ success: true, data: {
       order: confirmed.order,
-      warning: `Оплата учтена, но чек требует восстановления: ${finalOp.status}`,
+      warning: confirmed.fulfillment?.error
+        ? `Оплата учтена; выдача не завершена: ${confirmed.fulfillment.error}; чек требует восстановления: ${finalOp.status}`
+        : `Оплата учтена, но чек требует восстановления: ${finalOp.status}`,
     } });
   }
 
@@ -1427,7 +1431,9 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
     ).catch(() => {});
     return res.json({ success: true, data: {
       order: confirmed.order,
-      warning: 'Оплата учтена, но реквизиты чека требуют восстановления',
+      warning: confirmed.fulfillment?.error
+        ? `Оплата учтена; выдача не завершена: ${confirmed.fulfillment.error}; реквизиты чека требуют восстановления`
+        : 'Оплата учтена, но реквизиты чека требуют восстановления',
     } });
   }
 
@@ -1463,7 +1469,12 @@ router.post('/:id/send-to-aqsi', requireSalesPay, async (req, res) => {
     ]
   ).catch((dbErr) => logger.error('orders', { action: 'save_cash_receipt_failed', order_id: orderId, message: dbErr.message }));
 
-  return res.json({ success: true, data: { order: confirmed.order, warning: null } });
+  return res.json({ success: true, data: {
+    order: confirmed.order,
+    warning: confirmed.fulfillment?.error
+      ? `Оплата учтена, но выдача не завершена: ${confirmed.fulfillment.error}`
+      : null,
+  } });
 });
 
 

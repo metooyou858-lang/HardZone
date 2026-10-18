@@ -138,26 +138,15 @@ async function activateOrderServices(client, order) {
   }
 }
 
-async function confirmOpenOrderPayment(orderId, paymentType = null) {
+async function fulfillConfirmedOrder(orderId) {
   const client = await pool.connect();
-
   try {
     await client.query('BEGIN');
-
-    const { rows: orderRows } = await client.query(
-      'SELECT * FROM orders WHERE id = $1 FOR UPDATE',
-      [orderId]
-    );
+    const { rows: orderRows } = await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [orderId]);
     const order = orderRows[0];
-
-    if (!order) {
-      await client.query('ROLLBACK');
-      return { order: null, changed: false, reason: 'not_found' };
-    }
-
-    if (order.status !== 'open') {
+    if (!order || order.status !== 'confirmed' || order.fulfillment_status === 'completed') {
       await client.query('COMMIT');
-      return { order, changed: false, reason: 'already_closed' };
+      return { completed: order?.fulfillment_status === 'completed', error: order?.fulfillment_error ?? null };
     }
 
     const { rows: items } = await client.query(
@@ -183,7 +172,6 @@ async function confirmOpenOrderPayment(orderId, paymentType = null) {
       const currentStock = Number(stockRows[0]?.stock || 0);
 
       if (currentStock < Number(item.quantity)) {
-        await client.query('ROLLBACK');
         throw new Error(`Недостаточно товара для списания (id: ${item.product_id})`);
       }
 
@@ -194,30 +182,72 @@ async function confirmOpenOrderPayment(orderId, paymentType = null) {
     }
 
     await activateOrderServices(client, order);
-
-    const { rows: confirmedRows } = await client.query(
+    await client.query(
       `UPDATE orders SET
-         status = 'confirmed',
-         payment_type = COALESCE($2, payment_type),
-         confirmed_at = COALESCE(confirmed_at, NOW()),
-         aqsi_sync_attempted_at = COALESCE(aqsi_sync_attempted_at, NOW())
-       WHERE id = $1
-       RETURNING *`,
-      [orderId, paymentType]
+         fulfillment_status = 'completed',
+         fulfillment_error = NULL,
+         fulfilled_at = COALESCE(fulfilled_at, NOW())
+       WHERE id = $1`,
+      [orderId]
     );
-
     await client.query('COMMIT');
-    return { order: confirmedRows[0], changed: true, reason: 'confirmed' };
+    return { completed: true, error: null };
   } catch (error) {
-    try {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    await pool.query(
+      `UPDATE orders SET fulfillment_status = 'error', fulfillment_error = $2 WHERE id = $1`,
+      [orderId, error.message]
+    );
+    console.error(`Order ${orderId} fulfillment failed after payment confirmation`, error);
+    return { completed: false, error: error.message };
+  } finally {
+    client.release();
+  }
+}
+
+async function confirmOpenOrderPayment(orderId, paymentType = null) {
+  const client = await pool.connect();
+  let order;
+  let changed = false;
+
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [orderId]);
+    order = rows[0];
+    if (!order) {
       await client.query('ROLLBACK');
-    } catch (rollbackError) {
-      console.error('Order payment finalize rollback failed', rollbackError);
+      return { order: null, changed: false, reason: 'not_found' };
     }
+    if (order.status === 'open') {
+      const confirmed = await client.query(
+        `UPDATE orders SET
+           status = 'confirmed',
+           payment_type = COALESCE($2, payment_type),
+           confirmed_at = COALESCE(confirmed_at, NOW()),
+           aqsi_sync_attempted_at = COALESCE(aqsi_sync_attempted_at, NOW())
+         WHERE id = $1
+         RETURNING *`,
+        [orderId, paymentType]
+      );
+      order = confirmed.rows[0];
+      changed = true;
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     throw error;
   } finally {
     client.release();
   }
+
+  const fulfillment = await fulfillConfirmedOrder(orderId);
+  const { rows: [fresh] } = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
+  return {
+    order: fresh,
+    changed,
+    reason: changed ? 'confirmed' : 'already_closed',
+    fulfillment,
+  };
 }
 
 async function saveOrderFiscalData(executor, orderId, aqsiOrder) {

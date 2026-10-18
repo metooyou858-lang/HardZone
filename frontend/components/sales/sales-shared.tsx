@@ -347,17 +347,13 @@ export function getClientSubscriptionLabel(client: ClientListItem) {
 
 export function isOrderWithReceiptError(order: Order) {
   return (
-    order.status === "open" &&
-    (
-      order.aqsi_payment_status === "completed" ||
-      order.aqsi_receipt_status === "error" ||
-      Boolean(order.aqsi_error && (order.aqsi_sent_at || order.aqsi_receipt_operation_id))
-    )
+    order.aqsi_receipt_status === "error" ||
+    Boolean(order.aqsi_error && (order.aqsi_sent_at || order.aqsi_receipt_operation_id))
   );
 }
 
 export function shouldDisplayInHistory(order: Order, filter: HistoryFilter) {
-  if (filter === "error") return isOrderWithReceiptError(order);
+  if (filter === "error") return isOrderWithReceiptError(order) || order.fulfillment_status === "error";
   if (filter !== "all" && order.status !== filter) return false;
   return true;
 }

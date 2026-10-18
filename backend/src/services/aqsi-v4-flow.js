@@ -211,7 +211,15 @@ async function checkReceiptOp(orderId, receiptOperationId) {
     [orderId]
   ).catch(() => {});
 
-  return { status: 'confirmed', has_marking_errors: hasMarkingErrors };
+  const { rows: [completedOrder] } = await pool.query(
+    'SELECT fulfillment_error FROM orders WHERE id = $1',
+    [orderId]
+  );
+  return {
+    status: 'confirmed',
+    has_marking_errors: hasMarkingErrors,
+    fulfillment_error: completedOrder?.fulfillment_error ?? null,
+  };
 }
 
 // ── startReceiptOp ────────────────────────────────────────────────────────────
@@ -724,6 +732,12 @@ async function syncAqsiV4(orderId, { allowReceiptRetry = true } = {}) {
     return { status: 'already_closed' };
   }
 
+  if (currentOrder.status === 'confirmed' && currentOrder.fulfillment_status !== 'completed') {
+    await confirmOpenOrderPayment(orderId, currentOrder.payment_type);
+    const { rows: refreshed } = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
+    currentOrder = refreshed[0];
+  }
+
   if (!currentOrder.aqsi_payment_operation_id && !currentOrder.aqsi_slip_id && !currentOrder.aqsi_receipt_operation_id) {
     return { status: 'no_active_flow' };
   }
@@ -954,7 +968,15 @@ async function syncAqsiV4(orderId, { allowReceiptRetry = true } = {}) {
     [orderId]
   ).catch(() => {});
 
-  return { status: 'confirmed', has_marking_errors: hasMarkingErrors };
+  const { rows: [completedOrder] } = await pool.query(
+    'SELECT fulfillment_error FROM orders WHERE id = $1',
+    [orderId]
+  );
+  return {
+    status: 'confirmed',
+    has_marking_errors: hasMarkingErrors,
+    fulfillment_error: completedOrder?.fulfillment_error ?? null,
+  };
 }
 
 // ── cancelPayment ─────────────────────────────────────────────────────────────

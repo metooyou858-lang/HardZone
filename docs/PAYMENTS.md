@@ -40,7 +40,8 @@ If UI/payment behavior is changed, treat the V4 flow as the primary path unless 
 4. Payment and fiscalization are separate states. Confirm the sale as soon as there is provider proof of payment; do not wait for the fiscal receipt.
 5. Card proof is an approved AQSI purchase slip with the exact order amount. Cash proof is an explicit cashier action accepted by AQSI with a persisted receipt `operationId`.
 6. A fiscal error never reopens a paid order. Keep `aqsi_receipt_status = 'error'` and expose recovery separately.
-7. During network uncertainty, preserve operation IDs and AQSI traces instead of clearing fields.
+7. Payment confirmation commits before stock/service fulfillment. A fulfillment failure is stored in `fulfillment_status`/`fulfillment_error`; it must not roll back the fact of payment or hide revenue.
+8. During network uncertainty, preserve operation IDs and AQSI traces instead of clearing fields.
 
 ## Receipt Recovery Rules
 
