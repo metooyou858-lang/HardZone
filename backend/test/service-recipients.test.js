@@ -17,7 +17,15 @@ after(async () => {
 
 test('service recipients: defaults, independent grants, repeat confirmation, refunds, edit locks and validation', async () => {
   assert.match(process.env.DATABASE_URL || '', /(?:recipient|hardzone_test_)/, 'Run only against an isolated test database');
-  const { rows: [admin] } = await pool.query("SELECT id, name, username, role FROM users WHERE role = 'admin' AND is_active LIMIT 1");
+  let { rows: [admin] } = await pool.query("SELECT id, name, username, role FROM users WHERE role = 'admin' AND is_active LIMIT 1");
+  if (!admin) {
+    const inserted = await pool.query(
+      `INSERT INTO users (name, role, role_title, username, email, password_hash, is_active, updated_at)
+       VALUES ('Recipient Test Admin', 'admin', 'Administrator', 'recipient-test-admin', 'recipient-test-admin@example.test', 'unused', true, NOW())
+       RETURNING id, name, username, role`
+    );
+    admin = inserted.rows[0];
+  }
   const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 600000, user: { ...admin, id: Number(admin.id) } })).toString('base64url');
   const token = payload + '.' + createHmac('sha256', process.env.HARDZONE_SESSION_SECRET).update(payload).digest('base64url');
   server = app.listen(0, '127.0.0.1');
