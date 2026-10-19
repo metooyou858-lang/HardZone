@@ -330,6 +330,15 @@ test('card sync-slip confirms payment before deferred receipt uses the canonical
   );
   assert.equal(fiscalizing.aqsi_receipt_operation_id, 'ci-finishing-receipt-op');
   assert.equal(fiscalizing.aqsi_receipt_status, 'pending');
+
+  const afterReceiptStarted = await request(`/api/orders/${order.id}/sync-slip`, {
+    method: 'POST',
+    headers: {
+      'x-hardzone-session': createSessionToken(sessionUser),
+    },
+  });
+  assert.equal(afterReceiptStarted.response.status, 200);
+  assert.equal(afterReceiptStarted.body.data.status, 'payment_confirmed');
 });
 
 test('cash send-to-aqsi stores AQSI receipt id from completed v4 receipt operation', async () => {

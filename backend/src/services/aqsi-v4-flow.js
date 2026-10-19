@@ -124,106 +124,6 @@ async function resolveBlockerRecord(operationId, resolvedStatus) {
   ).catch((err) => logger.error('orders', { action: 'blocker_resolve_db_failed', operation_id: operationId, message: err.message }));
 }
 
-// ── checkReceiptOp ────────────────────────────────────────────────────────────
-// Internal helper: один GET к AQSI, без polling. Вызывается из syncSlip
-// когда receipt_operation_id уже сохранён в БД.
-
-async function checkReceiptOp(orderId, receiptOperationId) {
-  let receiptOp;
-  try {
-    receiptOp = await getOperation(receiptOperationId);
-  } catch (err) {
-    throw err;
-  }
-
-  const PENDING = new Set(['Pending', 'Processing', 'Finishing']);
-  const receiptResultReady = hasUsableReceiptResult(receiptOp);
-  if (PENDING.has(receiptOp.status) && !receiptResultReady) {
-    return { status: 'pending', operation_status: receiptOp.status };
-  }
-
-  if (receiptOp.status !== 'Completed' && !receiptResultReady) {
-    const msg = receiptOp.status === 'Timeout'
-      ? 'Тайм-аут фискализации чека'
-      : (receiptOp.message || `Ошибка фискализации (${receiptOp.status})`);
-    logger.error('orders', { action: 'receipt_op_non_completed', order_id: orderId, status: receiptOp.status, receipt_op_id: receiptOperationId });
-    await pool.query(
-      `UPDATE orders SET
-         aqsi_payment_status = 'stuck',
-         aqsi_receipt_status = $2,
-         aqsi_error = $3
-       WHERE id = $1`,
-      [orderId, 'error', msg]
-    ).catch(() => {});
-    return { status: 'receipt_error', message: msg };
-  }
-
-  logger.info('orders', { action: 'receipt_operation_done', order_id: orderId, status: receiptOp.status, receipt_op_id: receiptOperationId });
-
-  const fiscalData = extractReceiptFiscalData(receiptOp);
-
-  if (!fiscalData || !fiscalData.fiscal_fd || !fiscalData.fiscal_fn || !fiscalData.fiscal_fp) {
-    const noFiscalMsg = 'Чек завершён, но реквизиты ФД/ФН/ФП не получены — используйте «Восстановить»';
-    logger.error('orders', { action: 'receipt_no_docinfo', order_id: orderId, raw_result: receiptOp.result });
-    await pool.query(
-      'UPDATE orders SET aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
-      [orderId, 'error', noFiscalMsg]
-    ).catch(() => {});
-    return { status: 'receipt_error', message: noFiscalMsg };
-  }
-
-  const hasMarkingErrors = Boolean(fiscalData.has_marking_errors);
-  if (hasMarkingErrors) {
-    logger.warn('orders', { action: 'marking_code_errors_in_receipt', order_id: orderId });
-  }
-
-  try {
-    await pool.query(
-      `UPDATE orders SET
-         fiscal_fd = COALESCE($2, fiscal_fd),
-         fiscal_fn = COALESCE($3, fiscal_fn),
-         fiscal_fp = COALESCE($4, fiscal_fp),
-         fiscal_kkt_reg = COALESCE($5, fiscal_kkt_reg),
-         fiscal_date = COALESCE($6, fiscal_date),
-         aqsi_receipt_id = COALESCE($9, aqsi_receipt_id),
-         aqsi_receipt_status = $7,
-         aqsi_error = CASE WHEN $8 THEN 'Ошибка маркировки ГИС МТ (тег 2107 ФФД 1.2)' ELSE aqsi_error END
-       WHERE id = $1`,
-      [orderId, fiscalData.fiscal_fd, fiscalData.fiscal_fn, fiscalData.fiscal_fp, fiscalData.fiscal_kkt_reg, fiscalData.fiscal_date, hasMarkingErrors ? 'marking_error' : 'completed', hasMarkingErrors, fiscalData.receipt_id ?? null]
-    );
-  } catch (dbErr) {
-    logger.error('orders', { action: 'save_fiscal_failed', order_id: orderId, message: dbErr.message });
-    throw httpError(500, `Чек фискализирован, но реквизиты не сохранились в CRM: ${dbErr.message}`);
-  }
-
-  await pool.query(
-    `UPDATE orders SET
-       aqsi_payment_operation_id = NULL,
-       aqsi_payment_operation_at = NULL,
-       aqsi_payment_status = NULL,
-       aqsi_receipt_operation_id = CASE
-         WHEN aqsi_receipt_status = 'marking_error' THEN aqsi_receipt_operation_id
-         ELSE NULL
-       END,
-       aqsi_error = CASE
-         WHEN aqsi_receipt_status = 'marking_error' THEN aqsi_error
-         ELSE NULL
-       END
-     WHERE id = $1`,
-    [orderId]
-  ).catch(() => {});
-
-  const { rows: [completedOrder] } = await pool.query(
-    'SELECT fulfillment_error FROM orders WHERE id = $1',
-    [orderId]
-  );
-  return {
-    status: 'confirmed',
-    has_marking_errors: hasMarkingErrors,
-    fulfillment_error: completedOrder?.fulfillment_error ?? null,
-  };
-}
-
 async function recoverSlipContentForReceipt(order, slipId, action) {
   if (slipId) {
     try {
@@ -509,14 +409,12 @@ async function syncSlip(orderId) {
     order = await confirmSavedPaidSlip(order, 'sync_slip_confirm_saved');
   }
 
-  // Slip paid and receipt operation already created → check receipt status (single GET, no polling)
-  if (order.aqsi_slip_id && order.aqsi_receipt_operation_id) {
-    return checkReceiptOp(orderId, order.aqsi_receipt_operation_id);
-  }
-
-  // Продажа уже оплачена. Не удерживаем кассира в ожидании отдельной фискальной операции.
-  if (order.aqsi_slip_id && !order.aqsi_receipt_operation_id) {
-    scheduleInitialReceipt(orderId);
+  // Продажа уже оплачена. Статус отдельной фискальной операции не должен снова
+  // переводить кассира в ожидание клиента, даже если background успел стартовать первым.
+  if (order.status === 'confirmed' && order.aqsi_slip_id) {
+    if (!order.aqsi_receipt_operation_id && !order.aqsi_receipt_status) {
+      scheduleInitialReceipt(orderId);
+    }
     return {
       status: 'payment_confirmed',
       message: 'Оплата принята. Чек формируется в фоне.',
