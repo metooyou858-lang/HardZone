@@ -100,9 +100,14 @@ function buildAqsiOrderPayload(order) {
 
 async function aqsiRequest(method, path, options = {}) {
   try {
+    const configuredTimeoutMs = Number(process.env.AQSI_HTTP_TIMEOUT_MS);
+    const timeout = Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
+      ? configuredTimeoutMs
+      : 30000;
     const response = await axios({
       method,
       url: `${process.env.AQSI_BASE_URL}${path}`,
+      timeout,
       headers: {
         ...getHeaders(),
         ...(options.headers || {}),

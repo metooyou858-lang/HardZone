@@ -186,6 +186,7 @@ export async function initiatePayment(orderId: string): Promise<InitiatePaymentR
 
 export type SlipSyncStatus =
   | "pending"
+  | "payment_confirmed"
   | "confirmed"
   | "already_closed"
   | "cancelled"

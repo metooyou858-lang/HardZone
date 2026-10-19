@@ -74,9 +74,16 @@ AQSI receipt recovery must treat card terminal payments and cash receipt process
 UI flow:
 
 ```text
-card payment -> initiate-payment -> verified paid slip -> confirm sale
-                                                -> receipt operation -> fiscal status
+card payment -> initiate-payment -> verified paid slip -> confirm sale -> cashier may continue
+                                                -> 10 s grace -> canonical slip check
+                                                -> background receipt operation -> fiscal status
 ```
+
+- `/sync-slip` возвращает `payment_confirmed` сразу после проведения подтверждённой оплаты и выдачи. Интерфейс прекращает ожидание клиента, открывает новый заказ и сообщает, что чек формируется в фоне.
+- Первичный чек не отправляется в одном запросе с подтверждением эквайринга. После паузы backend повторно читает `GET /v4/Slips/{id}`, сверяет тип, успешный код и сумму, затем использует канонический `slip.content` в `POST /v4/Receipts/process`.
+- Первичная отправка, как и ручное восстановление, сначала фиксируется в `aqsi_receipt_recovery_attempts` с ключом `initial:{slipId}`. При сетевой неопределённости автоматический дубль запрещён; явный `OperationInProgress` допускает следующий фоновый проход.
+- Отложенный таймер ускоряет штатный сценарий, а `runV4SlipSyncPass` подхватывает подтверждённый заказ после рестарта. Значение паузы задаётся `AQSI_RECEIPT_GRACE_MS` (по умолчанию 10 секунд).
+- Все запросы AQSI имеют ограничение `AQSI_HTTP_TIMEOUT_MS` (по умолчанию 30 секунд), поэтому один зависший вызов не удерживает HTTP-запрос CRM бесконечно.
 
 Backend AQSI endpoints:
 

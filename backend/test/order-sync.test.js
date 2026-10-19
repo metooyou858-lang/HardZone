@@ -223,7 +223,7 @@ test('orders API validates history pagination parameters', async () => {
   assert.equal(invalidStatus.response.status, 422);
 });
 
-test('card sync-slip sends receipt when AQSI payment is Finishing with approved slip result', async () => {
+test('card sync-slip confirms payment before deferred receipt uses the canonical AQSI slip', async () => {
   const user = await createUser();
   const sessionUser = {
     id: Number(user.id),
@@ -271,6 +271,17 @@ test('card sync-slip sends receipt when AQSI payment is Finishing with approved 
     receiptPayload = payload;
     return { operationId: 'ci-finishing-receipt-op' };
   };
+  mockGetAqsiSlip = async (slipId) => {
+    assert.equal(slipId, 'ci-finishing-slip');
+    return {
+      id: slipId,
+      content: {
+        type: 'purchase',
+        responseCode: '000',
+        amount: 7000,
+      },
+    };
+  };
 
   const result = await request(`/api/orders/${order.id}/sync-slip`, {
     method: 'POST',
@@ -281,14 +292,9 @@ test('card sync-slip sends receipt when AQSI payment is Finishing with approved 
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.success, true);
-  assert.equal(result.body.data.status, 'pending');
-
-  assert.equal(receiptPayload.payments[0].slip.id, 'ci-finishing-slip');
-  assert.deepEqual(receiptPayload.payments[0].slip.content, {
-    type: 'purchase',
-    responseCode: '000',
-    amount: 7000,
-  });
+  assert.equal(result.body.data.status, 'payment_confirmed');
+  assert.match(result.body.data.message, /Чек формируется в фоне/);
+  assert.equal(receiptPayload, null);
 
   const { rows } = await query(
     'SELECT status, payment_type, aqsi_payment_status, aqsi_slip_id, aqsi_receipt_operation_id, aqsi_receipt_status FROM orders WHERE id = $1',
@@ -299,8 +305,31 @@ test('card sync-slip sends receipt when AQSI payment is Finishing with approved 
   assert.equal(rows[0].payment_type, 'card');
   assert.equal(rows[0].aqsi_payment_status, 'completed');
   assert.equal(rows[0].aqsi_slip_id, 'ci-finishing-slip');
-  assert.equal(rows[0].aqsi_receipt_operation_id, 'ci-finishing-receipt-op');
-  assert.equal(rows[0].aqsi_receipt_status, 'pending');
+  assert.equal(rows[0].aqsi_receipt_operation_id, null);
+  assert.equal(rows[0].aqsi_receipt_status, null);
+
+  const previousGrace = process.env.AQSI_RECEIPT_GRACE_MS;
+  process.env.AQSI_RECEIPT_GRACE_MS = '0';
+  try {
+    assert.equal(await runV4SlipSyncPass(10), 1);
+  } finally {
+    if (previousGrace === undefined) delete process.env.AQSI_RECEIPT_GRACE_MS;
+    else process.env.AQSI_RECEIPT_GRACE_MS = previousGrace;
+  }
+
+  assert.equal(receiptPayload.payments[0].slip.id, 'ci-finishing-slip');
+  assert.deepEqual(receiptPayload.payments[0].slip.content, {
+    type: 'purchase',
+    responseCode: '000',
+    amount: 7000,
+  });
+
+  const { rows: [fiscalizing] } = await query(
+    'SELECT aqsi_receipt_operation_id, aqsi_receipt_status FROM orders WHERE id = $1',
+    [order.id]
+  );
+  assert.equal(fiscalizing.aqsi_receipt_operation_id, 'ci-finishing-receipt-op');
+  assert.equal(fiscalizing.aqsi_receipt_status, 'pending');
 });
 
 test('cash send-to-aqsi stores AQSI receipt id from completed v4 receipt operation', async () => {

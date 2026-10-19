@@ -543,12 +543,27 @@ async function runV4SlipSyncPass(limit = 10) {
   if (v4SyncRunning) return 0;
   v4SyncRunning = true;
   try {
+    const configuredGraceMs = Number(process.env.AQSI_RECEIPT_GRACE_MS);
+    const receiptGraceMs = Number.isFinite(configuredGraceMs) && configuredGraceMs >= 0
+      ? configuredGraceMs
+      : 10000;
     const { rows } = await query(
       `SELECT *
        FROM orders
        WHERE (
            status = 'open'
-           OR (status = 'confirmed' AND aqsi_receipt_status = 'pending')
+           OR (
+             status = 'confirmed'
+             AND (
+               aqsi_receipt_status = 'pending'
+               OR (
+                 aqsi_slip_id IS NOT NULL
+                 AND aqsi_receipt_operation_id IS NULL
+                 AND aqsi_receipt_status IS NULL
+                 AND confirmed_at <= NOW() - ($2::double precision * INTERVAL '1 millisecond')
+               )
+             )
+           )
          )
          AND (
            aqsi_payment_operation_id IS NOT NULL
@@ -557,7 +572,7 @@ async function runV4SlipSyncPass(limit = 10) {
          )
        ORDER BY created_at ASC
        LIMIT $1`,
-      [limit]
+      [limit, receiptGraceMs]
     );
 
     for (const row of rows) {

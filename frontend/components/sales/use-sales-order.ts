@@ -56,6 +56,7 @@ export function useSalesOrder({
   const orderPromiseRef = useRef<Promise<OrderDetail> | null>(null);
   const confirmingRef = useRef(false);
   const slipPollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const slipPollStartedAtRef = useRef<number | null>(null);
   const slipSyncInFlightRef = useRef(false);
 
   // ── Sub-hooks ────────────────────────────────────────────────────────────────
@@ -330,10 +331,12 @@ export function useSalesOrder({
       clearInterval(slipPollIntervalRef.current);
       slipPollIntervalRef.current = null;
     }
+    slipPollStartedAtRef.current = null;
   }
 
   function startSlipPolling(orderId: string, intervalMs = 10000) {
     stopSlipPolling();
+    slipPollStartedAtRef.current = Date.now();
     slipPollIntervalRef.current = setInterval(() => {
       void handleSlipSync(orderId);
     }, intervalMs);
@@ -345,7 +348,18 @@ export function useSalesOrder({
     try {
       const result = await syncSlip(orderId);
 
-      if (result.status === "pending") return;
+      if (result.status === "pending") {
+        const startedAt = slipPollStartedAtRef.current;
+        if (startedAt && Date.now() - startedAt >= 3 * 60 * 1000) {
+          stopSlipPolling();
+          setSlipPending(false);
+          setBanner({
+            tone: "error",
+            text: "Оплата пока не подтверждена. Проверьте терминал и статус заказа — ожидание остановлено.",
+          });
+        }
+        return;
+      }
 
       // Операция была сброшена сторонним процессом (watchdog или ручной reset) —
       // polling нужно остановить, заказ обновить чтобы отразить новое состояние.
@@ -359,7 +373,16 @@ export function useSalesOrder({
       stopSlipPolling();
       setSlipPending(false);
 
-      if (result.status === "confirmed" || result.status === "already_closed") {
+      if (result.status === "payment_confirmed") {
+        onHistoryChanged?.();
+        handleStartNewOrder();
+        setBanner({
+          tone: result.fulfillment_error ? "error" : "success",
+          text: result.fulfillment_error
+            ? `Оплата принята, но выдача не завершена: ${result.fulfillment_error}`
+            : result.message ?? "Оплата принята. Чек формируется в фоне.",
+        });
+      } else if (result.status === "confirmed" || result.status === "already_closed") {
         onHistoryChanged?.();
         handleStartNewOrder();
         const msg = result.fulfillment_error

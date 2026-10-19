@@ -121,4 +121,113 @@ async function retryFailedReceipt(order, failedOperation) {
   return { status: 'receipt_pending', operation_status: 'Pending' };
 }
 
-module.exports = { findReceiptForOrder, retryFailedReceipt };
+async function startInitialReceipt(order) {
+  if (!order.aqsi_slip_id || order.aqsi_receipt_operation_id) {
+    throw recoveryError('Для первичной фискализации требуется подтверждённая оплата без созданной операции чека.');
+  }
+
+  const attemptKey = `initial:${order.aqsi_slip_id}`;
+  const { rows: [existing] } = await pool.query(
+    `SELECT id, operation_id, status FROM aqsi_receipt_recovery_attempts
+     WHERE order_id = $1 AND previous_operation_id = $2 AND status <> 'rejected'`,
+    [order.id, attemptKey]
+  );
+
+  if (existing?.operation_id) {
+    await pool.query(
+      `UPDATE orders SET aqsi_receipt_operation_id = $2, aqsi_receipt_status = 'pending', aqsi_error = NULL
+       WHERE id = $1 AND aqsi_receipt_operation_id IS NULL`,
+      [order.id, existing.operation_id]
+    );
+    return { status: 'receipt_pending', operation_status: 'Pending' };
+  }
+
+  if (existing) {
+    const found = await findReceiptForOrder(order);
+    if (found) return { operation: { status: 'Completed', result: found } };
+    throw recoveryError('Результат первичной отправки чека неизвестен. Повторный чек автоматически не отправляется до сверки с AQSI.');
+  }
+
+  const slip = await aqsi.getAqsiSlip(order.aqsi_slip_id);
+  if (slip?.id !== order.aqsi_slip_id || !aqsi.isSlipPaid(slip) || slip.content?.type !== 'purchase'
+      || Number(slip.content.amount) !== Math.round(Number(order.total_amount) * 100)) {
+    throw recoveryError('AQSI не подтвердил оплату на сумму заказа. Первичная фискализация остановлена.');
+  }
+
+  const attempt = await withTransaction(async (client) => {
+    const { rows: [current] } = await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [order.id]);
+    if (!current || !['open', 'confirmed'].includes(current.status) || current.fiscal_fd || current.aqsi_receipt_operation_id) {
+      return null;
+    }
+    if (current.aqsi_slip_id !== order.aqsi_slip_id || Number(current.total_amount) !== Number(order.total_amount)) {
+      throw recoveryError('Заказ изменился во время проверки. Первичная фискализация остановлена.');
+    }
+    const { rows: [duplicate] } = await client.query(
+      `SELECT status FROM aqsi_receipt_recovery_attempts
+       WHERE order_id = $1 AND previous_operation_id = $2 AND status <> 'rejected'`,
+      [order.id, attemptKey]
+    );
+    if (duplicate) {
+      throw recoveryError('Первичная отправка чека уже выполнялась. Новый чек автоматически не отправлен.');
+    }
+    const { rows: items } = await client.query(
+      'SELECT oi.*, p.marking_type FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id WHERE oi.order_id = $1 ORDER BY oi.created_at',
+      [order.id]
+    );
+    if (!items.length || items.some((item) => item.marking_required && !item.marking_code)) {
+      throw recoveryError('Не заполнен состав чека или код маркировки. Первичная фискализация остановлена.');
+    }
+    const payload = aqsi.buildAqsiV4ReceiptPayload({ ...current, items }, 'card', slip.id, slip.content);
+    const { rows: [record] } = await client.query(
+      `INSERT INTO aqsi_receipt_recovery_attempts (order_id, previous_operation_id, status)
+       VALUES ($1, $2, 'sending') RETURNING id`,
+      [order.id, attemptKey]
+    );
+    return { id: record.id, payload };
+  });
+
+  if (!attempt) return { status: 'receipt_pending' };
+
+  let response;
+  try {
+    response = await aqsi.sendV4ReceiptRequest(attempt.payload);
+    if (!response?.operationId) throw new Error('AQSI не вернул идентификатор операции');
+  } catch (error) {
+    let reason;
+    try { reason = JSON.parse(error.message).reason; } catch { /* Ответ сети может не быть JSON. */ }
+    const rejected = error.isAqsiRejection && reason === 'OperationInProgress';
+    await pool.query(
+      'UPDATE aqsi_receipt_recovery_attempts SET status = $2, error = $3 WHERE id = $1',
+      [attempt.id, rejected ? 'rejected' : 'uncertain', error.message]
+    );
+    return {
+      status: 'receipt_error',
+      message: rejected
+        ? 'Касса занята другой операцией. Чек будет отправлен после её освобождения.'
+        : 'Результат отправки чека неизвестен. Требуется сверка с AQSI; повторный чек автоматически не отправляется.',
+    };
+  }
+
+  logger.info('orders', {
+    action: 'initial_receipt_sent',
+    order_id: order.id,
+    slip_id: order.aqsi_slip_id,
+    operation_id: response.operationId,
+    attempt_id: attempt.id,
+  });
+  await withTransaction(async (client) => {
+    await client.query(
+      "UPDATE aqsi_receipt_recovery_attempts SET operation_id = $2, status = 'sent' WHERE id = $1",
+      [attempt.id, response.operationId]
+    );
+    await client.query(
+      `UPDATE orders SET aqsi_receipt_operation_id = $2, aqsi_receipt_status = 'pending',
+       aqsi_payment_status = 'completed', aqsi_error = NULL
+       WHERE id = $1 AND status IN ('open', 'confirmed') AND aqsi_receipt_operation_id IS NULL`,
+      [order.id, response.operationId]
+    );
+  });
+  return { status: 'receipt_pending', operation_status: 'Pending' };
+}
+
+module.exports = { findReceiptForOrder, retryFailedReceipt, startInitialReceipt };

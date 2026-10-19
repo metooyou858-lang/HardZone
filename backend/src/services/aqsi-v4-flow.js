@@ -8,8 +8,6 @@ const {
   extractSlipResultData,
   isSlipPaid,
   extractReceiptFiscalData,
-  buildAqsiV4ReceiptPayload,
-  sendV4ReceiptRequest,
   listAqsiReceipts,
   listAqsiSlips,
   getAqsiSlip,
@@ -17,26 +15,30 @@ const {
 } = require('./aqsi');
 const { confirmOpenOrderPayment } = require('./order-sync');
 const logger = require('./logger');
-const { findReceiptForOrder, retryFailedReceipt } = require('./aqsi-receipt-recovery');
+const { findReceiptForOrder, retryFailedReceipt, startInitialReceipt } = require('./aqsi-receipt-recovery');
 
 const TERMINAL_CANCELLED_STATUSES = new Set(['Canceled', 'Timeout', 'Error']);
 const TERMINAL_ACTIVE_STATUSES = new Set(['Pending', 'Processing', 'Finishing']);
+
+function getReceiptGraceMs() {
+  const configured = Number(process.env.AQSI_RECEIPT_GRACE_MS);
+  return Number.isFinite(configured) && configured >= 0 ? configured : 10000;
+}
+
+function scheduleInitialReceipt(orderId) {
+  if (process.env.NODE_ENV === 'test') return;
+  const timer = setTimeout(() => {
+    syncAqsiV4(orderId, { allowReceiptRetry: false }).catch((err) => {
+      logger.error('orders', { action: 'initial_receipt_deferred_failed', order_id: orderId, message: err.message });
+    });
+  }, getReceiptGraceMs());
+  if (typeof timer.unref === 'function') timer.unref();
+}
 
 function httpError(statusCode, message) {
   const err = new Error(message);
   err.statusCode = statusCode;
   return err;
-}
-
-function hasSavedReceiptResult(order) {
-  return Boolean(
-    order &&
-    (
-      order.aqsi_receipt_status === 'completed' ||
-      order.aqsi_receipt_status === 'marking_error' ||
-      (order.fiscal_fd && order.fiscal_fn && order.fiscal_fp)
-    )
-  );
 }
 
 function hasUsablePaidSlipResult(operation, slipData) {
@@ -222,130 +224,11 @@ async function checkReceiptOp(orderId, receiptOperationId) {
   };
 }
 
-// ── startReceiptOp ────────────────────────────────────────────────────────────
-// Internal helper: отправляет запрос на фискализацию и сохраняет receipt_operation_id.
-// Не ждёт завершения — возвращает pending, следующий sync-slip проверит статус.
-
-async function startReceiptOp(orderId, slipId, slipContent) {
-  // Race condition guard: перечитываем заказ
-  const { rows: freshRows } = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
-  const fresh = freshRows[0];
-
-  if (!fresh) throw httpError(404, 'Заказ не найден');
-  if (!['open', 'confirmed'].includes(fresh.status) || hasSavedReceiptResult(fresh)) {
-    logger.info('orders', {
-      action: 'receipt_fiscalize_skip_already_done',
-      order_id: orderId,
-      order_status: fresh.status,
-      receipt_status: fresh.aqsi_receipt_status,
-    });
-    return {
-      status: hasSavedReceiptResult(fresh) ? 'confirmed' : 'already_closed',
-      has_marking_errors: fresh.aqsi_receipt_status === 'marking_error',
-    };
-  }
-  if (fresh.aqsi_receipt_operation_id) {
-    return { status: 'pending' };
-  }
-  if (fresh.aqsi_receipt_status === 'pending') {
-    return { status: 'pending' };
-  }
-  if (fresh.aqsi_receipt_status === 'error') {
-    return { status: 'receipt_error', message: fresh.aqsi_error || 'Фискализация завершилась с ошибкой — используйте «Восстановить»' };
-  }
-
-  const { rowCount: claimed } = await pool.query(
-    `UPDATE orders SET aqsi_receipt_status = 'pending', aqsi_error = NULL
-     WHERE id = $1 AND status IN ('open', 'confirmed') AND aqsi_receipt_operation_id IS NULL
-       AND aqsi_slip_id IS NOT NULL
-       AND (aqsi_receipt_status IS NULL OR aqsi_receipt_status = 'error')`,
-    [orderId]
-  ).catch(() => ({ rowCount: 0 }));
-
-  if (claimed === 0) {
-    const { rows: latestRows } = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
-    const latest = latestRows[0];
-    if (latest && (!['open', 'confirmed'].includes(latest.status) || hasSavedReceiptResult(latest))) {
-      return {
-        status: hasSavedReceiptResult(latest) ? 'confirmed' : 'already_closed',
-        has_marking_errors: latest.aqsi_receipt_status === 'marking_error',
-      };
-    }
-    return { status: 'pending' };
-  }
-
-  const { rows: itemRows } = await pool.query(
-    'SELECT oi.*, p.marking_type FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id WHERE oi.order_id = $1 ORDER BY oi.created_at',
-    [orderId]
-  );
-  const freshOrder = { ...fresh, items: itemRows };
-
-  const markedItems = itemRows.filter((i) => i.marking_code);
-  logger.info('orders', {
-    action: 'receipt_fiscalize',
-    order_id: orderId,
-    slip_id: slipId,
-    marked_items: markedItems.map((i) => ({
-      name: i.name,
-      marking_code_hex: Buffer.from(String(i.marking_code)).toString('hex'),
-      nomenclature_code: i.marking_code,
-      marking_type: i.marking_type,
-    })),
-  });
-
-  let receiptOpId = null;
-
-  try {
-    const receiptPayload = buildAqsiV4ReceiptPayload(freshOrder, 'card', slipId, slipContent);
-    const receiptOpResponse = await sendV4ReceiptRequest(receiptPayload);
-    receiptOpId = receiptOpResponse.operationId;
-
-    await pool.query(
-      'UPDATE orders SET aqsi_receipt_operation_id = $1, aqsi_receipt_status = $2 WHERE id = $3',
-      [receiptOpId, 'pending', orderId]
-    );
-
-    return { status: 'pending' };
-  } catch (err) {
-    logger.error('orders', { action: 'receipt_fiscalization_failed', order_id: orderId, message: err.message });
-    if (receiptOpId) {
-      await pool.query(
-        'UPDATE orders SET aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
-        [orderId, 'error', err.message]
-      ).catch(() => {});
-    } else {
-      await pool.query(
-        'UPDATE orders SET aqsi_receipt_operation_id = NULL, aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
-        [orderId, 'error', err.message]
-      ).catch(() => {});
-    }
-    return { status: 'receipt_error', message: 'Оплата прошла, но фискализация не выполнена. Используйте кнопку «Восстановить» для повторной попытки.' };
-  }
-}
-
 async function recoverSlipContentForReceipt(order, slipId, action) {
-  if (order.aqsi_payment_operation_id && order.aqsi_payment_operation_id !== slipId) {
-    try {
-      const paymentOp = await Promise.race([
-        getOperation(order.aqsi_payment_operation_id),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('AQSI operation lookup timeout')), 8000)),
-      ]);
-      const slipData = extractSlipResultData(paymentOp);
-      if (slipData?.content) return slipData.content;
-    } catch (err) {
-      logger.warn('orders', {
-        action: `${action}_recover_slip_content_from_operation_failed`,
-        order_id: order.id,
-        payment_operation_id: order.aqsi_payment_operation_id,
-        message: err.message,
-      });
-    }
-  }
-
   if (slipId) {
     try {
       const slip = await getAqsiSlip(slipId);
-      if (slip?.content) return slip.content;
+      if (slip?.id === slipId && slip?.content) return slip.content;
     } catch (err) {
       logger.warn('orders', {
         action: `${action}_recover_slip_content_from_slip_failed`,
@@ -604,7 +487,7 @@ async function initiatePayment(orderId) {
 
 // ── syncSlip ──────────────────────────────────────────────────────────────────
 // Один вызов — максимум один GET к AQSI (без polling).
-// Если slip оплачен → создаёт receipt op и возвращает pending.
+// Если slip оплачен → проводит продажу и ставит отдельную фискализацию в очередь.
 // Если receipt op создана → проверяет её статус одним GET.
 // Returns: { status, ... }
 // Throws: httpError(404), plain Error for 500
@@ -631,19 +514,14 @@ async function syncSlip(orderId) {
     return checkReceiptOp(orderId, order.aqsi_receipt_operation_id);
   }
 
-  // Slip paid but receipt not yet created → create receipt operation and return pending
+  // Продажа уже оплачена. Не удерживаем кассира в ожидании отдельной фискальной операции.
   if (order.aqsi_slip_id && !order.aqsi_receipt_operation_id) {
-    const slipContent = await recoverSlipContentForReceipt(order, order.aqsi_slip_id, 'sync_slip');
-    if (!slipContent) {
-      const msg = 'Оплата прошла, но не удалось восстановить данные слипа для фискализации — используйте «Восстановить» или проверьте операцию в AQSI';
-      logger.error('orders', { action: 'sync_slip_missing_slip_content', order_id: orderId, slip_id: order.aqsi_slip_id });
-      await pool.query(
-        'UPDATE orders SET aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
-        [orderId, 'error', msg]
-      ).catch(() => {});
-      return { status: 'receipt_error', message: msg };
-    }
-    return startReceiptOp(orderId, order.aqsi_slip_id, slipContent);
+    scheduleInitialReceipt(orderId);
+    return {
+      status: 'payment_confirmed',
+      message: 'Оплата принята. Чек формируется в фоне.',
+      fulfillment_error: order.fulfillment_error ?? null,
+    };
   }
 
   // No payment operation at all
@@ -696,7 +574,8 @@ async function syncSlip(orderId) {
 
   assertPaidSlipMatchesOrder(order, slipData);
 
-  // Payment confirmed — save slip ID, then create receipt operation
+  // Payment confirmed — save slip ID and conduct the sale. Receipt creation is delayed
+  // so the terminal can finish the acquiring operation before accepting a fiscal command.
   const realSlipId = slipData.id ?? null;
   if (!realSlipId) throw httpError(409, 'AQSI подтвердил оплату без идентификатора слипа');
   logger.info('orders', { action: 'slip_paid', order_id: orderId, slip_id: realSlipId });
@@ -713,8 +592,16 @@ async function syncSlip(orderId) {
     throw httpError(500, `Оплата подтверждена, но продажа не проведена: ${err.message}`);
   }
 
-  // Create receipt operation and return pending — receipt status checked on next poll
-  return startReceiptOp(orderId, realSlipId, slipData.content ?? null);
+  scheduleInitialReceipt(orderId);
+  const { rows: [confirmedOrder] } = await pool.query(
+    'SELECT fulfillment_error FROM orders WHERE id = $1',
+    [orderId]
+  );
+  return {
+    status: 'payment_confirmed',
+    message: 'Оплата принята. Чек формируется в фоне.',
+    fulfillment_error: confirmedOrder?.fulfillment_error ?? null,
+  };
 }
 
 // ── syncAqsiV4 ────────────────────────────────────────────────────────────────
@@ -800,88 +687,31 @@ async function syncAqsiV4(orderId, { allowReceiptRetry = true } = {}) {
     };
   }
 
-  // Step 2: slip saved but no receipt operation — create one
+  let recoveredReceiptOperation = null;
+
+  // Step 2: slip saved but no receipt operation — create one through the durable journal.
+  // The helper re-reads the canonical slip instead of reusing payment-operation content.
   if (currentOrder.aqsi_slip_id && !currentOrder.aqsi_receipt_operation_id) {
-    // Atomically claim receipt creation — prevents parallel sync-aqsi-v4 calls
-    // from each creating their own receipt for the same slip
-    const { rowCount: claimed } = await pool.query(
-      `UPDATE orders SET aqsi_receipt_status = 'pending', aqsi_error = NULL
-       WHERE id = $1 AND aqsi_slip_id IS NOT NULL AND aqsi_receipt_operation_id IS NULL
-         AND (aqsi_receipt_status IS NULL OR aqsi_receipt_status = 'error')`,
-      [orderId]
-    ).catch(() => ({ rowCount: 0 }));
-
-    if (claimed === 0) {
-      return { status: 'receipt_pending', message: 'Фискализация в процессе' };
-    }
-
-    const { rows: itemRows } = await pool.query(
-      'SELECT oi.*, p.marking_type FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id WHERE oi.order_id = $1 ORDER BY oi.created_at',
-      [orderId]
-    );
-    const freshOrder = { ...currentOrder, items: itemRows };
-
-    const markedItems = itemRows.filter((i) => i.marking_code);
-    logger.info('orders', {
-      action: 'sync_v4_create_receipt',
-      order_id: orderId,
-      slip_id: currentOrder.aqsi_slip_id,
-      marked_items: markedItems.map((i) => ({
-        name: i.name,
-        marking_code_hex: Buffer.from(String(i.marking_code)).toString('hex'),
-        nomenclature_code: i.marking_code,
-        marking_type: i.marking_type,
-      })),
-    });
-
-    // Try to recover slip content for the receipt payload.
-    const slipContentForReceipt = await recoverSlipContentForReceipt(
-      currentOrder,
-      currentOrder.aqsi_slip_id,
-      'sync_v4'
-    );
-    if (!slipContentForReceipt) {
-      const msg = 'Оплата прошла, но не удалось восстановить данные слипа для фискализации';
-      logger.error('orders', { action: 'sync_v4_missing_slip_content', order_id: orderId, slip_id: currentOrder.aqsi_slip_id });
-      await pool.query(
-        'UPDATE orders SET aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
-        [orderId, 'error', msg]
-      ).catch(() => {});
-      return { status: 'receipt_error', message: msg };
-    }
-
-    let receiptOpId;
-    try {
-      const receiptPayload = buildAqsiV4ReceiptPayload(freshOrder, 'card', currentOrder.aqsi_slip_id, slipContentForReceipt);
-      const receiptOpResponse = await sendV4ReceiptRequest(receiptPayload);
-      receiptOpId = receiptOpResponse.operationId;
-    } catch (err) {
-      await pool.query(
-        'UPDATE orders SET aqsi_receipt_status = $2, aqsi_error = $3 WHERE id = $1',
-        [orderId, 'error', err.message]
-      ).catch(() => {});
-      return { status: 'receipt_error', message: err.message };
-    }
-
-    await pool.query(
-      'UPDATE orders SET aqsi_receipt_operation_id = $1, aqsi_receipt_status = $2, aqsi_error = NULL WHERE id = $3',
-      [receiptOpId, 'pending', orderId]
-    );
+    const started = await startInitialReceipt(currentOrder);
+    if (!started.operation) return started;
+    recoveredReceiptOperation = started.operation;
 
     const { rows: refreshed } = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
     currentOrder = refreshed[0];
   }
 
   // Step 3: check receipt operation
-  if (!currentOrder.aqsi_receipt_operation_id) {
+  if (!currentOrder.aqsi_receipt_operation_id && !recoveredReceiptOperation) {
     return { status: currentOrder.aqsi_receipt_status || 'no_receipt_op' };
   }
 
-  let receiptOp;
-  try {
-    receiptOp = await getOperation(currentOrder.aqsi_receipt_operation_id);
-  } catch (err) {
-    throw err;
+  let receiptOp = recoveredReceiptOperation;
+  if (!receiptOp) {
+    try {
+      receiptOp = await getOperation(currentOrder.aqsi_receipt_operation_id);
+    } catch (err) {
+      throw err;
+    }
   }
 
   const PENDING_RECEIPT = new Set(['Pending', 'Processing', 'Finishing']);

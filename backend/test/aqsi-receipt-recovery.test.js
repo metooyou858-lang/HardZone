@@ -16,7 +16,7 @@ aqsi.getAqsiSlip = (...args) => slip(...args);
 aqsi.sendV4ReceiptRequest = (...args) => send(...args);
 const { pool } = require('../src/db');
 const { syncAqsiV4 } = require('../src/services/aqsi-v4-flow');
-const { findReceiptForOrder } = require('../src/services/aqsi-receipt-recovery');
+const { findReceiptForOrder, startInitialReceipt } = require('../src/services/aqsi-receipt-recovery');
 const { runV4SlipSyncPass } = require('../src/services/order-sync');
 
 beforeEach(() => {
@@ -43,6 +43,17 @@ async function createOrder() {
     `INSERT INTO orders (status,total_amount,items_count,aqsi_slip_id,aqsi_receipt_operation_id,aqsi_receipt_status,comment)
      VALUES ('open',5570,1,$1,$2,'error','ci-receipt-recovery') RETURNING *`,
     [activeSlipId, activeReceiptOperationId]
+  );
+  await pool.query("INSERT INTO order_items (order_id,kind,name,sale_price,quantity) VALUES ($1,'service','CI service',5570,1)", [o.id]);
+  return o;
+}
+async function createInitialOrder() {
+  fixtureSequence += 1;
+  activeSlipId = `initial-slip-${fixtureSequence}`;
+  const { rows: [o] } = await pool.query(
+    `INSERT INTO orders (status,payment_type,total_amount,items_count,aqsi_slip_id,aqsi_payment_status,confirmed_at,comment)
+     VALUES ('confirmed','card',5570,1,$1,'completed',NOW(),'ci-receipt-recovery') RETURNING *`,
+    [activeSlipId]
   );
   await pool.query("INSERT INTO order_items (order_id,kind,name,sale_price,quantity) VALUES ($1,'service','CI service',5570,1)", [o.id]);
   return o;
@@ -217,6 +228,23 @@ test('uncertain send is persisted and next recovery cannot send again', async ()
   assert.equal(attempt.status, 'uncertain');
   list = async () => ({ rows: [receipt()], pages: 1, count: 1 });
   assert.equal((await syncAqsiV4(o.id)).status, 'confirmed');
+  assert.equal(sends, 1);
+});
+
+test('uncertain initial receipt send is journaled and never duplicated', async () => {
+  const o = await createInitialOrder();
+  send = async () => { sends += 1; throw new Error('connection reset'); };
+  assert.equal((await startInitialReceipt(o)).status, 'receipt_error');
+  await assert.rejects(startInitialReceipt(o), /неизвестен/);
+  assert.equal(sends, 1);
+  const { rows: [attempt] } = await pool.query(
+    'SELECT previous_operation_id, status FROM aqsi_receipt_recovery_attempts WHERE order_id=$1',
+    [o.id]
+  );
+  assert.equal(attempt.previous_operation_id, `initial:${o.aqsi_slip_id}`);
+  assert.equal(attempt.status, 'uncertain');
+  list = async () => ({ rows: [receipt()], pages: 1, count: 1 });
+  assert.equal((await startInitialReceipt(o)).operation.status, 'Completed');
   assert.equal(sends, 1);
 });
 
